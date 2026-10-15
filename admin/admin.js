@@ -20,6 +20,18 @@ function guessRepo(){
   return {owner:"", repo:""};
 }
 function fail(msg, status){ var e = new Error(msg); e.status = status || 400; return e; }
+function normalizeRepo(value, owner){
+  value = value.trim();
+  var m = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/?#]+)\/?$/i.exec(value);
+  if(!m) m = /^([^/]+)\/([^/]+)$/.exec(value);
+  if(m){
+    if(m[1].toLowerCase() !== owner.toLowerCase()) throw fail("اسم المستخدم في رابط المستودع لا يطابق حساب GitHub.", 400);
+    value = m[2];
+  }
+  value = value.replace(/\.git$/i, "");
+  if(!/^[A-Za-z0-9_.-]+$/.test(value)) throw fail("أدخل اسم المستودع فقط، مثل Zahra-Almadain، أو رابط GitHub الكامل.", 400);
+  return value;
+}
 async function gh(method, path, body){
   var r = await fetch("https://api.github.com/repos/" + GH.owner + "/" + GH.repo + "/contents/" + path, {
     method: method,
@@ -27,7 +39,7 @@ async function gh(method, path, body){
     body: body ? JSON.stringify(body) : undefined, cache: "no-store"});
   var j = null; try{ j = await r.json(); }catch(e){}
   if(r.status === 401) throw fail("الرمز (Token) غير صالح أو منتهي. سجّل الدخول من جديد.", 401);
-  if(r.status === 403 || r.status === 404 && path === "content.json") throw fail("لا توجد صلاحية كتابة على المستودع أو المستودع غير موجود.", r.status);
+  if(r.status === 403 || r.status === 404 && path === "content.json") throw fail("تعذّر الوصول إلى المستودع. تحقق من الاسم، ومن صلاحية Contents للرمز (قراءة وكتابة).", r.status);
   if(!r.ok){ var e = fail((j && j.message) || "error", r.status); throw e; }
   return j;
 }
@@ -120,8 +132,8 @@ async function api(method, url, body){
   throw fail("error", 400);
 }
 function errText(e){
-  
   if(e.message && /[\u0600-\u06FF]/.test(e.message)) return e.message;
+  if(e instanceof TypeError) return "تعذّر الاتصال بـ GitHub. تحقق من اتصال الإنترنت ثم حاول مرة أخرى.";
   return "تعذّر تنفيذ العملية. حاول مرة أخرى.";
 }
 function setMsg(el, text, kind){ el.textContent = text; el.className = "a-msg" + (kind ? " " + kind : ""); }
@@ -271,13 +283,16 @@ function loginScreen(msg){
   var g = guessRepo(), err = h("div", {class:"a-msg err", role:"alert", text: msg || ""});
   var own = h("input", {type:"text", id:"l-o", value: GH.owner || g.owner, autocomplete:"off"}), rp = h("input", {type:"text", id:"l-r", value: GH.repo || g.repo, autocomplete:"off"});
   var tk = h("input", {type:"password", id:"l-t", autocomplete:"off", placeholder:"github_pat_…"});
+  rp.placeholder = "Zahra-Almadain أو رابط GitHub";
   var go = h("button", {type:"button", class:"a-btn sun", text:"دخول"});
   go.addEventListener("click", async function(){
-    var n = {owner: own.value.trim(), repo: rp.value.trim(), token: tk.value.trim()};
-    if(!n.owner || !n.repo || !n.token){ setMsg(err, "املأ كل الحقول.", "err"); return; }
+    var n = {owner: own.value.trim(), repo:"", token: tk.value.trim()};
+    if(!n.owner || !rp.value.trim() || !n.token){ setMsg(err, "املأ كل الحقول.", "err"); return; }
+    try{ n.repo = normalizeRepo(rp.value, n.owner); }
+    catch(e){ setMsg(err, errText(e), "err"); return; }
     go.disabled = true; var old = GH; GH = n;
     try{ var d = (await readContent()).d; try{ localStorage.setItem("zm-gh", JSON.stringify(GH)); }catch(e){} DATA = d; draw(); }
-    catch(e){ GH = old; go.disabled = false; setMsg(err, e.status === 404 ? "المستودع أو الملف content.json غير موجود، أو الرمز بلا صلاحية." : errText(e), "err"); }
+    catch(e){ GH = old; go.disabled = false; setMsg(err, errText(e), "err"); }
   });
   root.append(h("div", {class:"a-main", style:"max-width:420px"}, [h("div", {class:"a-card"}, [
     h("h3", {text:"دخول المسؤول"}), h("p", {class:"hint", text:"الدخول برمز GitHub الشخصي (Token) الذي يملكه المسؤول فقط."}),
