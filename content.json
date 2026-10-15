@@ -1,1 +1,13 @@
-{"settings": {}, "gallery": [], "news": []}
+{
+ "settings": {},
+ "gallery": [
+  {
+   "id": "64a67b33ccc2585e",
+   "kind": "image",
+   "asset": "830ca54cd3b1b9e44a3ab8e8eb988fec.jpg",
+   "caption": "Werbung",
+   "ts": 1792075443329
+  }
+ ],
+ "news": []
+}
