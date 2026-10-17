@@ -2,7 +2,7 @@
 var CONFIG = {
   whatsapp: "963993517586",
   phoneDisplay: "0993 517 586",
-  mapQuery: "روضة زهرة المدائن المليحة",
+  mapUrl: "https://www.google.com/maps/search/?api=1&query=33.4815114%2C36.3742841",
   minAge: 3, maxAge: 6,
   hours: {ar: "", en: "", de: ""},   // مثال: {ar:"من الأحد إلى الخميس، 8:00 إلى 13:00", en:"Sunday to Thursday, 8:00 to 13:00", de:"Sonntag bis Donnerstag, 8:00 bis 13:00"}
   facebook: "https://www.facebook.com/profile.php?id=61593288236023",
@@ -116,7 +116,7 @@ toTop.addEventListener("click", function(){ window.scrollTo({top:0, behavior:"sm
 
 /* ---------- links ---------- */
 var waBase = "https://wa.me/" + CONFIG.whatsapp;
-var mapUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(CONFIG.mapQuery);
+var mapUrl = CONFIG.mapUrl;
 ["waLink","mWa"].forEach(function(i){ $(i).href = waBase; });
 ["mapLink","mMap"].forEach(function(i){ $(i).href = mapUrl; });
 $("phoneNum").textContent = CONFIG.phoneDisplay; $("footPhone").textContent = CONFIG.phoneDisplay;
