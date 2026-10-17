@@ -2,6 +2,7 @@ ZAHRAT AL-MADAYN: Website mit Python-Backend
 
 Projektstruktur
   index.html, style.css, script.js       öffentliche Website
+  images\                                feste Website-Bilder (Logo, Plakat, Icon)
   admin\index.html                      Admin-Seite
   admin\admin.css, admin\admin.js       Admin-Oberfläche
   backend\app\main.py                   FastAPI-Backend
@@ -9,10 +10,18 @@ Projektstruktur
   render.yaml                           Render-Blueprint
   content.json                          Inhalte und Metadaten
 
+Vom Admin hochgeladene Galerie- und News-Bilder bleiben als verwaltete Dateien im
+GitHub-Repository-Hauptverzeichnis; sie werden nicht in images\ abgelegt.
+
 Die Website bleibt auf GitHub Pages. Die Admin-Oberfläche sendet keine GitHub-
 Zugangsdaten mehr an den Browser. Das Python-Backend liest und ändert content.json
 und Mediendateien über die GitHub-API. Ein Fine-grained GitHub-Token wird nur als
 geheime Umgebungsvariable auf Render gespeichert.
+
+Sprachen
+- Öffentliche Website: Arabisch als Standardsprache, zusätzlich Englisch und Deutsch.
+- Admin-Oberfläche: Arabisch als Standardsprache und Englisch über den Sprachschalter.
+  Die Admin-Sprachauswahl wird im Browser gespeichert.
 
 Einrichtung und Veröffentlichung
 1. Den Projektstand nach main auf GitHub pushen.

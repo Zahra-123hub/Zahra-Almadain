@@ -17,7 +17,7 @@ var CONFIG = {
      cta: {ar:"سجّل طفلك", en:"Register your child", de:"Kind anmelden"}}
   ]
 };
-var ASSETS = {LOGO: "logo.png", POSTER: "poster.jpg"};
+var ASSETS = {LOGO: "images/logo.png", POSTER: "images/poster.jpg"};
 
 var DYN = {settings:{}, gallery:[], news:[]};
 var API_BASE = (window.ZM_API_BASE || CONFIG.apiBase).replace(/\/+$/, "");

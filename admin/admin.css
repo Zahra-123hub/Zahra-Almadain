@@ -8,6 +8,11 @@ h2,h3{font-weight:800}
 .a-bar{position:sticky;top:0;z-index:2;background:var(--bar);color:#fff;padding:10px max(16px,env(safe-area-inset-left,0px)) 0 max(16px,env(safe-area-inset-right,0px))}
 .a-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between}
 .a-top h2{font-size:1.3rem;margin:0;color:#fff}
+.a-lang{display:inline-flex;gap:2px;border:1px solid currentColor;border-radius:999px;padding:2px}
+.a-lang button{border:0;border-radius:999px;background:transparent;color:inherit;font:inherit;font-size:.9rem;font-weight:700;min-width:38px;padding:3px 9px;cursor:pointer}
+.a-lang button[aria-pressed=true]{background:var(--sun);color:var(--on-sun)}
+.a-login-tools{display:flex;justify-content:flex-end;margin-bottom:8px}
+.lat .a-card input,.lat .a-card textarea{text-align:left}
 .a-tabs{display:flex;gap:6px;overflow-x:auto;padding-top:8px}
 .a-tabs button{border:0;background:transparent;color:#fff;font-family:var(--display);font-weight:700;font-size:1rem;padding:8px 18px;border-radius:12px 12px 0 0;cursor:pointer;white-space:nowrap}
 .a-tabs button[aria-selected=true]{background:var(--bg);color:var(--head)}

@@ -1,28 +1,175 @@
 var DATA = {settings:{}, gallery:[], news:[]}, tab = "gallery";
 var API_BASE = (window.ZM_API_BASE || "https://zahra-123hub-almadain-api.onrender.com").replace(/\/+$/, "");
 var ADMIN_TOKEN = sessionStorage.getItem("zm-admin-session") || "";
+var ADMIN_LANG = localStorage.getItem("zm-admin-lang") === "en" ? "en" : "ar";
 var FILE_RE = /^[0-9a-f]{32}\.(jpg|png|webp|gif|mp4|webm)$/;
+var EN_TEXT = {
+  "تعذّر الاتصال بالخادم. تحقق من إعداد رابط API واتصال الإنترنت.":"Could not connect to the server. Check the API URL and your internet connection.",
+  "تعذّر تنفيذ العملية. حاول مرة أخرى.":"The operation failed. Please try again.",
+  "تعذّر تنفيذ العملية على الخادم.":"The server could not complete the operation.",
+  "تعذّر تنفيذ العملية على GitHub.":"The operation could not be completed on GitHub.",
+  "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.":"Your session expired. Please sign in again.",
+  "لم يتم إعداد اتصال GitHub على الخادم.":"The GitHub connection is not configured on the server.",
+  "رمز GitHub المخزن على الخادم غير صالح أو منتهي.":"The GitHub token stored on the server is invalid or expired.",
+  "رمز GitHub يحتاج صلاحية Contents للقراءة والكتابة.":"The GitHub token needs Contents read and write permission.",
+  "تعذّر الاتصال بـ GitHub من الخادم.":"The server could not connect to GitHub.",
+  "انتهت مهلة الاتصال بـ GitHub. حاول مرة أخرى.":"The connection to GitHub timed out. Please try again.",
+  "لم يتم العثور على المستودع أو الملف في GitHub.":"The repository or file was not found on GitHub.",
+  "ملف content.json غير صالح أو تعذّر قراءته.":"content.json is invalid or could not be read.",
+  "بنية ملف المحتوى غير صالحة.":"The content file has an invalid structure.",
+  "الملف غير موجود.":"File not found.",
+  "نوع العنصر غير صالح.":"Invalid item type.",
+  "تعارضت تعديلات متزامنة. أعد المحاولة.":"Concurrent edits conflicted. Please try again.",
+  "نوع الملف غير مدعوم.":"This file type is not supported.",
+  "حجم الملف يتجاوز الحد المسموح (10 ميغابايت للصورة و25 ميغابايت للفيديو).":"The file exceeds the size limit (10 MB for images, 25 MB for videos).",
+  "نوع الملف لا يطابق القسم المحدد.":"The file type does not match the selected section.",
+  "عنصر المعرض غير موجود.":"Gallery item not found.",
+  "العنوان والنص مطلوبان.":"A title and text are required.",
+  "الخبر غير موجود.":"News item not found.",
+  "لم يتم إعداد جلسات المسؤول على الخادم.":"Admin sessions are not configured on the server.",
+  "سجّل الدخول إلى لوحة التحكم.":"Please sign in to the admin panel.",
+  "لم يتم إعداد بيانات دخول المسؤول على الخادم.":"Admin login is not configured on the server.",
+  "اسم المستخدم أو كلمة المرور غير صحيحة.":"Incorrect username or password.",
+  "يجب أن يبدأ الرابط بـ https://":"Links must start with https://",
+  "رقم الواتساب غير صالح.":"The WhatsApp number is invalid.",
+  "تعليق يظهر تحت العنصر (اختياري)":"Caption shown under the item (optional)",
+  "فيديوهات الهاتف بصيغة MOV لا تعمل. صدّرها بصيغة MP4.":"MOV videos from phones are not supported. Export them as MP4.",
+  "لا توجد فيديوهات مرفوعة بعد.":"No videos uploaded yet.",
+  "لا توجد صور مرفوعة بعد.":"No photos uploaded yet.",
+  "لا توجد أخبار مضافة.":"No news added yet.",
+  "إلغاء التعديل":"Cancel edit",
+  "حذف الصورة الحالية":"Remove current image",
+  "صورة (اختيارية)":"Image (optional)",
+  "التصنيف (كلمة قصيرة)":"Category (short label)",
+  "العنوان":"Title",
+  "النص":"Text",
+  "شريط إعلان أعلى الموقع":"Announcement banner",
+  "رقم الهاتف الظاهر":"Display phone number",
+  "رقم الواتساب بالصيغة الدولية، أرقام فقط":"WhatsApp number (international digits only)",
+  "أوقات الدوام":"Opening hours",
+  "رابط صفحة فيسبوك":"Facebook page URL",
+  "رابط صفحة إنستغرام":"Instagram page URL",
+  "البريد الإلكتروني":"Email address",
+  "معلومات التواصل والإعلان":"Contact information and announcements",
+  "المحتوى الأصلي للموقع":"Original website content",
+  "إخفاء الخبر الافتتاحي الأصلي":"Hide the original opening announcement",
+  "إخفاء الصور الأصلية في المعرض":"Hide the original gallery images",
+  "الصور":"Photos",
+  "الفيديو":"Videos",
+  "الأخبار":"News",
+  "الإعدادات":"Settings",
+  "لوحة تحكم روضة زهرة المدائن":"Zahrat Al-Madayn Admin",
+  "خروج":"Sign out",
+  "عرض الموقع":"View website",
+  "دخول":"Sign in",
+  "دخول المسؤول":"Admin sign in",
+  "اسم المستخدم":"Username",
+  "كلمة المرور":"Password",
+  "اختر ملف فيديو أولاً.":"Choose a video file first.",
+  "اختر صورة واحدة أو أكثر أولاً.":"Choose one or more photos first.",
+  "جارٍ الرفع":"Uploading",
+  "تم رفع":"Uploaded",
+  "صورة":"photo",
+  "فيديو":"video",
+  "صورة واحدة أو أكثر، تُصغَّر تلقائياً":"Photos (you can select multiple; they are resized automatically)",
+  "ملف الفيديو (MP4 أو WebM، حتى 25 ميغابايت)":"Video file (MP4 or WebM, up to 25 MB)",
+  "الصور (يمكن اختيار عدة صور، تُصغَّر تلقائياً)":"Photos (select multiple; they are resized automatically)",
+  "تعليق":"Caption",
+  "حذف":"Delete",
+  "رفع الفيديو":"Upload video",
+  "رفع الصور":"Upload photos",
+  "رفع فيديو جديد":"Upload a new video",
+  "رفع صور جديدة":"Upload new photos",
+  "الفيديوهات المنشورة":"Published videos",
+  "الصور المنشورة":"Published photos",
+  "خبر":"News",
+  "نشر الخبر":"Publish news",
+  "حفظ التعديل":"Save changes",
+  "خبر جديد":"New announcement",
+  "تعديل الخبر":"Edit announcement",
+  "اكتب العنوان والنص.":"Enter a title and text.",
+  "تم نشر الخبر في الموقع.":"The announcement was published.",
+  "الأخبار المنشورة":"Published news",
+  "تعديل":"Edit",
+  "مثال: يوم الرسم في الروضة":"Example: Art day at kindergarten",
+  "مثال: التسجيل مفتوح للعام الدراسي الجديد":"Example: Enrollment is open for the new school year",
+  "اتركه فارغاً لإخفاء الشريط.":"Leave blank to hide the banner.",
+  "مثال: من الأحد إلى الخميس، 8:00 إلى 13:00":"Example: Sunday to Thursday, 8:00 AM to 1:00 PM",
+  "مثال: 963985122704":"Example: 963985122704",
+  "تم حفظ الإعدادات وطُبّقت على الموقع.":"Settings saved and applied to the website.",
+  "أدخل اسم المستخدم وكلمة المرور.":"Enter your username and password.",
+  "أدخل بيانات دخول لوحة التحكم التي أُعدّت على الخادم.":"Enter the admin login credentials configured on the server.",
+  "اضغط مرة أخرى للتأكيد":"Click again to confirm",
+  "التعليق":"Caption"
+};
 
 try{ localStorage.removeItem("zm-gh"); }catch(e){}
 function up(name){ return FILE_RE.test(name || "") ? API_BASE + "/api/assets/" + name : ""; }
 function sOf(v, n){ return typeof v === "string" ? v.slice(0, n) : ""; }
 function byNew(a, b){ return (b.ts || 0) - (a.ts || 0); }
+function uiText(value){ return ADMIN_LANG === "en" ? (EN_TEXT[value] || value) : value; }
 function h(tag, a, kids){
   var e = document.createElement(tag);
   if(a) Object.keys(a).forEach(function(k){
-    if(k === "class") e.className = a[k]; else if(k === "text") e.textContent = a[k];
+    if(k === "class") e.className = a[k];
+    else if(k === "text"){ e.dataset.arText = a[k]; e.textContent = uiText(a[k]); }
+    else if(k === "placeholder" || k === "aria-label" || k === "title"){ e.dataset["ar" + k.split("-").map(function(part){ return part.charAt(0).toUpperCase() + part.slice(1); }).join("")] = a[k]; e.setAttribute(k, uiText(a[k])); }
     else if(k.slice(0,2) === "on") e.addEventListener(k.slice(2), a[k]); else e.setAttribute(k, a[k]);
   });
-  (kids || []).forEach(function add(c){ if(Array.isArray(c)) c.forEach(add); else if(c != null) e.append(c); });
+  (kids || []).forEach(function add(c){
+    if(Array.isArray(c)) c.forEach(add);
+    else if(typeof c === "string"){ var span = document.createElement("span"); span.dataset.arText = c; span.textContent = uiText(c); e.appendChild(span); }
+    else if(c != null) e.append(c);
+  });
   return e;
 }
 function fail(message){ return new Error(message); }
 function errText(e){
-  if(e.message && /[\u0600-\u06FF]/.test(e.message)) return e.message;
-  if(e instanceof TypeError) return "تعذّر الاتصال بالخادم. تحقق من إعداد رابط API واتصال الإنترنت.";
-  return "تعذّر تنفيذ العملية. حاول مرة أخرى.";
+  if(e.message && /[\u0600-\u06FF]/.test(e.message)) return uiText(e.message);
+  if(e instanceof TypeError) return uiText("تعذّر الاتصال بالخادم. تحقق من إعداد رابط API واتصال الإنترنت.");
+  return uiText("تعذّر تنفيذ العملية. حاول مرة أخرى.");
 }
-function setMsg(el, text, kind){ el.textContent = text; el.className = "a-msg" + (kind ? " " + kind : ""); }
+function setUiText(el, text){
+  delete el.dataset.enText;
+  if(ADMIN_LANG === "en"){
+    Object.keys(EN_TEXT).some(function(ar){ if(EN_TEXT[ar] === text){ text = ar; return true; } return false; });
+  }
+  el.dataset.arText = text;
+  el.textContent = uiText(text);
+}
+function setMsg(el, text, kind){ setUiText(el, text); el.className = "a-msg" + (kind ? " " + kind : ""); }
+function setMsgLanguages(el, ar, en, kind){
+  el.dataset.arText = ar;
+  el.dataset.enText = en;
+  el.textContent = ADMIN_LANG === "en" ? en : ar;
+  el.className = "a-msg" + (kind ? " " + kind : "");
+}
+function applyAdminLanguage(){
+  document.documentElement.lang = ADMIN_LANG;
+  document.documentElement.dir = ADMIN_LANG === "ar" ? "rtl" : "ltr";
+  document.body.classList.toggle("lat", ADMIN_LANG === "en");
+  document.title = uiText("لوحة تحكم روضة زهرة المدائن");
+  document.querySelectorAll("[data-ar-text]").forEach(function(el){ el.textContent = ADMIN_LANG === "en" && el.dataset.enText ? el.dataset.enText : uiText(el.dataset.arText); });
+  document.querySelectorAll("[data-ar-placeholder]").forEach(function(el){ el.setAttribute("placeholder", uiText(el.dataset.arPlaceholder)); });
+  document.querySelectorAll("[data-ar-aria-label]").forEach(function(el){ el.setAttribute("aria-label", uiText(el.dataset.arAriaLabel)); });
+  document.querySelectorAll("[data-ar-title]").forEach(function(el){ el.setAttribute("title", uiText(el.dataset.arTitle)); });
+  document.querySelectorAll(".a-lang button").forEach(function(button){ button.setAttribute("aria-pressed", String((button.textContent === "ع" ? "ar" : "en") === ADMIN_LANG)); });
+}
+function languageSwitch(){
+  var group = h("div", {class:"a-lang", role:"group", "aria-label":"اللغة / Language"});
+  [["ar","ع"],["en","EN"]].forEach(function(choice){
+    var button = h("button", {type:"button", "aria-pressed":String(ADMIN_LANG === choice[0]), text:choice[1]});
+    button.addEventListener("click", function(){ setAdminLanguage(choice[0]); });
+    group.appendChild(button);
+  });
+  return group;
+}
+function setAdminLanguage(lang){
+  if(lang !== "ar" && lang !== "en" || lang === ADMIN_LANG) return;
+  ADMIN_LANG = lang;
+  try{ localStorage.setItem("zm-admin-lang", lang); }catch(e){}
+  applyAdminLanguage();
+}
 
 async function request(path, options){
   options = options || {};
@@ -48,8 +195,8 @@ async function reload(){ DATA = await api("GET", "/admin/api/content"); if(fill)
 function twoStep(label, action){
   var b = h("button", {type:"button", class:"a-btn danger", text:label}), armed = false, t;
   b.addEventListener("click", function(){
-    if(!armed){ armed = true; b.textContent = "اضغط مرة أخرى للتأكيد"; t = setTimeout(function(){ armed = false; b.textContent = label; }, 4000); return; }
-    clearTimeout(t); b.disabled = true; action().then(null, function(e){ b.disabled = false; armed = false; b.textContent = label; alert(errText(e)); });
+    if(!armed){ armed = true; setUiText(b, "اضغط مرة أخرى للتأكيد"); t = setTimeout(function(){ armed = false; setUiText(b, label); }, 4000); return; }
+    clearTimeout(t); b.disabled = true; action().then(null, function(e){ b.disabled = false; armed = false; setUiText(b, label); alert(errText(e)); });
   });
   return b;
 }
@@ -66,13 +213,13 @@ function tabMedia(kind){
     go.disabled = true; var done = 0;
     try{
       for(var i = 0; i < files.length; i++){
-        setMsg(msg, "جارٍ الرفع " + (i + 1) + " من " + files.length + "…");
+        setMsgLanguages(msg, "جارٍ الرفع " + (i + 1) + " من " + files.length + "…", "Uploading " + (i + 1) + " of " + files.length + "…");
         var fd = new FormData(); fd.append("file", files[i]); fd.append("kind", kind); fd.append("caption", cap.value);
         await api("POST", "/admin/api/gallery", fd); done++;
       }
-      setMsg(msg, "تم رفع " + done + (isVid ? " فيديو" : " صورة") + " وظهر في الموقع.", "ok");
+      setMsgLanguages(msg, "تم رفع " + done + (isVid ? " فيديو" : " صورة") + " وظهر في الموقع.", done + (isVid ? " video(s) uploaded and published." : " photo(s) uploaded and published."), "ok");
       file.value = ""; cap.value = ""; await reload();
-    }catch(e){ setMsg(msg, (done ? "تم رفع " + done + " فقط. " : "") + errText(e), "err"); }
+    }catch(e){ setMsg(msg, (done ? (ADMIN_LANG === "en" ? done + " uploaded. " : "تم رفع " + done + " فقط. ") : "") + errText(e), "err"); }
     go.disabled = false;
   });
   var form = h("div", {class:"a-card"}, [
@@ -104,7 +251,7 @@ function tabNews(){
   var rm = h("input", {type:"checkbox", id:"n-rm"}), rmRow = h("label", {class:"a-check", hidden:""}, [rm, "حذف الصورة الحالية"]);
   var save = h("button", {type:"button", class:"a-btn sun", text:"نشر الخبر"}), cancel = h("button", {type:"button", class:"a-btn ghost", text:"إلغاء التعديل", hidden:""});
   var head = h("h3", {text:"خبر جديد"});
-  function reset(){ editing = null; tag.value = "خبر"; title.value = ""; text.value = ""; file.value = ""; rm.checked = false; rmRow.hidden = true; cancel.hidden = true; save.textContent = "نشر الخبر"; head.textContent = "خبر جديد"; }
+  function reset(){ editing = null; tag.value = "خبر"; title.value = ""; text.value = ""; file.value = ""; rm.checked = false; rmRow.hidden = true; cancel.hidden = true; setUiText(save, "نشر الخبر"); setUiText(head, "خبر جديد"); }
   cancel.addEventListener("click", function(){ reset(); setMsg(msg, ""); });
   save.addEventListener("click", async function(){
     if(!title.value.trim() || !text.value.trim()){ setMsg(msg, "اكتب العنوان والنص.", "err"); return; }
@@ -132,7 +279,7 @@ function tabNews(){
       var edit = h("button", {type:"button", class:"a-btn ghost", text:"تعديل"});
       edit.addEventListener("click", function(){
         editing = n; tag.value = sOf(n.tag, 30); title.value = sOf(n.title, 120); text.value = sOf(n.text, 1500); file.value = ""; rm.checked = false;
-        rmRow.hidden = !n.asset; cancel.hidden = false; save.textContent = "حفظ التعديل"; head.textContent = "تعديل الخبر"; form.scrollIntoView({behavior:"smooth", block:"start"});
+        rmRow.hidden = !n.asset; cancel.hidden = false; setUiText(save, "حفظ التعديل"); setUiText(head, "تعديل الخبر"); form.scrollIntoView({behavior:"smooth", block:"start"});
       });
       list.appendChild(h("div", {class:"a-news"}, [img, h("div", {class:"t"}, [h("b", {text:sOf(n.title, 120)}), h("span", {text:sOf(n.tag, 30)})]),
         h("div", {class:"a-row", style:"margin:0"}, [edit, twoStep("حذف", function(){ return api("DELETE", "/admin/api/news/" + n.id).then(reload); })])]));
@@ -184,7 +331,7 @@ function draw(){
   });
   var main = h("div", {class:"a-main"}); fill = null;
   main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tabMedia("image"));
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [view, out])]), tabs]), main);
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch(), view, out])]), tabs]), main);
 }
 function loginScreen(msg){
   var root = document.getElementById("app"); root.innerHTML = "";
@@ -202,6 +349,7 @@ function loginScreen(msg){
     }catch(e){ ADMIN_TOKEN = ""; sessionStorage.removeItem("zm-admin-session"); go.disabled = false; setMsg(err, errText(e), "err"); }
   });
   root.append(h("div", {class:"a-main", style:"max-width:420px"}, [h("div", {class:"a-card"}, [
+    h("div", {class:"a-login-tools"}, [languageSwitch()]),
     h("h3", {text:"دخول المسؤول"}), h("p", {class:"hint", text:"أدخل بيانات دخول لوحة التحكم التي أُعدّت على الخادم."}),
     h("label", {for:"l-user", text:"اسم المستخدم"}), username,
     h("label", {for:"l-pass", text:"كلمة المرور"}), password,
@@ -213,4 +361,5 @@ function start(){
     ADMIN_TOKEN = ""; sessionStorage.removeItem("zm-admin-session"); loginScreen(errText(e));
   });
 }
+applyAdminLanguage();
 start();
