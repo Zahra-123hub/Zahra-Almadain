@@ -1,1 +1,13 @@
-{"settings": {}, "gallery": [], "news": []}
+{
+ "settings": {},
+ "gallery": [
+  {
+   "id": "098f317ebba116ba",
+   "kind": "image",
+   "asset": "7d70d895f520e903be8d18b98f0916d5.jpg",
+   "caption": "تخفيضات",
+   "ts": 1792076167913
+  }
+ ],
+ "news": []
+}
