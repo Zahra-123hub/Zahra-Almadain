@@ -1,5 +1,5 @@
 var DATA = {settings:{}, gallery:[], news:[]}, tab = "gallery";
-var API_BASE = (window.ZM_API_BASE || "https://zahra-123hub-almadain-api.onrender.com").replace(/\/+$/, "");
+var API_BASE = (window.ZM_API_BASE || (/^(localhost|127.0.0.1)$/.test(location.hostname) ? "http://127.0.0.1:8001" : "https://zahra-123hub-almadain-api.onrender.com")).replace(/\/+$/, "");
 var ADMIN_TOKEN = sessionStorage.getItem("zm-admin-session") || "";
 var ADMIN_LANG = localStorage.getItem("zm-admin-lang") === "en" ? "en" : "ar";
 var FILE_RE = /^[0-9a-f]{32}\.(jpg|png|webp|gif|mp4|webm)$/;
@@ -58,6 +58,30 @@ var EN_TEXT = {
   "الفيديو":"Videos",
   "الأخبار":"News",
   "الإعدادات":"Settings",
+  "حسابات المنصة":"Platform accounts",
+  "طلبات أولياء الأمور والمعلمات":"Parent and teacher accounts",
+  "أنشئ حساب معلمة جديداً. يكون الحساب مفعّلاً فوراً.":"Create a teacher account. It will remain pending until you activate it.",
+  "كلمة المرور الأولية (12 محرفاً على الأقل)":"Initial password (at least 12 characters)",
+  "إنشاء حساب المعلمة":"Create teacher account",
+  "الحسابات بانتظار التفعيل":"Accounts awaiting activation",
+  "نشط":"Active",
+  "بانتظار التفعيل":"Pending approval",
+  "موقوف":"Disabled",
+  "ولي أمر":"Parent",
+  "معلمة":"Teacher",
+  "تفعيل الحساب":"Activate account",
+  "إيقاف الحساب":"Disable account",
+  "لا توجد حسابات أولياء أمور أو معلمات.":"No parent or teacher accounts yet.",
+  "تم إنشاء حساب المعلمة وتفعيله. يمكنها تسجيل الدخول الآن.":"Teacher account created and active. She can sign in now.",
+  "تم تحديث حالة الحساب.":"Account status updated.",
+  "الاسم أو كلمة المرور غير صالحة.":"The username or password is invalid.",
+  "هذا الاسم مستخدم بالفعل.":"That username is already in use.",
+  "بانتظار موافقة إدارة الروضة.":"Waiting for kindergarten admin approval.",
+  "تم تسجيل الحساب بنجاح. سيُفعّل بعد موافقة الإدارة.":"Account registered. It will be activated after admin approval.",
+  "اسم المستخدم يحتوي على أحرف غير مدعومة.":"The username contains unsupported characters.",
+  "لم يتم تهيئة أدوار المنصة. نفّذ ترحيلات قاعدة البيانات.":"Platform roles are not initialized. Run database migrations.",
+  "لم يتم العثور على حساب ولي أمر أو معلمة.":"Parent or teacher account not found.",
+  "تعذر إنشاء الحساب. تحقق من الاسم وكلمة المرور.":"Could not create account. Check the username and password.",
   "لوحة تحكم روضة زهرة المدائن":"Zahrat Al-Madayn Admin",
   "خروج":"Sign out",
   "عرض الموقع":"View website",
@@ -126,7 +150,10 @@ function h(tag, a, kids){
 function fail(message){ return new Error(message); }
 function errText(e){
   if(e.message && /[\u0600-\u06FF]/.test(e.message)) return uiText(e.message);
+  var arabicMessage = Object.keys(EN_TEXT).find(function(key){ return EN_TEXT[key] === e.message; });
+  if(arabicMessage) return uiText(arabicMessage);
   if(e instanceof TypeError) return uiText("تعذّر الاتصال بالخادم. تحقق من إعداد رابط API واتصال الإنترنت.");
+  if(e.message && e.message !== "تعذّر تنفيذ العملية على الخادم.") return e.message;
   return uiText("تعذّر تنفيذ العملية. حاول مرة أخرى.");
 }
 function setUiText(el, text){
@@ -319,7 +346,160 @@ function tabSettings(){
     h("div", {class:"a-row"}, [save]), msg]));
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["settings","الإعدادات"]];
+function tabAccounts(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var username = h("input", {type:"text", id:"a-teacher-username", autocomplete:"username", minlength:"3", maxlength:"80", pattern:"[A-Za-z0-9_.\\-]{3,80}"});
+  var password = h("input", {type:"password", id:"a-teacher-password", autocomplete:"new-password", minlength:"12", maxlength:"256"});
+  var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء حساب المعلمة"});
+  var form = h("form", {class:"a-card"}, [
+    h("h3", {text:"أنشئ حساب معلمة جديداً. سيبقى بانتظار تفعيلك."}),
+    h("label", {for:"a-teacher-username", text:"اسم المستخدم"}), username,
+    h("label", {for:"a-teacher-password", text:"كلمة المرور الأولية (12 محرفاً على الأقل)"}), password,
+    h("div", {class:"a-row"}, [create]), msg
+  ]);
+  var list = h("div", {class:"a-card"});
+  var listBody = h("div", {});
+  list.append(h("h3", {text:"طلبات أولياء الأمور والمعلمات"}), listBody);
+
+  var reqCard = h("div", {class:"a-card"});
+  var reqMsg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var reqCode = h("div", {});
+  var reqBody = h("div", {});
+  reqCard.append(h("h3", {text:"طلبات تسجيل أولياء الأمور"}),
+    h("p", {class:"hint", text:"يرسل ولي الأمر بياناته من بوابة الأهل. عند الموافقة يُنشأ رمز تسجيل لمرة واحدة (صالح 7 أيام) يُرسل إلى بريده، ويظهر لك هنا مرة واحدة لتسلّمه يدوياً عند الحاجة."}),
+    reqMsg, reqCode, reqBody);
+  function showApprovalCode(result){
+    var base = (window.location.origin.indexOf("http") === 0 ? window.location.origin : "https://zahra-123hub.github.io/Zahra-Almadain").replace(/\/admin.*$/, "");
+    var link = base + "/parents/?code=" + encodeURIComponent(result.registration_code);
+    var sent = result.request.email_sent;
+    reqCode.innerHTML = "";
+    var linkInput = h("input", {type:"text", readonly:"readonly", value:link, dir:"ltr", style:"width:100%"});
+    reqCode.appendChild(h("div", {class:"a-card", style:"border:2px solid var(--sun)"}, [
+      h("strong", {text:"تمت الموافقة على الطلب: " + result.request.guardian_name}),
+      h("p", {class:"hint", text: sent ? "أُرسل رابط التسجيل إلى بريد ولي الأمر. هذا الرابط يظهر هنا مرة واحدة فقط." : "لم يُرسل البريد الإلكتروني تلقائياً (لم يُضبط الإرسال). انسخ الرابط وأرسله إلى ولي الأمر يدوياً. يظهر هنا مرة واحدة فقط."}),
+      linkInput,
+      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"نسخ الرابط", onclick:function(){
+        linkInput.select();
+        try{ navigator.clipboard.writeText(link); }catch(e){ document.execCommand("copy"); }
+      }})])
+    ]));
+  }
+  async function decideRequest(id, decision){
+    try{
+      var result = await request("/api/admin/platform/registration-requests/" + encodeURIComponent(id) + "/decision", {
+        method:"POST", body:JSON.stringify({decision:decision})
+      });
+      reqCode.innerHTML = "";
+      if(decision === "approve") showApprovalCode(result);
+      setMsg(reqMsg, decision === "approve" ? "تمت الموافقة وإنشاء رمز التسجيل." : "تم رفض الطلب.", "ok");
+      await reloadRequests();
+    }catch(error){ setMsg(reqMsg, errText(error), "err"); }
+  }
+  async function reloadRequests(){
+    reqBody.innerHTML = "";
+    try{
+      var items = await request("/api/admin/platform/registration-requests");
+      if(!items.length){ reqBody.appendChild(h("p", {class:"hint", text:"لا توجد طلبات تسجيل."})); return; }
+      items.forEach(function(item){
+        var statusText = item.status === "pending" ? "بانتظار القرار" : item.status === "approved" ? "تمت الموافقة" : "مرفوض";
+        var details = [
+          "الهاتف: " + item.phone,
+          "البريد: " + item.email,
+          "الطفل: " + item.child_name + (item.child_birth_date ? " (" + item.child_birth_date + ")" : ""),
+          item.relationship_to_child ? "صلة القرابة: " + item.relationship_to_child : "",
+          item.notes ? "ملاحظات: " + item.notes : ""
+        ].filter(Boolean);
+        var row = h("article", {class:"a-account-row"}, [
+          h("div", {}, [
+            h("strong", {text:item.guardian_name}),
+            h("span", {class:"a-account-meta", text:statusText}),
+            details.map(function(line){ return h("span", {class:"a-account-date", dir:"auto", text:line}); }),
+            item.created_at ? h("time", {class:"a-account-date", text:new Date(item.created_at).toLocaleDateString(ADMIN_LANG === "ar" ? "ar" : "en")}) : null
+          ])
+        ]);
+        if(item.status === "pending"){
+          row.appendChild(h("div", {class:"a-row"}, [
+            h("button", {type:"button", class:"a-btn sun", text:"موافقة وإرسال الرمز", onclick:function(){ decideRequest(item.id, "approve"); }}),
+            h("button", {type:"button", class:"a-btn danger", text:"رفض", onclick:function(){ decideRequest(item.id, "reject"); }})
+          ]));
+        }
+        reqBody.appendChild(row);
+      });
+    }catch(error){ reqBody.appendChild(h("p", {class:"a-msg err", text:error.message || "تعذّر تنفيذ العملية على الخادم."})); }
+  }
+  reloadRequests();
+  async function reloadAccounts(){
+    listBody.innerHTML = "";
+    try{
+      var accounts = await request("/api/admin/platform/accounts");
+      if(!accounts.length){ listBody.appendChild(h("p", {class:"hint", text:"لا توجد حسابات أولياء أمور أو معلمات."})); return; }
+      accounts.forEach(function(account){
+        var role = account.roles.indexOf("teacher") !== -1 ? "معلمة" : "ولي أمر";
+        var status = account.approval_status === "active" ? "نشط" : account.approval_status === "pending" ? "بانتظار التفعيل" : "موقوف";
+        var row = h("article", {class:"a-account-row"}, [
+          h("div", {}, [
+            h("strong", {text:account.username}),
+            h("span", {class:"a-account-meta", text:role + " · " + status}),
+            account.created_at ? h("time", {class:"a-account-date", text:new Date(account.created_at).toLocaleDateString(ADMIN_LANG === "ar" ? "ar" : "en")}) : null
+          ])
+        ]);
+        if(account.approval_status !== "active"){
+          row.appendChild(h("button", {type:"button", class:"a-btn sun", text:"تفعيل الحساب", onclick:function(){
+            updateStatus(account.id, "active");
+          }}));
+        } else {
+          row.appendChild(h("button", {type:"button", class:"a-btn danger", text:"إيقاف الحساب", onclick:function(){
+            updateStatus(account.id, "disabled");
+          }}));
+        }
+        listBody.appendChild(row);
+      });
+    }catch(error){ listBody.appendChild(h("p", {class:"a-msg err", text:error.message || "تعذّر تنفيذ العملية على الخادم."})); }
+  }
+  async function updateStatus(accountId, status){
+    try{
+      await request("/api/admin/platform/accounts/" + encodeURIComponent(accountId) + "/status", {
+        method:"PATCH", body:JSON.stringify({status:status})
+      });
+      setMsg(msg, "تم تحديث حالة الحساب.", "ok");
+      await reloadAccounts();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  }
+  form.addEventListener("submit", async function(event){
+    event.preventDefault();
+    if(!/^[A-Za-z0-9_.-]{3,80}$/.test(username.value.trim()) || password.value.length < 12){
+      setMsg(msg, "الاسم أو كلمة المرور غير صالحة.", "err"); return;
+    }
+    create.disabled = true;
+    try{
+      await request("/api/admin/platform/teacher-accounts", {
+        method:"POST",
+        body:JSON.stringify({
+          username:username.value.trim(),
+          password:password.value,
+          preferred_language:"ar"
+        })
+      });
+      username.value = ""; password.value = "";
+      setMsg(msg, "تم إنشاء حساب المعلمة وتفعيله. يمكنها تسجيل الدخول الآن.", "ok");
+      await reloadAccounts();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+    create.disabled = false;
+  });
+  reloadAccounts();
+  fill = null;
+  return h("section", {}, [
+    h("div", {class:"a-card"}, [
+      h("h3", {text:"حسابات المنصة"}),
+      h("p", {class:"hint", text:"تسجيل ولي الأمر برمز الدعوة ينشئ حساباً معلقاً. راجع الحساب ثم فعّله ليتمكن من الدخول. يمكنك أيضاً إنشاء حسابات المعلمات وإيقاف الحسابات عند الحاجة."})
+    ]),
+    reqCard,
+    form,
+    list
+  ]);
+}
+
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["accounts","حسابات المنصة"],["settings","الإعدادات"]];
 function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
   var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ sessionStorage.removeItem("zm-admin-session"); ADMIN_TOKEN = ""; start(); }});
@@ -330,7 +510,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tabMedia("image"));
   root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch(), view, out])]), tabs]), main);
 }
 function loginScreen(msg){

@@ -37,7 +37,7 @@
   <div class="wrap">
     <div>
       <p class="bsm" lang="ar" data-en="In the name of God, the Most Gracious, the Most Merciful" data-de="Im Namen Gottes, des Allerbarmers, des Barmherzigen">بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
-      <span class="chip" data-en="To the families of Al-Maliha" data-de="An die Familien von Al-Maliha">إلى سكان المليحة</span>
+      <span class="chip" data-en="To the families of Damascus" data-de="An die Familien von Damaskus">إلى سكان دمشق</span>
       <h1 id="h1">روضة <em>زهرة</em> المدائن الخاصة</h1>
       <span class="ribbon" data-en="The ideal kindergarten" data-de="Der ideale Kindergarten">الروضة المثالية</span>
       <p class="lead" data-en="A safe environment, an outstanding teaching team and modern curricula, so your child grows up among letters, colors and friends." data-de="Eine sichere Umgebung, ein hervorragendes pädagogisches Team und moderne Lehrpläne, damit Ihr Kind zwischen Buchstaben, Farben und Freunden aufwächst.">بيئة آمنة وكادر تربوي متميز ومناهج حديثة، ليكبر طفلك بين الحروف والألوان والأصدقاء.</p>
@@ -118,9 +118,13 @@
         <path d="M200 330 C160 318 140 322 120 300 C158 296 184 306 200 330Z" fill="#6AAF2E"/>
         <path d="M201 360 C240 346 262 350 284 326 C246 324 218 336 201 360Z" fill="#6AAF2E"/>
         <g id="petals"></g>
-        <circle cx="200" cy="170" r="46" fill="#FDB913" stroke="#0E2C6B" stroke-width="3"/>
-        <circle cx="185" cy="162" r="5" fill="#0E2C6B"/><circle cx="215" cy="162" r="5" fill="#0E2C6B"/>
-        <path d="M182 180 Q200 198 218 180" fill="none" stroke="#0E2C6B" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="200" cy="170" r="43" fill="#FFF8E5" stroke="#17408F" stroke-width="3"/>
+        <circle cx="200" cy="170" r="32" fill="none" stroke="#D5A62E" stroke-width="2"/>
+        <g fill="#17408F" opacity=".9">
+          <circle cx="200" cy="150" r="4"/><circle cx="219" cy="164" r="4"/>
+          <circle cx="212" cy="186" r="4"/><circle cx="188" cy="186" r="4"/>
+          <circle cx="181" cy="164" r="4"/><circle cx="200" cy="170" r="7"/>
+        </g>
       </svg>
       <div class="area-buttons" id="areaButtons" role="group" aria-label="اختر مجالاً / Choose a learning area"></div>
     </div>
@@ -132,20 +136,48 @@
       <div class="petal-info" id="petalInfo" aria-live="polite"></div>
     </div>
   </div>
+  <div class="wrap learning-details" aria-label="تفاصيل البرنامج التعليمي / Learning program details">
+    <article class="learning-card">
+      <h3><span lang="ar" dir="rtl">التعليم بوسائل حديثة</span><span lang="en" dir="ltr">Learning with modern methods</span></h3>
+      <p lang="ar" dir="rtl">نوفر تعلّماً تفاعلياً يناسب قدرات كل طفل، ويشمل:</p>
+      <p lang="en" dir="ltr">We offer interactive learning tailored to each child's abilities, including:</p>
+      <ul>
+        <li><span lang="ar" dir="rtl">أنشطة مونتيسوري وSTEM ومشروعات علمية.</span><span lang="en" dir="ltr">Montessori and STEM activities, including science projects.</span></li>
+        <li><span lang="ar" dir="rtl">مسرح الدمى، ونظام الأركان التعليمية.</span><span lang="en" dir="ltr">Puppet theatre and a learning-corners approach.</span></li>
+        <li><span lang="ar" dir="rtl">صفوف مجهزة بوسائل تعليمية حديثة وشاشات عرض.</span><span lang="en" dir="ltr">Classrooms equipped with modern learning resources and display screens.</span></li>
+        <li><span lang="ar" dir="rtl">أنشطة تراعي اختلاف قدرات الأطفال وتساعدهم على تطوير مهاراتهم.</span><span lang="en" dir="ltr">Activities adapted to children's different abilities to help develop their skills.</span></li>
+      </ul>
+    </article>
+    <article class="learning-card">
+      <h3><span lang="ar" dir="rtl">اللغة الإنكليزية</span><span lang="en" dir="ltr">English language</span></h3>
+      <p lang="ar" dir="rtl">منهاج أمريكي قوي يطوّر القراءة والكتابة والاستماع، ويساعد الطفل على استخدام الإنجليزية في حياته اليومية.</p>
+      <p lang="en" dir="ltr">A strong American curriculum develops reading, writing and listening, helping children use English in everyday life.</p>
+      <ul>
+        <li><span lang="ar" dir="rtl">كلمات شائعة (High-frequency words) وأنماط CVC.</span><span lang="en" dir="ltr">High-frequency words and CVC word patterns.</span></li>
+        <li><span lang="ar" dir="rtl">قصص وأغانٍ مدروسة وألعاب تفاعلية.</span><span lang="en" dir="ltr">Stories, carefully selected songs and interactive games.</span></li>
+        <li><span lang="ar" dir="rtl">مسابقات في الكتابة.</span><span lang="en" dir="ltr">Writing competitions.</span></li>
+      </ul>
+    </article>
+    <article class="learning-card">
+      <h3><span lang="ar" dir="rtl">تقييم يومي للأطفال</span><span lang="en" dir="ltr">Daily assessment</span></h3>
+      <p lang="ar" dir="rtl">نتابع تعلّم الطفل ومهاراته يوماً بيوم، لنساعد على معرفة تقدّمه واحتياجاته التعليمية.</p>
+      <p lang="en" dir="ltr">We follow each child's learning and skills day by day to understand their progress and learning needs.</p>
+    </article>
+  </div>
 </section>
 
 <section id="day">
   <div class="wrap">
     <div class="sec-head">
       <h2 data-en="A day at the kindergarten" data-de="Ein Tag im Kindergarten">يوم في الروضة</h2>
-      <p data-en="A clear routine helps children feel safe." data-de="Ein klarer Ablauf gibt Kindern Sicherheit.">روتين واضح يمنح الطفل شعوراً بالأمان.</p>
+      <p data-en="A caring daily rhythm combines play, purposeful learning and close attention to every child's progress." data-de="Ein liebevoller Tagesablauf verbindet Spielen, gezieltes Lernen und die aufmerksame Begleitung jedes Kindes.">إيقاع يومي يجمع بين اللعب والتعلّم الهادف والمتابعة القريبة لتقدّم كل طفل.</p>
     </div>
     <ol class="day">
       <li style="--c:var(--sun)"><b data-en="Welcome" data-de="Ankommen">الاستقبال</b><span class="d" data-en="We greet every child with a smile and make sure they are comfortable before the day begins." data-de="Wir begrüßen jedes Kind mit einem Lächeln und achten darauf, dass es sich wohlfühlt, bevor der Tag beginnt.">نستقبل كل طفل بابتسامة ونتأكد أنه مرتاح قبل بدء اليوم.</span></li>
-      <li style="--c:var(--red)"><b data-en="Morning circle" data-de="Morgenkreis">الحلقة الصباحية</b><span class="d" data-en="Songs, greetings and a chat about our day." data-de="Lieder, Begrüßung und ein Gespräch über unseren Tag.">أناشيد وتحية وحديث عن يومنا.</span></li>
-      <li style="--c:var(--sky)"><b data-en="Play and learn" data-de="Spielen und Lernen">اللعب والتعلّم</b><span class="d" data-en="Letter and number corner, drawing and handicrafts." data-de="Buchstaben- und Zahlenecke, Malen und Basteln.">ركن الحروف والأرقام، والرسم، والأعمال اليدوية.</span></li>
+      <li style="--c:var(--red)"><b data-en="Morning circle" data-de="Morgenkreis">الحلقة الصباحية</b><span class="d" data-en="We welcome the children with the morning adhkar, then learn and recite Qur'an with simplified tajweed suitable for their age." data-de="Wir begrüßen die Kinder mit den Morgengebeten und lernen und rezitieren anschließend den Koran mit einer altersgerechten, vereinfachten Tajwid-Aussprache.">نستقبل الأطفال بأذكار الصباح، ثم نُحفّظهم القرآن الكريم بالتجويد الميسّر بما يناسب أعمارهم.</span></li>
+      <li style="--c:var(--sky)"><b data-en="Play, learn and explore" data-de="Spielen, lernen und entdecken">اللعب والتعلّم والاستكشاف</b><span class="d" data-en="Montessori and STEM activities, science projects, puppet theatre and learning corners, supported by modern classroom resources and display screens." data-de="Montessori- und MINT-Aktivitäten, wissenschaftliche Projekte, Puppentheater und Lernbereiche – unterstützt durch moderne Lernmittel und Bildschirme im Klassenraum.">أنشطة مونتيسوري وSTEM، ومشروعات علمية، ومسرح دمى وأركان تعليمية، بدعم من وسائل حديثة وشاشات عرض في الصف.</span><span class="d" data-en="A strong American English curriculum builds reading, writing and listening through high-frequency words, CVC, stories, songs, interactive games and writing competitions." data-de="Ein starker amerikanischer Englisch-Lehrplan fördert Lesen, Schreiben und Hörverständnis mit häufigen Wörtern, CVC-Wörtern, Geschichten, Liedern, interaktiven Spielen und Schreibwettbewerben.">ومنهاج أمريكي قوي للإنجليزية يطوّر القراءة والكتابة والاستماع من خلال الكلمات الشائعة وأنماط CVC والقصص والأغاني والألعاب التفاعلية ومسابقات الكتابة.</span><span class="d" data-en="Activities are adapted to each child's abilities and needs." data-de="Die Aktivitäten werden an die Fähigkeiten und Bedürfnisse jedes Kindes angepasst.">نراعي في الأنشطة قدرات كل طفل واحتياجاته.</span></li>
       <li style="--c:var(--green)"><b data-en="Meal and rest" data-de="Mahlzeit und Pause">الوجبة والاستراحة</b><span class="d" data-en="A healthy meal, hand washing and a short rest." data-de="Eine gesunde Mahlzeit, Händewaschen und eine kurze Ruhepause.">وجبة صحية وغسل اليدين وراحة قصيرة.</span></li>
-      <li style="--c:var(--navy)"><b data-en="Story and going home" data-de="Geschichte und Abholung">القصة والانصراف</b><span class="d" data-en="We end the day with a calm story and hand each child back to their family." data-de="Wir beenden den Tag mit einer ruhigen Geschichte und übergeben jedes Kind seiner Familie.">نختم اليوم بقصة هادئة ثم نسلّم الأطفال لأهلهم.</span></li>
+      <li style="--c:var(--navy)"><b data-en="Daily assessment, story and going home" data-de="Tägliche Beobachtung, Geschichte und Abholung">التقييم اليومي والقصة والانصراف</b><span class="d" data-en="We follow each child's learning and skills every day, then end with a calm story and a safe handover to family." data-de="Wir begleiten täglich das Lernen und die Fähigkeiten jedes Kindes. Zum Abschluss gibt es eine ruhige Geschichte und die sichere Übergabe an die Familie.">نتابع تعلّم كل طفل ومهاراته يومياً، ونختم اليوم بقصة هادئة ثم نسلّمه بأمان إلى أهله.</span></li>
     </ol>
   </div>
 </section>
@@ -314,6 +346,8 @@
         <a href="#parents" data-en="Parents' corner" data-de="Elternbereich">ركن الأهل</a>
         <a href="#faq" data-en="FAQ" data-de="Häufige Fragen">أسئلة شائعة</a>
         <a href="#register" data-en="Register or book a visit" data-de="Anmelden oder Besuch buchen">سجّل أو احجز زيارة</a>
+        <a href="parents/" data-en="Parents' portal" data-de="Elternportal">بوابة أولياء الأمور</a>
+        <a href="teachers/" data-en="Teachers' portal" data-de="Lehrkräfteportal">بوابة المعلمات</a>
       </div>
       <div>
         <h4 data-en="Contact" data-de="Kontakt">تواصل معنا</h4>

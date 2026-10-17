@@ -40,5 +40,9 @@ h2,h3{font-weight:800}
 .a-news{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
 .a-news img{width:84px;height:84px;object-fit:cover;border-radius:12px;flex:none}
 .a-news .t{flex:1;min-width:0}.a-news .t b{display:block;color:var(--head)}
+.a-account-row{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--line)}
+.a-account-row strong,.a-account-meta,.a-account-date{display:block;overflow-wrap:anywhere}
+.a-account-meta{color:var(--muted);font-weight:700}
+.a-account-date{color:var(--muted);font-size:.88rem}
 .a-check{display:flex;gap:10px;align-items:center;margin:10px 0;font-family:var(--body);font-weight:400!important}
 .a-meter{height:12px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}.a-meter i{display:block;height:100%;background:var(--sun)}

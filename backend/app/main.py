@@ -8,20 +8,72 @@ import logging
 import os
 import re
 import secrets
+import smtplib
 import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from pwdlib import PasswordHash
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
+from app.database import get_session
+from app.models import (
+    Account,
+    Child,
+    DailyReport,
+    GuardianInvitation,
+    LoginAttempt,
+    PortalSession,
+    RegistrationRequest,
+    Role,
+    TeacherContent,
+    parent_child_links,
+    teacher_child_links,
+)
 logger = logging.getLogger(__name__)
 FILE_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|png|webp|gif|mp4|webm)$")
+CONTENT_TYPES = {
+    ".pdf": ("document", "application/pdf", b"%PDF-"),
+    ".jpg": ("image", "image/jpeg", b"\xff\xd8\xff"),
+    ".jpeg": ("image", "image/jpeg", b"\xff\xd8\xff"),
+    ".png": ("image", "image/png", b"\x89PNG\r\n\x1a\n"),
+    ".webp": ("image", "image/webp", b"RIFF"),
+    ".mp4": ("video", "video/mp4", b"ftyp"),
+    ".webm": ("video", "video/webm", b"\x1aE\xdf\xa3"),
+}
+MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+MAX_OTHER_BYTES = 50 * 1024 * 1024
+BLOCKED_EXTENSIONS = {
+    ".exe", ".bat", ".cmd", ".com", ".scr", ".msi", ".dll", ".js", ".mjs", ".vbs",
+    ".ps1", ".jar", ".sh", ".apk", ".app", ".lnk", ".reg", ".hta", ".html", ".htm", ".svg",
+}
+MAX_PRIVATE_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_PRIVATE_VIDEO_BYTES = 25 * 1024 * 1024
+MAX_TEACHER_CONTENT_BYTES = 250 * 1024 * 1024
+MAX_REPORT_ATTACHMENTS = 5
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_VIDEO_BYTES = 25 * 1024 * 1024
 SESSION_TTL_SECONDS = 8 * 60 * 60
+PORTAL_LOGIN_WINDOW_SECONDS = 15 * 60
+PORTAL_LOGIN_MAX_FAILURES = 5
+PASSWORD_HASHER = PasswordHash.recommended()
+DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash("dummy-password-used-for-timing-only")
+USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,80}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PHONE_RE = re.compile(r"^[0-9+()\-\s]{6,40}$")
+REGISTRATION_CODE_TTL_HOURS = 7 * 24
+REGISTRATION_REQUESTS_PER_HOUR = 30
+LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
 
 class GitHubError(Exception):
@@ -168,6 +220,88 @@ class SettingsRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PlatformLoginRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class GuardianSignupRequest(BaseModel):
+    invitation_code: str = Field(min_length=40, max_length=64)
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=12, max_length=256)
+    preferred_language: str = Field(
+        default="ar", min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern
+    )
+
+
+class RegistrationRequestCreate(BaseModel):
+    guardian_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=254, pattern=EMAIL_RE.pattern)
+    phone: str = Field(min_length=6, max_length=40, pattern=PHONE_RE.pattern)
+    child_name: str = Field(min_length=2, max_length=120)
+    child_birth_date: str = Field(default="", max_length=10, pattern=r"^(\d{4}-\d{2}-\d{2})?$")
+    relationship_to_child: str = Field(default="", max_length=40)
+    notes: str = Field(default="", max_length=1000)
+    preferred_language: str = Field(
+        default="ar", min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern
+    )
+
+
+class RegistrationDecision(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+
+
+class ChildCreateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+
+
+class InvitationCreateRequest(BaseModel):
+    expires_in_hours: int = Field(default=24, ge=1, le=168)
+
+
+class TeacherAssignmentRequest(BaseModel):
+    teacher_id: uuid.UUID
+
+
+class DailyReportRequest(BaseModel):
+    child_id: uuid.UUID
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=3000)
+    submit_for_review: bool = False
+
+
+class DailyReportUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=3000)
+    submit_for_review: bool = False
+
+
+class ReportStatusRequest(BaseModel):
+    status: str = Field(pattern="^(published|rejected|archived)$")
+
+
+class PreferredLanguageRequest(BaseModel):
+    language: str = Field(min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern)
+
+
+class TeacherAccountCreateRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=80, pattern=USERNAME_RE.pattern)
+    password: str = Field(min_length=12, max_length=256)
+    preferred_language: str = Field(
+        default="ar", min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern
+    )
+
+
+class AccountApprovalRequest(BaseModel):
+    status: str = Field(pattern="^(active|disabled)$")
+
+
+class PlatformPrincipal:
+    def __init__(self, account: Account, portal_session: PortalSession) -> None:
+        self.account = account
+        self.portal_session = portal_session
+
+
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
@@ -205,6 +339,51 @@ def verify_session_token(
         return None
 
 
+def create_portal_session_token(
+    account_id: uuid.UUID, token_id: str, secret: str, now: int | None = None
+) -> str:
+    issued_at = int(time.time()) if now is None else now
+    payload = _b64url(
+        json.dumps(
+            {
+                "sub": str(account_id),
+                "sid": token_id,
+                "typ": "portal",
+                "exp": issued_at + SESSION_TTL_SECONDS,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    signature = _b64url(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
+    return f"{payload}.{signature}"
+
+
+def verify_portal_session_token(
+    token: str, secret: str, now: int | None = None
+) -> tuple[uuid.UUID, str] | None:
+    try:
+        payload, signature = token.split(".", 1)
+        expected = _b64url(
+            hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(signature, expected):
+            return None
+        decoded = json.loads(
+            base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+        )
+        current_time = int(time.time()) if now is None else now
+        if (
+            decoded.get("typ") != "portal"
+            or not isinstance(decoded.get("sid"), str)
+            or not isinstance(decoded.get("exp"), int)
+            or decoded["exp"] <= current_time
+        ):
+            return None
+        return uuid.UUID(decoded["sub"]), decoded["sid"]
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
 async def require_admin(
     authorization: str | None = Header(default=None),
 ) -> str:
@@ -214,9 +393,90 @@ async def require_admin(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "سجّل الدخول إلى لوحة التحكم.")
     username = verify_session_token(authorization[7:], secret)
-    if not username:
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+    if not username or not hmac.compare_digest(username, admin_username):
         raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
     return username
+
+
+def get_platform_principal(
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+) -> PlatformPrincipal:
+    secret = os.getenv("SESSION_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "Platform sessions are not configured on the server.")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Sign in to the platform.")
+    verified = verify_portal_session_token(authorization[7:], secret)
+    if verified is None:
+        raise HTTPException(401, "Your platform session expired. Sign in again.")
+    account_id, token_id = verified
+    portal_session = session.scalar(
+        select(PortalSession).where(
+            PortalSession.account_id == account_id,
+            PortalSession.token_id == token_id,
+            PortalSession.revoked_at.is_(None),
+            PortalSession.expires_at > func.now(),
+        )
+    )
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles).selectinload(Role.permissions))
+        .where(
+            Account.id == account_id,
+            Account.is_active.is_(True),
+            Account.approval_status == "active",
+        )
+    )
+    if portal_session is None or account is None:
+        raise HTTPException(401, "Your platform session is no longer valid.")
+    return PlatformPrincipal(account, portal_session)
+
+
+def require_platform_role(role_name: str):
+    def check_role(
+        principal: PlatformPrincipal = Depends(get_platform_principal),
+    ) -> PlatformPrincipal:
+        if role_name not in {role.name for role in principal.account.roles}:
+            raise HTTPException(403, "You do not have permission to perform this action.")
+        return principal
+
+    return check_role
+
+
+def require_any_platform_role(*role_names: str):
+    def check_role(
+        principal: PlatformPrincipal = Depends(get_platform_principal),
+    ) -> PlatformPrincipal:
+        if not set(role_names).intersection(
+            {role.name for role in principal.account.roles}
+        ):
+            raise HTTPException(403, "You do not have permission to perform this action.")
+        return principal
+
+    return check_role
+
+
+def portal_session_result(
+    account: Account, session: Session, secret: str
+) -> dict[str, Any]:
+    token_id = secrets.token_hex(16)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
+    session.add(
+        PortalSession(
+            token_id=token_id,
+            account_id=account.id,
+            expires_at=expires_at,
+        )
+    )
+    return {
+        "access_token": create_portal_session_token(
+            account.id, token_id, secret
+        ),
+        "token_type": "bearer",
+        "expires_in": SESSION_TTL_SECONDS,
+    }
 
 
 async def update_content(mutator: Any, message: str) -> Any:
@@ -492,3 +752,1022 @@ async def update_settings(
             raise HTTPException(400, "يجب أن يبدأ الرابط بـ https://")
     await update_content(lambda data: data.update(settings=settings), "تعديل الإعدادات")
     return settings
+
+
+def admin_account_data(account: Account) -> dict[str, Any]:
+    return {
+        "id": str(account.id),
+        "username": account.username,
+        "roles": sorted(role.name for role in account.roles),
+        "approval_status": account.approval_status,
+        "created_at": account.created_at.isoformat() if account.created_at else None,
+    }
+
+
+@app.get("/api/admin/platform/accounts")
+def list_platform_accounts(
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    accounts = session.scalars(
+        select(Account)
+        .options(selectinload(Account.roles))
+        .join(Account.roles)
+        .where(Role.name.in_(("parent", "teacher")))
+        .order_by(Account.created_at.desc())
+    ).unique().all()
+    return [admin_account_data(account) for account in accounts]
+
+
+@app.post("/api/admin/platform/teacher-accounts", status_code=201)
+def create_platform_teacher_account(
+    payload: TeacherAccountCreateRequest,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    username = payload.username.strip().lower()
+    if not USERNAME_RE.fullmatch(username):
+        raise HTTPException(422, "Username contains unsupported characters.")
+    if session.scalar(select(Account.id).where(Account.username == username)) is not None:
+        raise HTTPException(409, "That username is already in use.")
+    teacher_role = session.scalar(select(Role).where(Role.name == "teacher"))
+    if teacher_role is None:
+        raise HTTPException(503, "Platform roles are not initialized. Run database migrations.")
+    account = Account(
+        username=username,
+        password_hash=PASSWORD_HASHER.hash(payload.password),
+        preferred_language=payload.preferred_language,
+        is_active=True,
+        approval_status="active",
+        roles=[teacher_role],
+    )
+    session.add(account)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "That username is already in use.") from exc
+    session.refresh(account)
+    return admin_account_data(account)
+
+
+@app.patch("/api/admin/platform/accounts/{account_id}/status")
+def update_platform_account_status(
+    account_id: uuid.UUID,
+    payload: AccountApprovalRequest,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles))
+        .where(Account.id == account_id)
+        .with_for_update()
+    )
+    if account is None or not {"parent", "teacher"}.intersection(
+        role.name for role in account.roles
+    ):
+        raise HTTPException(404, "Parent or teacher account not found.")
+    account.approval_status = payload.status
+    account.is_active = payload.status == "active"
+    if payload.status != "active":
+        session.execute(
+            update(PortalSession)
+            .where(
+                PortalSession.account_id == account.id,
+                PortalSession.revoked_at.is_(None),
+            )
+            .values(revoked_at=datetime.now(timezone.utc))
+        )
+    session.commit()
+    session.refresh(account)
+    return admin_account_data(account)
+
+
+@app.post("/api/platform/auth/login")
+def platform_login(
+    payload: PlatformLoginRequest,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    secret = os.getenv("SESSION_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "Platform sessions are not configured on the server.")
+
+    username = payload.username.strip().lower()
+    username_hash = hmac.new(
+        secret.encode(), username.encode(), hashlib.sha256
+    ).hexdigest()
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=PORTAL_LOGIN_WINDOW_SECONDS)
+    failures = session.scalar(
+        select(func.count())
+        .select_from(LoginAttempt)
+        .where(
+            LoginAttempt.username_hash == username_hash,
+            LoginAttempt.attempted_at >= cutoff,
+        )
+    )
+    if failures is not None and failures >= PORTAL_LOGIN_MAX_FAILURES:
+        raise HTTPException(429, "Too many sign-in attempts. Try again later.")
+
+    session.execute(
+        delete(LoginAttempt).where(
+            LoginAttempt.attempted_at < now - timedelta(days=1)
+        )
+    )
+    session.execute(
+        delete(PortalSession).where(PortalSession.expires_at < now)
+    )
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles).selectinload(Role.permissions))
+        .where(Account.username == username)
+    )
+    password_hash = account.password_hash if account is not None else DUMMY_PASSWORD_HASH
+    password_matches = PASSWORD_HASHER.verify(payload.password, password_hash)
+    if account is None or not password_matches:
+        session.add(LoginAttempt(username_hash=username_hash, attempted_at=now))
+        session.commit()
+        raise HTTPException(401, "Incorrect username or password.")
+
+    session.execute(
+        delete(LoginAttempt).where(LoginAttempt.username_hash == username_hash)
+    )
+    if account.approval_status == "pending":
+        session.commit()
+        raise HTTPException(403, "Your account is awaiting administrator approval.")
+    if account.approval_status != "active" or not account.is_active:
+        session.commit()
+        raise HTTPException(403, "Your account has been disabled. Contact the kindergarten.")
+    result = portal_session_result(account, session, secret)
+    session.commit()
+    return result
+
+
+@app.post("/api/platform/auth/redeem-invitation", status_code=202)
+def redeem_guardian_invitation(
+    payload: GuardianSignupRequest,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    secret = os.getenv("SESSION_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "Platform sessions are not configured on the server.")
+    username = payload.username.strip().lower()
+    if not USERNAME_RE.fullmatch(username):
+        raise HTTPException(422, "Username contains unsupported characters.")
+    token_hash = hashlib.sha256(payload.invitation_code.encode()).hexdigest()
+    now = datetime.now(timezone.utc)
+    invitation = session.scalar(
+        select(GuardianInvitation)
+        .where(
+            GuardianInvitation.token_hash == token_hash,
+            GuardianInvitation.redeemed_at.is_(None),
+            GuardianInvitation.expires_at > now,
+        )
+        .with_for_update()
+    )
+    if invitation is None:
+        raise HTTPException(400, "The invitation is invalid, expired, or already used.")
+    if session.scalar(select(Account.id).where(Account.username == username)) is not None:
+        raise HTTPException(409, "That username is already in use.")
+    parent_role = session.scalar(select(Role).where(Role.name == "parent"))
+    if parent_role is None:
+        raise HTTPException(503, "Platform roles are not initialized. Run database migrations.")
+
+    approved_in_advance = invitation.auto_approve
+    account = Account(
+        username=username,
+        password_hash=PASSWORD_HASHER.hash(payload.password),
+        preferred_language=payload.preferred_language,
+        is_active=approved_in_advance,
+        approval_status="active" if approved_in_advance else "pending",
+        roles=[parent_role],
+    )
+    session.add(account)
+    try:
+        session.flush()
+        session.execute(
+            parent_child_links.insert().values(
+                account_id=account.id,
+                child_id=invitation.child_id,
+                confirmed_at=now,
+            )
+        )
+        invitation.redeemed_at = now
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409, "The invitation could not be redeemed.") from exc
+    return {
+        "account_id": str(account.id),
+        "approval_status": account.approval_status,
+        "message": (
+            "Your account is ready. You can sign in now."
+            if approved_in_advance
+            else "Your account is awaiting administrator approval."
+        ),
+    }
+
+
+def registration_request_data(item: RegistrationRequest) -> dict[str, Any]:
+    return {
+        "id": str(item.id),
+        "guardian_name": item.guardian_name,
+        "email": item.email,
+        "phone": item.phone,
+        "child_name": item.child_name,
+        "child_birth_date": item.child_birth_date,
+        "relationship_to_child": item.relationship_to_child,
+        "notes": item.notes,
+        "status": item.status,
+        "email_sent": item.email_sent,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "decided_at": item.decided_at.isoformat() if item.decided_at else None,
+    }
+
+
+def send_registration_code_email(item: RegistrationRequest, code: str) -> bool:
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    if not host or not sender:
+        return False
+    base_url = os.getenv(
+        "PORTAL_BASE_URL", "https://zahra-123hub.github.io/Zahra-Almadain"
+    ).rstrip("/")
+    link = f"{base_url}/parents/?code={quote(code)}"
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = item.email
+    message["Subject"] = "روضة زهرة المدائن – تمت الموافقة على طلبك / Your request was approved"
+    message.set_content(
+        f"مرحباً {item.guardian_name}،\n"
+        "تمت الموافقة على طلب التسجيل. أكملي/أكمل إنشاء الحساب عبر الرابط التالي "
+        f"(صالح لمرة واحدة ولمدة 7 أيام):\n{link}\n\n"
+        f"Hello {item.guardian_name},\n"
+        "Your registration request was approved. Finish creating your account with the "
+        f"one-time link (valid for 7 days):\n{link}\n"
+    )
+    try:
+        with smtplib.SMTP(host, int(os.getenv("SMTP_PORT", "587")), timeout=15) as smtp:
+            smtp.starttls()
+            user = os.getenv("SMTP_USER", "")
+            if user:
+                smtp.login(user, os.getenv("SMTP_PASSWORD", ""))
+            smtp.send_message(message)
+        return True
+    except (OSError, ValueError, smtplib.SMTPException):
+        logger.exception("Could not send registration code email")
+        return False
+
+
+@app.post("/api/platform/registration-requests", status_code=202)
+def create_registration_request(
+    payload: RegistrationRequestCreate,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store"
+    email = payload.email.strip().lower()
+    recent = session.scalar(
+        select(func.count())
+        .select_from(RegistrationRequest)
+        .where(
+            RegistrationRequest.created_at
+            >= datetime.now(timezone.utc) - timedelta(hours=1)
+        )
+    )
+    if recent is not None and recent >= REGISTRATION_REQUESTS_PER_HOUR:
+        raise HTTPException(429, "Too many requests. Try again later.")
+    if (
+        session.scalar(
+            select(RegistrationRequest.id).where(
+                RegistrationRequest.email == email,
+                RegistrationRequest.status == "pending",
+            )
+        )
+        is not None
+    ):
+        raise HTTPException(409, "A request for this email is already awaiting review.")
+    session.add(
+        RegistrationRequest(
+            guardian_name=payload.guardian_name.strip(),
+            email=email,
+            phone=payload.phone.strip(),
+            child_name=payload.child_name.strip(),
+            child_birth_date=payload.child_birth_date,
+            relationship_to_child=payload.relationship_to_child.strip(),
+            notes=payload.notes.strip(),
+            preferred_language=payload.preferred_language,
+        )
+    )
+    session.commit()
+    return {"message": "Your request was received. The kindergarten will review it."}
+
+
+@app.get("/api/admin/platform/registration-requests")
+def list_registration_requests(
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    items = session.scalars(
+        select(RegistrationRequest)
+        .order_by(RegistrationRequest.created_at.desc())
+        .limit(200)
+    ).all()
+    return [registration_request_data(item) for item in items]
+
+
+@app.post("/api/admin/platform/registration-requests/{request_id}/decision")
+def decide_registration_request(
+    request_id: uuid.UUID,
+    payload: RegistrationDecision,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    item = session.scalar(
+        select(RegistrationRequest)
+        .where(RegistrationRequest.id == request_id)
+        .with_for_update()
+    )
+    if item is None:
+        raise HTTPException(404, "Registration request not found.")
+    if item.status != "pending":
+        raise HTTPException(409, "This request has already been decided.")
+    item.decided_at = datetime.now(timezone.utc)
+    if payload.decision == "reject":
+        item.status = "rejected"
+        session.commit()
+        return {"request": registration_request_data(item)}
+
+    child = Child(display_name=item.child_name)
+    session.add(child)
+    session.flush()
+    code = secrets.token_urlsafe(32)
+    invitation = GuardianInvitation(
+        child_id=child.id,
+        token_hash=hashlib.sha256(code.encode()).hexdigest(),
+        auto_approve=True,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(hours=REGISTRATION_CODE_TTL_HOURS),
+    )
+    session.add(invitation)
+    session.flush()
+    item.status = "approved"
+    item.invitation_id = invitation.id
+    item.email_sent = send_registration_code_email(item, code)
+    session.commit()
+    return {
+        "request": registration_request_data(item),
+        "registration_code": code,
+        "expires_at": invitation.expires_at.isoformat(),
+    }
+
+
+@app.post("/api/platform/auth/logout")
+def platform_logout(
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    principal.portal_session.revoked_at = datetime.now(timezone.utc)
+    session.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"ok": True}
+
+
+@app.get("/api/platform/auth/me")
+def platform_me(
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    account = principal.account
+    roles = sorted(role.name for role in account.roles)
+    permissions = sorted(
+        {
+            permission.name
+            for role in account.roles
+            for permission in role.permissions
+        }
+    )
+    return {
+        "id": str(account.id),
+        "username": account.username,
+        "preferred_language": account.preferred_language,
+        "roles": roles,
+        "permissions": permissions,
+    }
+
+
+@app.patch("/api/platform/auth/language")
+def update_platform_language(
+    payload: PreferredLanguageRequest,
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store"
+    principal.account.preferred_language = payload.language
+    session.commit()
+    return {"preferred_language": principal.account.preferred_language}
+
+
+@app.post("/api/platform/children", status_code=201)
+def create_child_profile(
+    payload: ChildCreateRequest,
+    principal: PlatformPrincipal = Depends(require_platform_role("admin")),
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    display_name = payload.display_name.strip()
+    if not display_name:
+        raise HTTPException(422, "A child display name is required.")
+    child = Child(display_name=display_name, created_by_id=principal.account.id)
+    session.add(child)
+    session.commit()
+    return {"id": str(child.id), "display_name": child.display_name}
+
+
+@app.post("/api/platform/children/{child_id}/guardian-invitations", status_code=201)
+def create_guardian_invitation(
+    child_id: uuid.UUID,
+    payload: InvitationCreateRequest,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("admin")),
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    child = session.scalar(
+        select(Child).where(Child.id == child_id, Child.is_active.is_(True))
+    )
+    if child is None:
+        raise HTTPException(404, "Child profile not found.")
+
+    code = secrets.token_urlsafe(32)
+    invitation = GuardianInvitation(
+        child_id=child.id,
+        token_hash=hashlib.sha256(code.encode()).hexdigest(),
+        created_by_id=principal.account.id,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(hours=payload.expires_in_hours),
+    )
+    session.add(invitation)
+    session.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "invitation_code": code,
+        "expires_at": invitation.expires_at.isoformat(),
+    }
+
+
+@app.get("/api/platform/children")
+def list_platform_children(
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> list[dict[str, str]]:
+    response.headers["Cache-Control"] = "no-store"
+    role_names = {role.name for role in principal.account.roles}
+    if "admin" in role_names:
+        children = session.scalars(
+            select(Child)
+            .where(Child.is_active.is_(True))
+            .order_by(Child.display_name)
+        ).all()
+    elif "parent" in role_names:
+        children = session.scalars(
+            select(Child)
+            .join(parent_child_links, parent_child_links.c.child_id == Child.id)
+            .where(
+                parent_child_links.c.account_id == principal.account.id,
+                Child.is_active.is_(True),
+            )
+            .order_by(Child.display_name)
+        ).all()
+    else:
+        raise HTTPException(403, "This account cannot view child profiles.")
+    return [{"id": str(child.id), "display_name": child.display_name} for child in children]
+
+
+def report_data(report: DailyReport) -> dict[str, Any]:
+    return {
+        "id": str(report.id),
+        "child_id": str(report.child_id),
+        "title": report.title,
+        "body": report.body,
+        "language": report.language,
+        "status": report.status,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "published_at": report.published_at.isoformat() if report.published_at else None,
+    }
+
+
+def teacher_content_data(content: TeacherContent) -> dict[str, Any]:
+    return teacher_content_metadata(
+        content.id,
+        content.report_id,
+        content.category,
+        content.original_name,
+        content.media_type,
+        content.byte_size,
+        content.created_at,
+    )
+
+
+def teacher_content_metadata(
+    content_id: uuid.UUID,
+    report_id: uuid.UUID | None,
+    category: str,
+    filename: str,
+    media_type: str,
+    size: int,
+    created_at: datetime | None,
+) -> dict[str, Any]:
+    return {
+        "id": str(content_id),
+        "report_id": str(report_id) if report_id else None,
+        "category": category,
+        "filename": filename,
+        "media_type": media_type,
+        "size": size,
+        "created_at": created_at.isoformat() if created_at else None,
+    }
+
+
+def private_content_media(filename: str, contents: bytes, category: str) -> tuple[str, int]:
+    extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if category not in {"document", "image", "video", "other", "report_attachment"}:
+        raise HTTPException(422, "Unsupported upload category.")
+    if extension in BLOCKED_EXTENSIONS:
+        raise HTTPException(415, "Executable and web-page files are not allowed.")
+    file_info = CONTENT_TYPES.get(extension)
+    if file_info is None:
+        if category not in {"other", "report_attachment"}:
+            raise HTTPException(422, "The selected upload category does not match the file type.")
+        return "application/octet-stream", MAX_OTHER_BYTES
+    file_category, media_type, signature = file_info
+    if category not in {"report_attachment", "other"} and category != file_category:
+        raise HTTPException(422, "The selected upload category does not match the file type.")
+    if extension == ".webp":
+        valid_file = contents.startswith(signature) and contents[8:12] == b"WEBP"
+    elif extension == ".mp4":
+        valid_file = len(contents) >= 12 and contents[4:8] == signature
+    else:
+        valid_file = contents.startswith(signature)
+    if not valid_file:
+        raise HTTPException(415, "The uploaded file contents do not match its file type.")
+    max_size = {
+        "document": MAX_DOCUMENT_BYTES,
+        "image": MAX_PRIVATE_IMAGE_BYTES,
+        "video": MAX_PRIVATE_VIDEO_BYTES,
+    }[file_category]
+    return media_type, max_size
+
+
+def private_content_response(content: TeacherContent, response: Response) -> Response:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Disposition"] = (
+        "attachment; filename*=UTF-8''" + quote(content.original_name, safe="")
+    )
+    return Response(
+        content=content.contents,
+        media_type=content.media_type,
+        headers=response.headers,
+    )
+
+
+@app.post("/api/platform/children/{child_id}/teachers", status_code=201)
+def assign_teacher_to_child(
+    child_id: uuid.UUID,
+    payload: TeacherAssignmentRequest,
+    principal: PlatformPrincipal = Depends(require_platform_role("admin")),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
+    teacher = session.scalar(
+        select(Account)
+        .join(Account.roles)
+        .where(Account.id == payload.teacher_id, Account.is_active.is_(True), Role.name == "teacher")
+    )
+    if child is None or teacher is None:
+        raise HTTPException(404, "Active child or teacher account not found.")
+    if session.execute(
+        select(teacher_child_links.c.account_id).where(
+            teacher_child_links.c.account_id == teacher.id,
+            teacher_child_links.c.child_id == child.id,
+        )
+    ).first():
+        raise HTTPException(409, "Teacher is already assigned to this child.")
+    session.execute(
+        teacher_child_links.insert().values(
+            account_id=teacher.id,
+            child_id=child.id,
+            assigned_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+    return {"ok": True}
+
+
+@app.get("/api/platform/teacher/children")
+def list_teacher_children(
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, str]]:
+    response.headers["Cache-Control"] = "no-store"
+    children = session.scalars(
+        select(Child)
+        .join(teacher_child_links, teacher_child_links.c.child_id == Child.id)
+        .where(
+            teacher_child_links.c.account_id == principal.account.id,
+            Child.is_active.is_(True),
+        )
+        .order_by(Child.display_name)
+    ).all()
+    return [{"id": str(child.id), "display_name": child.display_name} for child in children]
+
+
+@app.get("/api/platform/teacher/content")
+def list_teacher_content(
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    contents = session.execute(
+        select(
+            TeacherContent.id,
+            TeacherContent.report_id,
+            TeacherContent.category,
+            TeacherContent.original_name,
+            TeacherContent.media_type,
+            TeacherContent.byte_size,
+            TeacherContent.created_at,
+        )
+        .where(TeacherContent.owner_id == principal.account.id)
+        .order_by(TeacherContent.created_at.desc())
+    ).all()
+    return [
+        teacher_content_metadata(
+            content.id,
+            content.report_id,
+            content.category,
+            content.original_name,
+            content.media_type,
+            content.byte_size,
+            content.created_at,
+        )
+        for content in contents
+    ]
+
+
+@app.get("/api/platform/admin/teacher-content")
+def list_all_teacher_content(
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_platform_role("admin")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    contents = session.execute(
+        select(
+            TeacherContent.id,
+            TeacherContent.report_id,
+            TeacherContent.category,
+            TeacherContent.original_name,
+            TeacherContent.media_type,
+            TeacherContent.byte_size,
+            TeacherContent.created_at,
+            Account.username,
+        )
+        .join(Account, Account.id == TeacherContent.owner_id)
+        .order_by(TeacherContent.created_at.desc())
+    ).all()
+    return [
+        {
+            **teacher_content_metadata(
+                content.id,
+                content.report_id,
+                content.category,
+                content.original_name,
+                content.media_type,
+                content.byte_size,
+                content.created_at,
+            ),
+            "owner_username": content.username,
+        }
+        for content in contents
+    ]
+
+
+@app.post("/api/platform/teacher/content", status_code=201)
+async def upload_teacher_content(
+    response: Response,
+    file: UploadFile = File(...),
+    category: str = Form(...),
+    report_id: uuid.UUID | None = Form(default=None),
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    filename = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not filename or len(filename) > 180:
+        raise HTTPException(422, "A filename of up to 180 characters is required.")
+    if category == "report_attachment":
+        if report_id is None:
+            raise HTTPException(422, "Select a report for its attachment.")
+        report = session.scalar(
+            select(DailyReport).where(
+                DailyReport.id == report_id,
+                DailyReport.author_id == principal.account.id,
+                DailyReport.status.in_(("draft", "rejected")),
+            ).with_for_update()
+        )
+        if report is None:
+            raise HTTPException(404, "Editable report not found.")
+        attachment_count = session.scalar(
+            select(func.count()).select_from(TeacherContent).where(
+                TeacherContent.report_id == report.id
+            )
+        )
+        if attachment_count is not None and attachment_count >= MAX_REPORT_ATTACHMENTS:
+            raise HTTPException(409, "A report can have up to five attachments.")
+    elif report_id is not None:
+        raise HTTPException(422, "Only report attachments can be linked to a report.")
+
+    extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    known = CONTENT_TYPES.get(extension)
+    if known is None:
+        _, max_size = private_content_media(filename, b"", category)
+    else:
+        max_size = {
+            "document": MAX_DOCUMENT_BYTES,
+            "image": MAX_PRIVATE_IMAGE_BYTES,
+            "video": MAX_PRIVATE_VIDEO_BYTES,
+        }[known[0]]
+    contents = await file.read(max_size + 1)
+    await file.close()
+    if not contents:
+        raise HTTPException(422, "The uploaded file is empty.")
+    if len(contents) > max_size:
+        raise HTTPException(413, "The file exceeds the size limit for its type.")
+    media_type, _ = private_content_media(filename, contents, category)
+    session.scalar(
+        select(Account.id)
+        .where(Account.id == principal.account.id)
+        .with_for_update()
+    )
+    used_bytes = session.scalar(
+        select(func.coalesce(func.sum(TeacherContent.byte_size), 0)).where(
+            TeacherContent.owner_id == principal.account.id
+        )
+    )
+    if (used_bytes or 0) + len(contents) > MAX_TEACHER_CONTENT_BYTES:
+        raise HTTPException(413, "The teacher account has reached its 250 MB storage limit.")
+    content = TeacherContent(
+        owner_id=principal.account.id,
+        report_id=report_id,
+        category=category,
+        original_name=filename,
+        media_type=media_type,
+        byte_size=len(contents),
+        contents=contents,
+    )
+    session.add(content)
+    session.commit()
+    session.refresh(content)
+    return teacher_content_data(content)
+
+
+@app.get("/api/platform/teacher/content/{content_id}/download")
+@app.get("/api/platform/admin/teacher-content/{content_id}/download")
+def download_teacher_content(
+    content_id: uuid.UUID,
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    content = session.get(TeacherContent, content_id)
+    if content is None:
+        raise HTTPException(404, "Private upload not found.")
+    roles = {role.name for role in principal.account.roles}
+    if content.owner_id != principal.account.id and "admin" not in roles:
+        raise HTTPException(404, "Private upload not found.")
+    return private_content_response(content, response)
+
+
+@app.delete("/api/platform/teacher/content/{content_id}", status_code=204)
+@app.delete("/api/platform/admin/teacher-content/{content_id}", status_code=204)
+def delete_teacher_content(
+    content_id: uuid.UUID,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    owner_id = session.scalar(
+        select(TeacherContent.owner_id).where(TeacherContent.id == content_id)
+    )
+    if owner_id is None:
+        raise HTTPException(404, "Private upload not found.")
+    roles = {role.name for role in principal.account.roles}
+    if owner_id != principal.account.id and "admin" not in roles:
+        raise HTTPException(404, "Private upload not found.")
+    session.execute(delete(TeacherContent).where(TeacherContent.id == content_id))
+    session.commit()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/platform/teacher/reports/{report_id}/attachments")
+def list_teacher_report_attachments(
+    report_id: uuid.UUID,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    report = session.scalar(
+        select(DailyReport).where(
+            DailyReport.id == report_id, DailyReport.author_id == principal.account.id
+        )
+    )
+    if report is None:
+        raise HTTPException(404, "Report not found.")
+    contents = session.execute(
+        select(
+            TeacherContent.id,
+            TeacherContent.report_id,
+            TeacherContent.category,
+            TeacherContent.original_name,
+            TeacherContent.media_type,
+            TeacherContent.byte_size,
+            TeacherContent.created_at,
+        )
+        .where(TeacherContent.report_id == report.id, TeacherContent.owner_id == principal.account.id)
+        .order_by(TeacherContent.created_at.asc())
+    ).all()
+    return [
+        teacher_content_metadata(
+            content.id,
+            content.report_id,
+            content.category,
+            content.original_name,
+            content.media_type,
+            content.byte_size,
+            content.created_at,
+        )
+        for content in contents
+    ]
+
+
+@app.get("/api/platform/teacher/reports")
+def list_teacher_reports(
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    reports = session.scalars(
+        select(DailyReport)
+        .where(DailyReport.author_id == principal.account.id)
+        .order_by(DailyReport.created_at.desc())
+    ).all()
+    return [report_data(report) for report in reports]
+
+
+@app.post("/api/platform/teacher/reports", status_code=201)
+def create_teacher_report(
+    payload: DailyReportRequest,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    assigned = session.execute(
+        select(teacher_child_links.c.child_id).where(
+            teacher_child_links.c.account_id == principal.account.id,
+            teacher_child_links.c.child_id == payload.child_id,
+        )
+    ).first()
+    if assigned is None:
+        raise HTTPException(404, "Assigned child not found.")
+    title, body = payload.title.strip(), payload.body.strip()
+    if not title or not body:
+        raise HTTPException(422, "Report title and text are required.")
+    report = DailyReport(
+        child_id=payload.child_id,
+        author_id=principal.account.id,
+        title=title,
+        body=body,
+        language=principal.account.preferred_language,
+        status="submitted" if payload.submit_for_review else "draft",
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    return report_data(report)
+
+
+@app.patch("/api/platform/teacher/reports/{report_id}")
+def update_teacher_report(
+    report_id: uuid.UUID,
+    payload: DailyReportUpdateRequest,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    report = session.scalar(
+        select(DailyReport).where(
+            DailyReport.id == report_id,
+            DailyReport.author_id == principal.account.id,
+            DailyReport.status.in_(("draft", "rejected")),
+        )
+    )
+    if report is None:
+        raise HTTPException(404, "Editable report not found.")
+    title, body = payload.title.strip(), payload.body.strip()
+    if not title or not body:
+        raise HTTPException(422, "Report title and text are required.")
+    report.title = title
+    report.body = body
+    report.language = principal.account.preferred_language
+    report.status = "submitted" if payload.submit_for_review else "draft"
+    report.published_at = None
+    session.commit()
+    session.refresh(report)
+    return report_data(report)
+
+
+@app.get("/api/platform/review/reports")
+def list_reports_for_review(
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role("manager", "admin")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    reports = session.scalars(
+        select(DailyReport)
+        .where(DailyReport.status == "submitted")
+        .order_by(DailyReport.created_at.asc())
+    ).all()
+    return [report_data(report) for report in reports]
+
+
+@app.patch("/api/platform/review/reports/{report_id}")
+def update_report_status(
+    report_id: uuid.UUID,
+    payload: ReportStatusRequest,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role("manager", "admin")),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    report = session.scalar(
+        select(DailyReport).where(
+            DailyReport.id == report_id, DailyReport.status == "submitted"
+        )
+    )
+    if report is None:
+        raise HTTPException(404, "Submitted report not found.")
+    report.status = payload.status
+    if payload.status == "published":
+        report.published_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(report)
+    response.headers["Cache-Control"] = "no-store"
+    return report_data(report)
+
+
+@app.get("/api/platform/children/{child_id}/reports")
+def list_parent_child_reports(
+    child_id: uuid.UUID,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("parent")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    linked = session.execute(
+        select(parent_child_links.c.child_id).where(
+            parent_child_links.c.account_id == principal.account.id,
+            parent_child_links.c.child_id == child_id,
+        )
+    ).first()
+    if linked is None:
+        raise HTTPException(404, "Child profile not found.")
+    reports = session.scalars(
+        select(DailyReport)
+        .where(DailyReport.child_id == child_id, DailyReport.status == "published")
+        .order_by(DailyReport.published_at.desc())
+    ).all()
+    return [report_data(report) for report in reports]
