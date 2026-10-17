@@ -12,7 +12,7 @@ var CONFIG = {
   news: [
     {tag: {ar:"إعلان", en:"Announcement", de:"Ankündigung"},
      title: {ar:"الافتتاح الكبير لروضة زهرة المدائن", en:"Grand opening of Zahrat Al-Madayn", de:"Große Eröffnung von Zahrat Al-Madayn"},
-     text: {ar:"إلى سكان المليحة: بشرى سارة من روضة زهرة المدائن الخاصة، الروضة المثالية. يسعدنا استقبالكم وزيارتكم.", en:"To the families of Al-Maliha: good news from Zahrat Al-Madayn Private Kindergarten, the ideal kindergarten. We would be glad to welcome you.", de:"An die Familien von Al-Maliha: gute Nachrichten vom Privatkindergarten Zahrat Al-Madayn, dem idealen Kindergarten. Wir freuen uns auf Ihren Besuch."},
+     text: {ar:"إلى سكان دمشق: بشرى سارة من روضة زهرة المدائن الخاصة، الروضة المثالية. يسعدنا استقبالكم وزيارتكم.", en:"To the families of Damascus: good news from Zahrat Al-Madayn Private Kindergarten, the ideal kindergarten. We would be glad to welcome you.", de:"An die Familien von Damaskus: gute Nachrichten vom Privatkindergarten Zahrat Al-Madayn, dem idealen Kindergarten. Wir freuen uns auf Ihren Besuch."},
      img: "POSTER",
      cta: {ar:"سجّل طفلك", en:"Register your child", de:"Kind anmelden"}}
   ]
