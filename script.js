@@ -1,9 +1,10 @@
 /* ===== إعدادات الروضة: عدّل هذه القيم فقط ===== */
 var CONFIG = {
-  whatsapp: "963993517586",
-  phoneDisplay: "0993 517 586",
+  apiBase: "https://zahra-123hub-almadain-api.onrender.com",
+  whatsapp: "963985122704",
+  phoneDisplay: "+963 985 122 704",
   mapUrl: "https://www.google.com/maps/search/?api=1&query=33.4815114%2C36.3742841",
-  minAge: 3, maxAge: 6,
+  minAge: 2, maxAge: 6,
   hours: {ar: "", en: "", de: ""},   // مثال: {ar:"من الأحد إلى الخميس، 8:00 إلى 13:00", en:"Sunday to Thursday, 8:00 to 13:00", de:"Sonntag bis Donnerstag, 8:00 bis 13:00"}
   facebook: "https://www.facebook.com/profile.php?id=61593288236023",
   instagram: "https://www.instagram.com/zhrtalmdayn2026/",
@@ -19,6 +20,7 @@ var CONFIG = {
 var ASSETS = {LOGO: "logo.png", POSTER: "poster.jpg"};
 
 var DYN = {settings:{}, gallery:[], news:[]};
+var API_BASE = (window.ZM_API_BASE || CONFIG.apiBase).replace(/\/+$/, "");
 var L = "ar";
 function tr(ar, en, de){ return L === "ar" ? ar : (L === "de" ? de : en); }
 function T(o){ return o[L] || o.en || o.ar; }
@@ -56,7 +58,7 @@ var BAG = [
 var FAQ = [
   {q:{ar:"كيف أسجّل طفلي؟", en:"How do I register my child?", de:"Wie melde ich mein Kind an?"}, a:{ar:"املأ النموذج في هذه الصفحة، أو راسلنا على واتساب، أو تفضّل بزيارة الروضة.", en:"Fill in the form on this page, write to us on WhatsApp, or visit the kindergarten.", de:"Füllen Sie das Formular auf dieser Seite aus, schreiben Sie uns auf WhatsApp oder besuchen Sie den Kindergarten."}},
   {q:{ar:"هل يمكنني الزيارة قبل التسجيل؟", en:"Can I visit before registering?", de:"Kann ich vor der Anmeldung vorbeikommen?"}, a:{ar:"نعم. اختر «حجز زيارة» في النموذج وحدد يوماً، وسنؤكد معك الموعد.", en:"Yes. Choose “Book a visit” in the form and pick a day. We will confirm the time with you.", de:"Ja. Wählen Sie im Formular «Besuch buchen» und einen Tag, wir bestätigen Ihnen die Uhrzeit."}},
-  {q:{ar:"ما الأعمار التي تستقبلها الروضة؟", en:"Which ages do you accept?", de:"Welche Altersgruppen nehmen Sie auf?"}, a:{ar:"الأطفال من 3 إلى 6 سنوات. يمكنك التحقق من عمر طفلك في ركن الأهل.", en:"Children from 3 to 6 years. You can check your child's age in the parents' corner.", de:"Kinder von 3 bis 6 Jahren. Das Alter Ihres Kindes können Sie im Elternbereich prüfen."}},
+  {q:{ar:"ما الأعمار التي تستقبلها الروضة؟", en:"Which ages do you accept?", de:"Welche Altersgruppen nehmen Sie auf?"}, a:{ar:"الأطفال من 2 إلى 6 سنوات. يمكنك التحقق من عمر طفلك في ركن الأهل.", en:"Children aged 2 to 6 are welcome. Check your child's age in the parents' corner.", de:"Kinder von 2 bis 6 Jahren. Das Alter Ihres Kindes können Sie im Elternbereich prüfen."}},
   {q:{ar:"ما هي الرسوم وأوقات الدوام؟", en:"What are the fees and opening hours?", de:"Was kostet der Kindergarten und wann ist geöffnet?"}, a:{ar:"نعطيك كل التفاصيل عند التواصل أو الزيارة. راسلنا على واتساب.", en:"We give you all the details when you contact or visit us. Write to us on WhatsApp.", de:"Alle Einzelheiten nennen wir Ihnen beim Kontakt oder Besuch. Schreiben Sie uns auf WhatsApp."}},
   {q:{ar:"أين تقع الروضة؟", en:"Where is the kindergarten?", de:"Wo befindet sich der Kindergarten?"}, a:{ar:"المليحة، آخر شارع الـ16، دوار البلاط الجديد، مواجه مدرسة البلاط.", en:"Al-Maliha, end of 16th Street, New Balat Roundabout, opposite Al-Balat School.", de:"Al-Maliha, Ende der 16. Straße, Neuer Balat-Kreisverkehr, gegenüber der Balat-Schule."}},
   {q:{ar:"ماذا يتعلم الطفل في الروضة؟", en:"What does a child learn here?", de:"Was lernt ein Kind bei Ihnen?"}, a:{ar:"لعب وعربية وفنون وأرقام وعلوم وقيم، بأنشطة قصيرة ومتنوعة تناسب هذا العمر.", en:"Play, Arabic, arts, numbers, science and values, through short, varied activities suited to this age.", de:"Spielen, Arabisch, Kreatives, Zahlen, Natur und Werte, in kurzen, abwechslungsreichen Aktivitäten, passend zum Alter."}},
@@ -142,28 +144,98 @@ $("copyPhone").addEventListener("click", function(){
 });
 
 /* ---------- flower ---------- */
-var NS = "http://www.w3.org/2000/svg", pg = $("petals"), info = $("petalInfo"), curPetal = -1, petalEls = [], petalTx = [];
+var NS = "http://www.w3.org/2000/svg", pg = $("petals"), info = $("petalInfo"), areaButtons = $("areaButtons"), curPetal = -1, petalEls = [], petalTx = [], petalControls = [];
 function renderPetals(){
-  petalTx.forEach(function(tx, i){ petalEls[i].setAttribute("aria-label", T(AREAS[i].n)); tx.textContent = T(AREAS[i].n); tx.style.fontSize = T(AREAS[i].n).length > 9 ? "11px" : "15px"; });
-  if(curPetal < 0){ info.textContent = tr("خمسة مجالات تنمو معاً مثل بتلات الزهرة.", "Five areas that grow together like the petals of a flower.", "Fünf Bereiche, die zusammen wachsen wie die Blütenblätter einer Blume."); return; }
-  var a = AREAS[curPetal]; info.innerHTML = ""; var b = document.createElement("b"); b.textContent = T(a.n); info.appendChild(b);
-  info.appendChild(document.createTextNode(T(a.d)));
-  var ul = document.createElement("ul"); a.a.forEach(function(x){ var li = document.createElement("li"); li.textContent = T(x); ul.appendChild(li); }); info.appendChild(ul);
+  petalTx.forEach(function(tx, i){
+    var label = T(AREAS[i].n);
+    petalEls[i].setAttribute("aria-label", AREAS[i].n.ar + " / " + AREAS[i].n.en);
+    petalEls[i].setAttribute("aria-pressed", String(curPetal === i));
+    petalEls[i].classList.toggle("on", curPetal === i);
+    petalControls[i].setAttribute("aria-pressed", String(curPetal === i));
+    tx.textContent = label;
+    tx.style.fontSize = label.length > 9 ? "11px" : "15px";
+  });
+  info.innerHTML = "";
+  if(curPetal < 0){
+    info.className = "petal-info is-intro";
+    var intro = document.createElement("p");
+    intro.className = "petal-intro";
+    intro.lang = "ar"; intro.dir = "rtl";
+    intro.textContent = "خمسة مجالات تنمو معاً مثل بتلات الزهرة.";
+    var introEn = document.createElement("p");
+    introEn.className = "petal-intro learn-en";
+    introEn.lang = "en";
+    introEn.dir = "ltr";
+    introEn.textContent = "Five areas grow together, like the petals of a flower.";
+    info.append(intro, introEn);
+    return;
+  }
+  info.className = "petal-info is-detail";
+  var a = AREAS[curPetal];
+  var heading = document.createElement("b");
+  heading.className = "petal-title";
+  var arName = document.createElement("span");
+  arName.lang = "ar"; arName.dir = "rtl"; arName.textContent = a.n.ar;
+  var enName = document.createElement("span");
+  enName.className = "learn-en"; enName.lang = "en"; enName.dir = "ltr"; enName.textContent = a.n.en;
+  heading.append(arName, enName);
+  var descriptions = document.createElement("div");
+  descriptions.className = "petal-descriptions";
+  var arDescription = document.createElement("p");
+  arDescription.lang = "ar"; arDescription.dir = "rtl"; arDescription.textContent = a.d.ar;
+  var enDescription = document.createElement("p");
+  enDescription.className = "learn-en"; enDescription.lang = "en"; enDescription.dir = "ltr"; enDescription.textContent = a.d.en;
+  var ul = document.createElement("ul");
+  a.a.forEach(function(item){
+    var li = document.createElement("li");
+    var arItem = document.createElement("span"); arItem.lang = "ar"; arItem.dir = "rtl"; arItem.textContent = item.ar;
+    var enItem = document.createElement("span"); enItem.className = "learn-en"; enItem.lang = "en"; enItem.dir = "ltr"; enItem.textContent = item.en;
+    li.append(arItem, enItem);
+    ul.appendChild(li);
+  });
+  descriptions.append(arDescription, enDescription);
+  info.append(heading, descriptions, ul);
+}
+function selectPetal(index){
+  curPetal = index;
+  renderPetals();
 }
 AREAS.forEach(function(a, i){
   var rot = i * 72, grp = document.createElementNS(NS, "g");
-  grp.setAttribute("class", "petal" + (a.dk ? " dk" : "")); grp.setAttribute("tabindex", "0"); grp.setAttribute("role", "button");
+  grp.setAttribute("class", "petal" + (a.dk ? " dk" : "")); grp.setAttribute("tabindex", "0"); grp.setAttribute("role", "button"); grp.setAttribute("aria-pressed", "false"); grp.setAttribute("aria-label", a.n.ar + " / " + a.n.en);
   var e = document.createElementNS(NS, "ellipse");
   e.setAttribute("cx", 200); e.setAttribute("cy", 92); e.setAttribute("rx", 46); e.setAttribute("ry", 72); e.setAttribute("fill", a.c);
   e.setAttribute("transform", "rotate(" + rot + " 200 170)");
   var rad = rot * Math.PI / 180, tx = document.createElementNS(NS, "text");
   tx.setAttribute("x", 200 + 92 * Math.sin(rad)); tx.setAttribute("y", 170 - 92 * Math.cos(rad) + 5); tx.setAttribute("text-anchor", "middle");
   grp.append(e, tx); petalTx.push(tx); petalEls.push(grp);
-  function show(){ petalEls.forEach(function(p){ p.classList.remove("on"); }); grp.classList.add("on"); curPetal = i; renderPetals(); }
-  grp.addEventListener("click", show);
-  grp.addEventListener("keydown", function(ev){ if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); show(); } });
+  grp.addEventListener("keydown", function(ev){ if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); selectPetal(i); } });
   pg.appendChild(grp);
+  var control = document.createElement("button");
+  control.type = "button";
+  control.className = "area-button";
+  control.setAttribute("aria-pressed", "false");
+  control.style.setProperty("--area-color", a.c);
+  var arLabel = document.createElement("span");
+  arLabel.lang = "ar"; arLabel.dir = "rtl"; arLabel.textContent = a.n.ar;
+  var enLabel = document.createElement("span");
+  enLabel.lang = "en"; enLabel.dir = "ltr"; enLabel.textContent = a.n.en;
+  control.append(arLabel, enLabel);
+  control.addEventListener("click", function(){ selectPetal(i); });
+  areaButtons.appendChild(control);
+  petalControls.push(control);
 });
+pg.ownerSVGElement.addEventListener("click", function(ev){
+  var svg = pg.ownerSVGElement, point = svg.createSVGPoint();
+  point.x = ev.clientX; point.y = ev.clientY;
+  var local = point.matrixTransform(svg.getScreenCTM().inverse());
+  var dx = local.x - 200, dy = 170 - local.y, distance = Math.hypot(dx, dy);
+  if(distance < 50 || distance > 140) return;
+  var angle = Math.atan2(dx, dy) * 180 / Math.PI;
+  var index = Math.round(((angle % 360) + 360) % 360 / 72) % AREAS.length;
+  selectPetal(index);
+});
+renderPetals();
 
 /* ---------- news ---------- */
 function newsItems(){
@@ -341,7 +413,7 @@ var sl = store("zm-lang"); applyLang(sl === "en" || sl === "de" ? sl : "ar");
 /* ===== المحتوى الديناميكي ولوحة التحكم ===== */
 var DEF = {fb: CONFIG.facebook, ig: CONFIG.instagram, phone: CONFIG.phoneDisplay, wa: CONFIG.whatsapp, hours: CONFIG.hours};
 var FILE_RE = /^[0-9a-f]{32}\.(jpg|png|webp|gif|mp4|webm)$/;
-function blobUrl(f){ return (typeof f === "string" && FILE_RE.test(f)) ? f : ""; }
+function blobUrl(f){ return (typeof f === "string" && FILE_RE.test(f)) ? API_BASE + "/api/assets/" + f : ""; }
 function sOf(v, n){ return typeof v === "string" ? v.slice(0, n) : ""; }
 function byNew(a, b){ return (b.ts || 0) - (a.ts || 0); }
 function dyn(s){ return {ar: s}; }
@@ -385,11 +457,12 @@ function renderGallery(){
 
 async function startDyn(){
   try{
-    var r = await fetch("content.json?t=" + Date.now(), {cache: "no-store"}); if(!r.ok) return;
+    var r = await fetch(API_BASE + "/api/content", {cache: "no-store"});
+    if(!r.ok) throw new Error("Dynamic content request failed: HTTP " + r.status);
     var d = await r.json();
     DYN.settings = d.settings || {}; DYN.gallery = d.gallery || []; DYN.news = d.news || [];
     applyContact(); renderHours(); renderNews(); renderGallery();
-  }catch(e){}
+  }catch(e){ console.error("Could not load dynamic kindergarten content.", e); }
 }
 
 

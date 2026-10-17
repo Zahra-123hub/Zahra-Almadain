@@ -1,35 +1,52 @@
-ZAHRAT AL-MADAYN: Website + Admin-Seite (kostenlos auf GitHub Pages)
+ZAHRAT AL-MADAYN: Website mit Python-Backend
 
-Alle Dateien liegen in diesem einen Ordner:
-  index.html     HTML der Website
-  style.css      Stylesheet der Website
-  script.js      JavaScript der Website
-  admin\         Ordner der Admin-Seite
-    index.html   HTML der Admin-Seite
-    admin.css    Stylesheet der Admin-Seite
-    admin.js     JavaScript und GitHub-API-Anbindung der Admin-Seite
-  content.json   gespeicherte Inhalte (Bilder, Videos, News, Einstellungen)
-  logo.png, poster.jpg, fav.png   Bilder der Website
+Projektstruktur
+  index.html, style.css, script.js       öffentliche Website
+  admin\index.html                      Admin-Seite
+  admin\admin.css, admin\admin.js       Admin-Oberfläche
+  backend\app\main.py                   FastAPI-Backend
+  backend\requirements.txt               Python-Abhängigkeiten
+  render.yaml                           Render-Blueprint
+  content.json                          Inhalte und Metadaten
 
-Die Website wird statisch über GitHub Pages bereitgestellt. Es gibt daher keinen
-separaten Server-Backend-Prozess: admin/admin.js kommuniziert direkt im Browser mit
-der GitHub-API und benötigt dafür das GitHub-Token des Administrators.
+Die Website bleibt auf GitHub Pages. Die Admin-Oberfläche sendet keine GitHub-
+Zugangsdaten mehr an den Browser. Das Python-Backend liest und ändert content.json
+und Mediendateien über die GitHub-API. Ein Fine-grained GitHub-Token wird nur als
+geheime Umgebungsvariable auf Render gespeichert.
 
-EINRICHTUNG MIT DEM BESTEHENDEN REPOSITORY
-1. Im Repository https://github.com/Zahra-123hub/Zahra-Almadain die Dateien aus diesem
-   Ordner hochladen: "Add file" > "Upload files" > "Commit changes".
-2. Settings > Pages > "Deploy from a branch" > Branch main, Ordner "/ (root)" > Save.
-   Nach 1-2 Minuten sollte die Website unter
-   https://zahra-123hub.github.io/Zahra-Almadain/ erreichbar sein.
-4. Token erstellen: GitHub-Profilbild > Settings > Developer settings > Personal access tokens >
-   Fine-grained tokens > Generate new token.
-   - Repository access: Only select repositories > dein Repository
-   - Permissions > Contents: Read and write
-5. Admin-Seite: https://zahra-123hub.github.io/Zahra-Almadain/admin/
-   Konto und Repository sind vorausgefüllt. Token dort selbst eingeben.
+Einrichtung und Veröffentlichung
+1. Den Projektstand nach main auf GitHub pushen.
+2. Bei render.com anmelden und "New" > "Blueprint" wählen. Das Repository
+   Zahra-123hub/Zahra-Almadain verbinden und den Blueprint render.yaml anwenden.
+3. Beim Einrichten die abgefragten geheimen Werte setzen:
+   - GITHUB_TOKEN: neuer Fine-grained Token für Zahra-Almadain,
+     Repository permission Contents: Read and write
+   - ADMIN_PASSWORD: ein neues, starkes Passwort für die Admin-Seite
+   SESSION_SECRET wird von Render erzeugt. Den Token niemals in den Quellcode,
+   in die Website oder in den Chat eintragen.
+4. Render veröffentlicht die API unter
+   https://zahra-123hub-almadain-api.onrender.com. Falls Render eine andere URL vergibt,
+   muss apiBase in script.js und API_BASE in admin/admin.js auf diese URL zeigen.
+5. GitHub Pages weiter für main und den Root-Ordner /(root) aktivieren.
+6. Website: https://zahra-123hub.github.io/Zahra-Almadain/
+   Admin:   https://zahra-123hub.github.io/Zahra-Almadain/admin/
+   Admin-Anmeldung: Benutzername admin und das auf Render gesetzte Passwort.
 
-WICHTIG
-- Das Token ist wie ein Passwort. Niemals weitergeben. Auf fremden Geraeten "خروج" druecken.
-- Ohne Token kann niemand etwas aendern.
-- Aenderungen erscheinen nach 1-2 Minuten auf der Website.
-- Bilder bis 10 MB, Videos bis 25 MB. Hochgeladene Dateien landen ebenfalls in diesem Repository.
+Lokaler Backend-Test
+  cd backend
+  python -m pip install -r requirements.txt
+  $env:GITHUB_TOKEN="DEIN_TOKEN"
+  $env:ADMIN_PASSWORD="LOKALES_PASSWORT"
+  $env:SESSION_SECRET="EIN_LANGER_ZUFAELLIGER_WERT"
+  python -m uvicorn app.main:app --reload --port 8001
+
+Vor dem lokalen Browser-Test API_BASE in script.js und admin/admin.js auf
+http://127.0.0.1:8001 setzen. ALLOWED_ORIGINS muss den Ursprung der lokalen
+Website enthalten.
+
+Sicherheit
+- Den zuvor im Chat offengelegten GitHub-Token widerrufen und einen neuen
+  Token direkt als Render-Secret speichern.
+- Das Admin-Passwort ist derzeit ein gemeinsames Passwort. Nicht mit anderen
+  Personen teilen; individuelle Admin-Konten können später ergänzt werden.
+- GitHub-Token und SESSION_SECRET nie veröffentlichen oder committen.
