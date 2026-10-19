@@ -3,9 +3,15 @@
 
   var root = document.getElementById("portal");
   var portalType = root.dataset.portal;
+  var isLogin = portalType === "login";
   var isTeacherPortal = portalType === "teacher";
   var storeKey = isTeacherPortal ? "zm-teacher-session" : "zm-parent-session";
-  var langKey = isTeacherPortal ? "zm-teacher-lang" : "zm-parent-lang";
+  var langKey = isLogin ? "zm-login-lang" : isTeacherPortal ? "zm-teacher-lang" : "zm-parent-lang";
+  var PORTAL_TARGETS = {
+    admin: {key: "zm-admin-session", lang: "zm-admin-lang", url: "../admin/"},
+    teacher: {key: "zm-teacher-session", lang: "zm-teacher-lang", url: "../teachers/"},
+    parent: {key: "zm-parent-session", lang: "zm-parent-lang", url: "../parents/"}
+  };
   var token = sessionStorage.getItem(storeKey) || "";
   var lang = localStorage.getItem(langKey) === "en" ? "en" : "ar";
   var profile = null;
@@ -18,7 +24,7 @@
   var loginAlert = "";
   (function readCodeFromLink() {
     var code = new URLSearchParams(window.location.search).get("code");
-    if (!code || !/^[A-Za-z0-9_-]{40,64}$/.test(code)) return;
+    if (!code || !/^[A-Za-z0-9_-]{6,64}$/.test(code)) return;
     signupMode = true;
     formState.invitation_code = code;
     history.replaceState(null, "", window.location.pathname);
@@ -27,6 +33,10 @@
   var copy = {
     ar: {
       parentTitle: "بوابة أولياء الأمور", teacherTitle: "بوابة المعلمات",
+      publishSite: "النشر على الموقع (صور، فيديو، أخبار)",      finishTitle: "إكمال التسجيل: أنشئي حسابك", finishHint: "أدخلي رمز التسجيل الذي وصلك، ثم اختاري اسم مستخدم وكلمة مرور لحسابك.",
+      newUsername: "اختاري اسم مستخدم", usernameRule: "أحرف إنجليزية وأرقام و . _ - فقط، 3 أحرف على الأقل.",
+      newPassword: "اختاري كلمة مرور", passwordRule: "12 حرفاً على الأقل.", confirmPassword: "أعيدي كتابة كلمة المرور",
+      passwordMismatch: "كلمتا المرور غير متطابقتين.", loginTitle: "تسجيل الدخول", loginIntro: "ادخلي ببياناتك، وسننقلك تلقائياً إلى بوابتك حسب نوع حسابك.",
       school: "روضة زهرة المدائن", parentWelcome: "تابع التقارير اليومية المنشورة لأطفالك.",
       teacherWelcome: "أنشئي مسودات التقارير وأرسليها للمراجعة. لن تظهر للأهل حتى اعتمادها.",
       login: "تسجيل الدخول", signup: "إنشاء حساب بدعوة", username: "اسم المستخدم",
@@ -82,6 +92,10 @@
     },
     en: {
       parentTitle: "Parents' portal", teacherTitle: "Teachers' portal",
+      publishSite: "Publish to website (photos, videos, news)",      finishTitle: "Finish registration: create your account", finishHint: "Enter the registration code you received, then choose a username and password for your account.",
+      newUsername: "Choose a username", usernameRule: "English letters, digits and . _ - only, at least 3 characters.",
+      newPassword: "Choose a password", passwordRule: "At least 12 characters.", confirmPassword: "Repeat the password",
+      passwordMismatch: "The two passwords do not match.", loginTitle: "Sign in", loginIntro: "Sign in and we will take you to the right portal for your account.",
       school: "Zahrat Al-Madayn Kindergarten", parentWelcome: "View the published daily reports for your children.",
       teacherWelcome: "Save reports as drafts or submit them for review. Families will not see them until approved.",
       login: "Sign in", signup: "Join with an invitation", username: "Username",
@@ -163,6 +177,7 @@
     "The file exceeds its size or storage limit.": {ar:"تجاوز الملف الحد المسموح للحجم أو التخزين.",en:"The file exceeds its size or storage limit."}
   };
   var t = function (key) { return copy[lang][key] || key; };
+  function portalTitle() { return isLogin ? t("loginTitle") : isTeacherPortal ? t("teacherTitle") : t("parentTitle"); }
   var element = function (tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -217,7 +232,7 @@
     logo.alt = "";
     brand.appendChild(logo);
     var brandText = element("div");
-    brandText.appendChild(element("h1", "", isTeacherPortal ? t("teacherTitle") : t("parentTitle")));
+    brandText.appendChild(element("h1", "", portalTitle()));
     brandText.appendChild(element("span", "", t("school")));
     brand.appendChild(brandText);
     inner.appendChild(brand);
@@ -239,6 +254,11 @@
       langGroup.appendChild(languageButton);
     });
     actions.appendChild(langGroup);
+    if (token && isTeacherPortal) {
+      var publishLink = element("a", "p-button sun", t("publishSite"));
+      publishLink.href = "../admin/";
+      actions.appendChild(publishLink);
+    }
     if (token) actions.appendChild(button(t("logout"), "outline", logout));
     inner.appendChild(actions);
     bar.appendChild(inner);
@@ -257,17 +277,18 @@
     container.appendChild(msg);
   }
   function loginScreen() {
+    if (!isLogin) { window.location.replace("../login/"); return; }
     var main = shell();
     main.classList.add("p-auth-main");
     var layout = element("div", "p-auth-layout");
     var intro = element("section", "p-auth-intro");
     intro.appendChild(element("span", "p-auth-kicker", t("secureAccess")));
-    intro.appendChild(element("h2", "", isTeacherPortal ? t("teacherTitle") : t("parentTitle")));
-    intro.appendChild(element("p", "", isTeacherPortal ? t("teacherPortalIntro") : t("parentPortalIntro")));
+    intro.appendChild(element("h2", "", portalTitle()));
+    intro.appendChild(element("p", "", isLogin ? t("loginIntro") : isTeacherPortal ? t("teacherPortalIntro") : t("parentPortalIntro")));
     intro.appendChild(element("div", "p-auth-note", isTeacherPortal ? t("signInHint") : t("parentSignupHint")));
     layout.appendChild(intro);
     var card = element("section", "p-card p-auth-card");
-    card.appendChild(element("h2", "", isTeacherPortal ? t("teacherTitle") : t("parentTitle")));
+    card.appendChild(element("h2", "", portalTitle()));
     card.appendChild(element("p", "p-subtitle", t("signInHint")));
     var error = element("p", "p-alert error");
     error.setAttribute("role", "alert");
@@ -275,13 +296,14 @@
       card.querySelectorAll("form,.p-form-switch,.p-alert").forEach(function (node) { node.remove(); });
       if (requestMode) { drawRequestForm(); return; }
       var form = element("form");
-      var username = field(t("username"), "text", "username");
+      var username = field(signupMode ? t("newUsername") : t("username"), "text", "username");
       username.autocomplete = "username";
+      if (signupMode) { username.pattern = "[A-Za-z0-9_.\-]{3,80}"; username.dir = "ltr"; username.autocapitalize = "none"; }
       username.required = true;
       username.minLength = 3;
       username.value = formState.username;
       username.addEventListener("input", function () { formState.username = username.value; });
-      var password = field(t("password"), "password", signupMode ? "new-password" : "current-password");
+      var password = field(signupMode ? t("newPassword") : t("password"), "password", signupMode ? "new-password" : "current-password");
       password.required = true;
       password.minLength = signupMode ? 12 : 1;
       password.value = formState.password;
@@ -289,24 +311,39 @@
       form.appendChild(username.parentNode.parentNode);
       form.appendChild(password.parentNode.parentNode);
       var invite = null;
+      var confirm = null;
       if (signupMode) {
         invite = field(t("invite"), "text", "off");
         invite.required = true;
-        invite.minLength = 40;
+        invite.minLength = 6;
         invite.maxLength = 64;
         invite.dir = "ltr";
+        invite.placeholder = "XXXX-XXXX";
+        invite.style.textTransform = "uppercase";
+        invite.style.letterSpacing = ".12em";
         invite.value = formState.invitation_code;
         invite.addEventListener("input", function () { formState.invitation_code = invite.value; });
-        form.insertBefore(invite.parentNode.parentNode, password.parentNode.parentNode);
+        form.insertBefore(invite.parentNode.parentNode, username.parentNode.parentNode);
+        username.parentNode.appendChild(element("small", "p-muted", t("usernameRule")));
+        password.parentNode.appendChild(element("small", "p-muted", t("passwordRule")));
+        confirm = field(t("confirmPassword"), "password", "new-password");
+        confirm.required = true;
+        confirm.minLength = 12;
+        form.appendChild(confirm.parentNode.parentNode);
+        var heading = element("div", "p-finish-intro");
+        heading.appendChild(element("h3", "", t("finishTitle")));
+        heading.appendChild(element("p", "p-muted", t("finishHint")));
+        form.insertBefore(heading, form.firstChild);
       }
       var submit = element("button", "p-button sun", signupMode ? t("createAccount") : t("signIn"));
       submit.type = "submit";
       form.appendChild(submit);
       form.addEventListener("submit", function (event) {
         event.preventDefault();
-        submit.disabled = true;
         error.textContent = "";
-        var path = signupMode ? "/api/platform/auth/redeem-invitation" : "/api/platform/auth/login";
+        if (signupMode && password.value !== confirm.value) { error.className = "p-alert error"; error.textContent = t("passwordMismatch"); return; }
+        submit.disabled = true;
+        var path = signupMode ? "/api/platform/auth/redeem-invitation" : isLogin ? "/api/auth/entry" : "/api/platform/auth/login";
         var payload = {username: username.value.trim(), password: password.value};
         if (signupMode) {
           payload.invitation_code = invite.value.trim();
@@ -314,15 +351,34 @@
         }
         request(path, {method: "POST", body: JSON.stringify(payload)}).then(function (result) {
           if (signupMode) {
+            var chosen = {username: username.value.trim(), password: password.value};
             signupMode = false;
             formState.password = "";
             formState.invitation_code = "";
+            if (result.approval_status === "active" && isLogin) {
+              // The code was issued by the kindergarten, so the account is ready: sign in right away.
+              return request("/api/auth/entry", {method: "POST", body: JSON.stringify(chosen)}).then(function (login) {
+                var target = PORTAL_TARGETS[login.role];
+                if (!target) throw new Error(t("accessDenied"));
+                sessionStorage.setItem(target.key, login.access_token);
+                localStorage.setItem(target.lang, lang);
+                window.location.href = target.url;
+              });
+            }
             loginAlert = result.approval_status === "active" ? t("accountReadyNotice") : t("approvalPendingNotice");
             drawForm();
             return;
           }
-          token = result.access_token;
           formState.password = "";
+          if (isLogin) {
+            var target = PORTAL_TARGETS[result.role];
+            if (!target) throw new Error(t("accessDenied"));
+            sessionStorage.setItem(target.key, result.access_token);
+            localStorage.setItem(target.lang, lang);
+            window.location.href = target.url;
+            return;
+          }
+          token = result.access_token;
           sessionStorage.setItem(storeKey, token);
           return loadDashboard();
         }).catch(function (err) {
@@ -834,8 +890,7 @@
         : data.roles.indexOf("parent") !== -1;
       if (!allowed) {
         token = ""; sessionStorage.removeItem(storeKey);
-        loginScreen();
-        root.querySelector('[role="alert"]').textContent = t("accessDenied");
+        window.location.replace("../login/");
         return;
       }
       if (data.preferred_language === "ar" || data.preferred_language === "en") {
@@ -855,28 +910,24 @@
     });
   }
   function logout() {
-    request("/api/platform/auth/logout").then(function () {
+    request("/api/platform/auth/logout", {method: "POST"}).catch(function () {}).then(function () {
       token = "";
       sessionStorage.removeItem(storeKey);
       profile = null;
-      render();
-    }).catch(function (error) {
-      token = "";
-      sessionStorage.removeItem(storeKey);
-      profile = null;
-      loginAlert = errorMessage(error);
-      render();
+      window.location.href = "../login/";
     });
   }
   function render() {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
-    document.title = isTeacherPortal ? t("teacherTitle") + " | " + t("school") : t("parentTitle") + " | " + t("school");
+    document.title = portalTitle() + " | " + t("school");
     if (token && profile) {
       var main = shell();
       if (isTeacherPortal) renderTeacher(main); else renderParent(main);
     } else if (token) {
       loadDashboard();
+    } else if (!isLogin) {
+      window.location.replace("../login/");
     } else {
       loginScreen();
     }

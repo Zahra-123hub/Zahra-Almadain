@@ -395,3 +395,7 @@ html[lang=ar] .learn-prompt .learn-en{display:none}
 /* Day section: clearer lines */
 .day span.d{color:var(--ink);font-size:1.05rem;line-height:1.75;margin-top:6px}
 .day li b{display:block;font-size:1.2rem}
+
+/* Mobile polish */
+.area-button:last-child:nth-child(odd){grid-column:1 / -1;justify-self:center;width:calc(50% - 4px)}
+.learning-card p,.learning-card li,.day span.d,.feat span.d{text-wrap:pretty}

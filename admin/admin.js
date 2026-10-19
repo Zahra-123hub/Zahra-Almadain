@@ -1,6 +1,16 @@
 var DATA = {settings:{}, gallery:[], news:[]}, tab = "gallery";
 var API_BASE = (window.ZM_API_BASE || (/^(localhost|127.0.0.1)$/.test(location.hostname) ? "http://127.0.0.1:8001" : "https://zahra-123hub-almadain-api.onrender.com")).replace(/\/+$/, "");
 var ADMIN_TOKEN = sessionStorage.getItem("zm-admin-session") || "";
+// Teachers publish website content with their portal session; accounts and settings stay admin-only.
+var TEACHER_MODE = false;
+if(!ADMIN_TOKEN){
+  ADMIN_TOKEN = sessionStorage.getItem("zm-teacher-session") || "";
+  TEACHER_MODE = !!ADMIN_TOKEN;
+}
+function clearSessions(){
+  ADMIN_TOKEN = "";
+  try{ sessionStorage.removeItem("zm-admin-session"); sessionStorage.removeItem("zm-teacher-session"); }catch(e){}
+}
 var ADMIN_LANG = localStorage.getItem("zm-admin-lang") === "en" ? "en" : "ar";
 var FILE_RE = /^[0-9a-f]{32}\.(jpg|png|webp|gif|mp4|webm)$/;
 var EN_TEXT = {
@@ -352,7 +362,7 @@ function tabAccounts(){
   var password = h("input", {type:"password", id:"a-teacher-password", autocomplete:"new-password", minlength:"12", maxlength:"256"});
   var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء حساب المعلمة"});
   var form = h("form", {class:"a-card"}, [
-    h("h3", {text:"أنشئ حساب معلمة جديداً. سيبقى بانتظار تفعيلك."}),
+    h("h3", {text:"أنشئ حساب معلمة جديداً. يكون الحساب مفعّلاً فوراً."}),
     h("label", {for:"a-teacher-username", text:"اسم المستخدم"}), username,
     h("label", {for:"a-teacher-password", text:"كلمة المرور الأولية (12 محرفاً على الأقل)"}), password,
     h("div", {class:"a-row"}, [create]), msg
@@ -370,17 +380,19 @@ function tabAccounts(){
     reqMsg, reqCode, reqBody);
   function showApprovalCode(result){
     var base = (window.location.origin.indexOf("http") === 0 ? window.location.origin : "https://zahra-123hub.github.io/Zahra-Almadain").replace(/\/admin.*$/, "");
-    var link = base + "/parents/?code=" + encodeURIComponent(result.registration_code);
+    var link = base + "/login/?code=" + encodeURIComponent(result.registration_code);
     var sent = result.request.email_sent;
     reqCode.innerHTML = "";
+    var codeBox = h("div", {style:"font-size:2rem;font-weight:800;letter-spacing:.18em;direction:ltr;text-align:center;padding:14px;margin:10px 0;border:2px dashed var(--sun);border-radius:14px", text:result.registration_code});
     var linkInput = h("input", {type:"text", readonly:"readonly", value:link, dir:"ltr", style:"width:100%"});
     reqCode.appendChild(h("div", {class:"a-card", style:"border:2px solid var(--sun)"}, [
       h("strong", {text:"تمت الموافقة على الطلب: " + result.request.guardian_name}),
-      h("p", {class:"hint", text: sent ? "أُرسل رابط التسجيل إلى بريد ولي الأمر. هذا الرابط يظهر هنا مرة واحدة فقط." : "لم يُرسل البريد الإلكتروني تلقائياً (لم يُضبط الإرسال). انسخ الرابط وأرسله إلى ولي الأمر يدوياً. يظهر هنا مرة واحدة فقط."}),
+      h("p", {class:"hint", text: sent ? "تم إنشاء رمز التسجيل تلقائياً وأُرسل إلى بريد ولي الأمر. يظهر هنا مرة واحدة فقط." : "تم إنشاء رمز التسجيل تلقائياً. لم يُرسل البريد (لم يُضبط الإرسال)، فسلّم الرمز إلى ولي الأمر يدوياً. يظهر هنا مرة واحدة فقط."}),
+      codeBox,
+      h("p", {class:"hint", text:"أو الرابط المباشر:"}),
       linkInput,
-      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"نسخ الرابط", onclick:function(){
-        linkInput.select();
-        try{ navigator.clipboard.writeText(link); }catch(e){ document.execCommand("copy"); }
+      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"نسخ الرمز", onclick:function(){
+        try{ navigator.clipboard.writeText(result.registration_code); }catch(e){}
       }})])
     ]));
   }
@@ -395,13 +407,53 @@ function tabAccounts(){
       await reloadRequests();
     }catch(error){ setMsg(reqMsg, errText(error), "err"); }
   }
+  async function newCode(id){
+    try{
+      var result = await request("/api/admin/platform/registration-requests/" + encodeURIComponent(id) + "/new-code", {method:"POST"});
+      reqCode.innerHTML = "";
+      showApprovalCode(result);
+      setMsg(reqMsg, "تم إنشاء رمز جديد، والرمز السابق لم يعد صالحاً.", "ok");
+      await reloadRequests();
+    }catch(error){ setMsg(reqMsg, errText(error), "err"); }
+  }
+  function editRequestForm(item, close){
+    var fields = [
+      ["guardian_name","اسم ولي الأمر","text"], ["email","البريد الإلكتروني","email"], ["phone","رقم الهاتف","tel"],
+      ["child_name","اسم الطفل","text"], ["child_birth_date","تاريخ ميلاد الطفل","date"],
+      ["relationship_to_child","صلة القرابة","text"], ["notes","ملاحظات","textarea"]
+    ];
+    var inputs = {};
+    var formMsg = h("div", {class:"a-msg", role:"status"});
+    var form = h("form", {style:"flex-basis:100%;width:100%;margin-top:12px"});
+    fields.forEach(function(f){
+      var input = f[2] === "textarea" ? h("textarea", {rows:"3", maxlength:"1000"}) : h("input", {type:f[2]});
+      input.value = item[f[0]] || "";
+      if(f[0] === "email" || f[0] === "phone") input.dir = "ltr";
+      inputs[f[0]] = input;
+      form.append(h("label", {text:f[1]}), input);
+    });
+    var save = h("button", {type:"submit", class:"a-btn sun", text:"حفظ التعديلات"});
+    form.append(h("div", {class:"a-row"}, [save, h("button", {type:"button", class:"a-btn ghost", text:"إلغاء", onclick:close})]), formMsg);
+    form.addEventListener("submit", async function(event){
+      event.preventDefault();
+      save.disabled = true;
+      var body = {preferred_language:"ar"};
+      fields.forEach(function(f){ body[f[0]] = inputs[f[0]].value.trim(); });
+      try{
+        await request("/api/admin/platform/registration-requests/" + encodeURIComponent(item.id), {method:"PATCH", body:JSON.stringify(body)});
+        setMsg(reqMsg, "تم حفظ التعديلات.", "ok");
+        await reloadRequests();
+      }catch(error){ setMsg(formMsg, errText(error), "err"); save.disabled = false; }
+    });
+    return form;
+  }
   async function reloadRequests(){
     reqBody.innerHTML = "";
     try{
       var items = await request("/api/admin/platform/registration-requests");
       if(!items.length){ reqBody.appendChild(h("p", {class:"hint", text:"لا توجد طلبات تسجيل."})); return; }
       items.forEach(function(item){
-        var statusText = item.status === "pending" ? "بانتظار القرار" : item.status === "approved" ? "تمت الموافقة" : "مرفوض";
+        var statusText = item.status === "pending" ? "بانتظار القرار" : item.status === "approved" ? (item.registered ? "تم التسجيل وإنشاء الحساب" : "تمت الموافقة، بانتظار إكمال التسجيل") : "مرفوض";
         var details = [
           "الهاتف: " + item.phone,
           "البريد: " + item.email,
@@ -417,12 +469,30 @@ function tabAccounts(){
             item.created_at ? h("time", {class:"a-account-date", text:new Date(item.created_at).toLocaleDateString(ADMIN_LANG === "ar" ? "ar" : "en")}) : null
           ])
         ]);
+        var actions = h("div", {class:"a-row"});
         if(item.status === "pending"){
-          row.appendChild(h("div", {class:"a-row"}, [
-            h("button", {type:"button", class:"a-btn sun", text:"موافقة وإرسال الرمز", onclick:function(){ decideRequest(item.id, "approve"); }}),
+          actions.append(
+            h("button", {type:"button", class:"a-btn sun", text:"موافقة وإنشاء الرمز", onclick:function(){ decideRequest(item.id, "approve"); }}),
             h("button", {type:"button", class:"a-btn danger", text:"رفض", onclick:function(){ decideRequest(item.id, "reject"); }})
-          ]));
+          );
         }
+        if(item.status === "approved" && !item.registered){
+          actions.appendChild(h("button", {type:"button", class:"a-btn sun", text:"رمز جديد", onclick:function(){ newCode(item.id); }}));
+        }
+        var holder = h("div", {style:"flex-basis:100%;width:100%"});
+        actions.appendChild(h("button", {type:"button", class:"a-btn ghost", text:"تعديل", onclick:function(){
+          if(holder.firstChild){ holder.innerHTML = ""; return; }
+          holder.appendChild(editRequestForm(item, function(){ holder.innerHTML = ""; }));
+        }}));
+        if(!item.registered){
+          actions.appendChild(twoStep("حذف الطلب", async function(){
+            await request("/api/admin/platform/registration-requests/" + encodeURIComponent(item.id), {method:"DELETE"});
+            setMsg(reqMsg, "تم حذف الطلب.", "ok");
+            await reloadRequests();
+          }));
+        }
+        row.appendChild(actions);
+        row.appendChild(holder);
         reqBody.appendChild(row);
       });
     }catch(error){ reqBody.appendChild(h("p", {class:"a-msg err", text:error.message || "تعذّر تنفيذ العملية على الخادم."})); }
@@ -440,6 +510,8 @@ function tabAccounts(){
           h("div", {}, [
             h("strong", {text:account.username}),
             h("span", {class:"a-account-meta", text:role + " · " + status}),
+            account.guardian_name ? h("span", {class:"a-account-date", dir:"auto", text:"ولي الأمر: " + account.guardian_name + " · " + account.phone}) : null,
+            account.guardian_name ? h("span", {class:"a-account-date", dir:"auto", text:"البريد: " + account.email + " · الطفل: " + account.child_name}) : null,
             account.created_at ? h("time", {class:"a-account-date", text:new Date(account.created_at).toLocaleDateString(ADMIN_LANG === "ar" ? "ar" : "en")}) : null
           ])
         ]);
@@ -499,19 +571,104 @@ function tabAccounts(){
   ]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["accounts","حسابات المنصة"],["settings","الإعدادات"]];
+function tabChildren(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var reportsBody = h("div", {});
+  var childrenBody = h("div", {});
+  var reportsCard = h("div", {class:"a-card"}, [h("h3", {text:"تقارير بانتظار المراجعة"}),
+    h("p", {class:"hint", text:"تظهر التقارير للأهل فقط بعد نشرها من هنا. لا يرى الأهل إلا تقارير طفلهم."}), reportsBody]);
+  var childrenCard = h("div", {class:"a-card"}, [h("h3", {text:"الأطفال والمعلمات"}),
+    h("p", {class:"hint", text:"عيّن معلمة لكل طفل. لا تستطيع المعلمة كتابة تقرير إلا للأطفال المعيّنين لها."}), childrenBody]);
+  async function loadReports(){
+    reportsBody.innerHTML = "";
+    try{
+      var reports = await request("/api/admin/platform/reports");
+      if(!reports.length){ reportsBody.appendChild(h("p", {class:"hint", text:"لا توجد تقارير بانتظار المراجعة."})); return; }
+      reports.forEach(function(report){
+        function review(status){
+          return async function(){
+            try{
+              await request("/api/admin/platform/reports/" + encodeURIComponent(report.id), {method:"PATCH", body:JSON.stringify({status:status})});
+              setMsg(msg, status === "published" ? "تم نشر التقرير للأهل." : "تم إرجاع التقرير للمعلمة للتعديل.", "ok");
+              await loadReports();
+            }catch(error){ setMsg(msg, errText(error), "err"); }
+          };
+        }
+        reportsBody.appendChild(h("article", {class:"a-account-row"}, [
+          h("div", {style:"flex:1;min-width:220px"}, [
+            h("strong", {dir:"auto", text:report.title}),
+            h("span", {class:"a-account-meta", dir:"auto", text:"الطفل: " + report.child_name + " · المعلمة: " + report.author}),
+            h("span", {class:"a-account-date", dir:"auto", style:"white-space:pre-wrap", text:report.body})
+          ]),
+          h("div", {class:"a-row"}, [
+            h("button", {type:"button", class:"a-btn sun", text:"نشر للأهل", onclick:review("published")}),
+            h("button", {type:"button", class:"a-btn ghost", text:"إرجاع للتعديل", onclick:review("rejected")})
+          ])
+        ]));
+      });
+    }catch(error){ reportsBody.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
+  }
+  async function loadChildren(){
+    childrenBody.innerHTML = "";
+    try{
+      var results = await Promise.all([request("/api/admin/platform/children"), request("/api/admin/platform/accounts")]);
+      var children = results[0];
+      var teachers = results[1].filter(function(a){ return a.roles.indexOf("teacher") !== -1 && a.approval_status === "active"; });
+      if(!children.length){ childrenBody.appendChild(h("p", {class:"hint", text:"لا توجد ملفات أطفال بعد. تُنشأ تلقائياً عند الموافقة على طلب تسجيل."})); return; }
+      children.forEach(function(child){
+        var chips = h("div", {class:"a-row", style:"margin:6px 0"});
+        child.teachers.forEach(function(teacher){
+          chips.appendChild(h("button", {type:"button", class:"a-btn ghost", title:"إزالة التعيين", text:teacher.username + " ✕", onclick:async function(){
+            try{
+              await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/teachers/" + encodeURIComponent(teacher.id), {method:"DELETE"});
+              await loadChildren();
+            }catch(error){ setMsg(msg, errText(error), "err"); }
+          }}));
+        });
+        var assignedIds = child.teachers.map(function(t){ return t.id; });
+        var options = teachers.filter(function(t){ return assignedIds.indexOf(t.id) === -1; });
+        var select = h("select", {"aria-label":"اختر معلمة"});
+        options.forEach(function(t){ select.appendChild(new Option(t.username, t.id)); });
+        var add = h("button", {type:"button", class:"a-btn sun", text:"تعيين معلمة", onclick:async function(){
+          if(!select.value) return;
+          try{
+            await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/teachers", {method:"POST", body:JSON.stringify({teacher_id:select.value})});
+            setMsg(msg, "تم تعيين المعلمة.", "ok");
+            await loadChildren();
+          }catch(error){ setMsg(msg, errText(error), "err"); }
+        }});
+        childrenBody.appendChild(h("article", {class:"a-account-row"}, [
+          h("div", {style:"flex:1;min-width:220px"}, [
+            h("strong", {dir:"auto", text:child.display_name}),
+            h("span", {class:"a-account-date", text:child.parents.length ? "ولي الأمر: " + child.parents.join("، ") : "لم يكتمل تسجيل ولي الأمر بعد"}),
+            h("span", {class:"a-account-date", text:child.teachers.length ? "المعلمات:" : "لا توجد معلمة معيّنة"}),
+            chips
+          ]),
+          options.length ? h("div", {class:"a-row"}, [select, add]) : h("span", {class:"a-account-date", text:teachers.length ? "كل المعلمات معيّنات" : "أنشئ حساب معلمة أولاً"})
+        ]));
+      });
+    }catch(error){ childrenBody.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
+  }
+  loadReports(); loadChildren();
+  fill = null;
+  return h("section", {}, [msg, reportsCard, childrenCard]);
+}
+
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["accounts","حسابات المنصة"],["settings","الإعدادات"]]
+  .filter(function(t){ return !TEACHER_MODE || ["gallery","video","news"].indexOf(t[0]) !== -1; });
 function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
-  var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ sessionStorage.removeItem("zm-admin-session"); ADMIN_TOKEN = ""; start(); }});
+  var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ clearSessions(); start(); }});
   var view = h("a", {class:"a-btn sun", href:"../", target:"_blank", rel:"noopener", style:"text-decoration:none", text:"عرض الموقع"});
+  var back = TEACHER_MODE ? h("a", {class:"a-btn ghost", href:"../teachers/", style:"color:#fff;border-color:#fff;text-decoration:none", text:"العودة إلى بوابتي"}) : null;
   var tabs = h("div", {class:"a-tabs", role:"tablist"});
   TABS.forEach(function(t){
     var b = h("button", {type:"button", role:"tab", "aria-selected":String(tab === t[0]), text:t[1]});
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tabMedia("image"));
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch(), view, out])]), tabs]), main);
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "children" ? tabChildren() : tabMedia("image"));
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch(), back, view, out])]), tabs]), main);
 }
 function loginScreen(msg){
   var root = document.getElementById("app"); root.innerHTML = "";
@@ -525,7 +682,7 @@ function loginScreen(msg){
     try{
       var result = await request("/api/auth/login", {method:"POST", body:JSON.stringify({username:username.value.trim(), password:password.value})});
       ADMIN_TOKEN = result.access_token; sessionStorage.setItem("zm-admin-session", ADMIN_TOKEN);
-      DATA = await api("GET", "/admin/api/content"); draw();
+      DATA = await loadContent(); draw();
     }catch(e){ ADMIN_TOKEN = ""; sessionStorage.removeItem("zm-admin-session"); go.disabled = false; setMsg(err, errText(e), "err"); }
   });
   root.append(h("div", {class:"a-main", style:"max-width:420px"}, [h("div", {class:"a-card"}, [
@@ -535,10 +692,22 @@ function loginScreen(msg){
     h("label", {for:"l-pass", text:"كلمة المرور"}), password,
     h("div", {class:"a-row"}, [go]), err])]));
 }
+// If only the GitHub connection is missing (e.g. local testing), still open the dashboard
+// so the platform accounts tab remains usable.
+async function loadContent(){
+  try{ return await api("GET", "/admin/api/content"); }
+  catch(e){
+    if(e && e.message && /GitHub/.test(e.message)){
+      tab = TEACHER_MODE ? "gallery" : "accounts";
+      return {settings:{}, gallery:[], news:[]};
+    }
+    throw e;
+  }
+}
 function start(){
-  if(!ADMIN_TOKEN){ loginScreen(); return; }
-  api("GET", "/admin/api/content").then(function(data){ DATA = data; draw(); }, function(e){
-    ADMIN_TOKEN = ""; sessionStorage.removeItem("zm-admin-session"); loginScreen(errText(e));
+  if(!ADMIN_TOKEN){ window.location.replace("../login/"); return; }
+  loadContent().then(function(data){ DATA = data; draw(); }, function(e){
+    clearSessions(); window.location.replace("../login/");
   });
 }
 applyAdminLanguage();

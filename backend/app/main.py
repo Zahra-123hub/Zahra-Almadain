@@ -13,11 +13,12 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from collections.abc import Generator
 from typing import Any
 from urllib.parse import quote
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -26,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.database import get_session
+from app.database import get_engine, get_session
 from app.models import (
     Account,
     Child,
@@ -72,6 +73,28 @@ USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,80}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_RE = re.compile(r"^[0-9+()\-\s]{6,40}$")
 REGISTRATION_CODE_TTL_HOURS = 7 * 24
+CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+CODE_ATTEMPT_LIMIT = 10
+
+
+def new_registration_code() -> str:
+    """Short one-time code like K7QM-4XD9 (no confusing 0/O/1/I characters)."""
+    raw = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+    return f"{raw[:4]}-{raw[4:]}"
+
+
+def normalize_invitation_code(value: str) -> str:
+    cleaned = value.strip()
+    if len(cleaned) > 20:
+        return cleaned  # long codes issued by staff for a specific child
+    return re.sub(r"[\s-]", "", cleaned).upper()
+
+
+def client_address(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 REGISTRATION_REQUESTS_PER_HOUR = 30
 LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
@@ -226,7 +249,7 @@ class PlatformLoginRequest(BaseModel):
 
 
 class GuardianSignupRequest(BaseModel):
-    invitation_code: str = Field(min_length=40, max_length=64)
+    invitation_code: str = Field(min_length=6, max_length=64)
     username: str = Field(min_length=3, max_length=80)
     password: str = Field(min_length=12, max_length=256)
     preferred_language: str = Field(
@@ -397,6 +420,59 @@ async def require_admin(
     if not username or not hmac.compare_digest(username, admin_username):
         raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
     return username
+
+
+def optional_session() -> Generator[Session | None, None, None]:
+    try:
+        engine = get_engine()
+    except RuntimeError:
+        yield None
+        return
+    with Session(engine) as session:
+        yield session
+
+
+def require_publisher(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> str:
+    """Website content (gallery, news) may be managed by the admin or by teachers."""
+    secret = os.getenv("SESSION_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "لم يتم إعداد جلسات المسؤول على الخادم.")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "سجّل الدخول إلى لوحة التحكم.")
+    token = authorization[7:]
+    username = verify_session_token(token, secret)
+    if username and hmac.compare_digest(username, os.getenv("ADMIN_USERNAME", "admin")):
+        return username
+    verified = verify_portal_session_token(token, secret)
+    if verified is None:
+        raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
+    account_id, token_id = verified
+    if session is None:
+        raise HTTPException(503, "Platform storage is not configured on the server.")
+    portal_session = session.scalar(
+        select(PortalSession).where(
+            PortalSession.account_id == account_id,
+            PortalSession.token_id == token_id,
+            PortalSession.revoked_at.is_(None),
+            PortalSession.expires_at > func.now(),
+        )
+    )
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles))
+        .where(
+            Account.id == account_id,
+            Account.is_active.is_(True),
+            Account.approval_status == "active",
+        )
+    )
+    roles = {role.name for role in account.roles} if account is not None else set()
+    if portal_session is None or account is None or not roles & {"teacher", "manager", "admin"}:
+        raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
+    return account.username
 
 
 def get_platform_principal(
@@ -587,7 +663,7 @@ async def public_asset(name: str) -> Response:
 
 
 @app.get("/api/admin/content")
-async def admin_content(_username: str = Depends(require_admin)) -> dict[str, Any]:
+async def admin_content(_username: str = Depends(require_publisher)) -> dict[str, Any]:
     data, _sha = await store.get_content()
     return data
 
@@ -597,7 +673,7 @@ async def add_gallery_item(
     file: UploadFile = File(...),
     kind: str = Form(...),
     caption: str = Form(default=""),
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_publisher),
 ) -> dict[str, Any]:
     if kind not in ("image", "video"):
         raise HTTPException(400, "نوع العنصر غير صالح.")
@@ -617,7 +693,7 @@ async def add_gallery_item(
 async def update_gallery_caption(
     item_id: str,
     payload: dict[str, Any],
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_publisher),
 ) -> dict[str, bool]:
     caption = str(payload.get("caption", "")).strip()[:120]
 
@@ -633,7 +709,7 @@ async def update_gallery_caption(
 
 @app.delete("/api/admin/gallery/{item_id}")
 async def delete_gallery_item(
-    item_id: str, _username: str = Depends(require_admin)
+    item_id: str, _username: str = Depends(require_publisher)
 ) -> dict[str, bool]:
     removed: dict[str, Any] = {}
 
@@ -666,7 +742,7 @@ async def add_news(
     title: str = Form(...),
     text: str = Form(...),
     file: UploadFile | None = File(default=None),
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_publisher),
 ) -> dict[str, Any]:
     fields = await news_fields(tag, title, text)
     asset = await upload_asset(file, "image") if file and file.filename else ""
@@ -688,7 +764,7 @@ async def update_news(
     text: str = Form(...),
     file: UploadFile | None = File(default=None),
     remove_image: str = Form(default="0"),
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_publisher),
 ) -> dict[str, bool]:
     fields = await news_fields(tag, title, text)
     new_asset = await upload_asset(file, "image") if file and file.filename else None
@@ -713,7 +789,7 @@ async def update_news(
 
 @app.delete("/api/admin/news/{item_id}")
 async def delete_news(
-    item_id: str, _username: str = Depends(require_admin)
+    item_id: str, _username: str = Depends(require_publisher)
 ) -> dict[str, bool]:
     removed: dict[str, Any] = {}
 
@@ -778,7 +854,27 @@ def list_platform_accounts(
         .where(Role.name.in_(("parent", "teacher")))
         .order_by(Account.created_at.desc())
     ).unique().all()
-    return [admin_account_data(account) for account in accounts]
+    details = {
+        item.account_id: item
+        for item in session.scalars(
+            select(RegistrationRequest).where(
+                RegistrationRequest.account_id.in_([account.id for account in accounts])
+            )
+        )
+    }
+    result = []
+    for account in accounts:
+        data = admin_account_data(account)
+        request_item = details.get(account.id)
+        if request_item is not None:
+            data.update(
+                guardian_name=request_item.guardian_name,
+                email=request_item.email,
+                phone=request_item.phone,
+                child_name=request_item.child_name,
+            )
+        result.append(data)
+    return result
 
 
 @app.post("/api/admin/platform/teacher-accounts", status_code=201)
@@ -912,9 +1008,48 @@ def platform_login(
     return result
 
 
+@app.post("/api/auth/entry")
+def unified_login(
+    payload: PlatformLoginRequest,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Single sign-in: the account's role decides which portal the user lands on."""
+    response.headers["Cache-Control"] = "no-store"
+    secret = os.getenv("SESSION_SECRET", "")
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    if secret and admin_password:
+        same_user = secrets.compare_digest(
+            payload.username.strip(), os.getenv("ADMIN_USERNAME", "admin")
+        )
+        same_password = secrets.compare_digest(payload.password, admin_password)
+        if same_user and same_password:
+            return {
+                "role": "admin",
+                "access_token": create_session_token(payload.username.strip(), secret),
+                "token_type": "bearer",
+                "expires_in": SESSION_TTL_SECONDS,
+            }
+    result = platform_login(payload, response, session)
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles))
+        .where(Account.username == payload.username.strip().lower())
+    )
+    names = {role.name for role in account.roles} if account is not None else set()
+    if names & {"teacher", "manager", "admin"}:
+        result["role"] = "teacher"
+    elif "parent" in names:
+        result["role"] = "parent"
+    else:
+        raise HTTPException(403, "You do not have permission to perform this action.")
+    return result
+
+
 @app.post("/api/platform/auth/redeem-invitation", status_code=202)
 def redeem_guardian_invitation(
     payload: GuardianSignupRequest,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -925,8 +1060,22 @@ def redeem_guardian_invitation(
     username = payload.username.strip().lower()
     if not USERNAME_RE.fullmatch(username):
         raise HTTPException(422, "Username contains unsupported characters.")
-    token_hash = hashlib.sha256(payload.invitation_code.encode()).hexdigest()
+    code = normalize_invitation_code(payload.invitation_code)
+    token_hash = hashlib.sha256(code.encode()).hexdigest()
     now = datetime.now(timezone.utc)
+    attempt_key = hmac.new(
+        secret.encode(), ("redeem:" + client_address(request)).encode(), hashlib.sha256
+    ).hexdigest()
+    recent_failures = session.scalar(
+        select(func.count())
+        .select_from(LoginAttempt)
+        .where(
+            LoginAttempt.username_hash == attempt_key,
+            LoginAttempt.attempted_at >= now - timedelta(seconds=PORTAL_LOGIN_WINDOW_SECONDS),
+        )
+    )
+    if recent_failures is not None and recent_failures >= CODE_ATTEMPT_LIMIT:
+        raise HTTPException(429, "Too many sign-in attempts. Try again later.")
     invitation = session.scalar(
         select(GuardianInvitation)
         .where(
@@ -937,6 +1086,8 @@ def redeem_guardian_invitation(
         .with_for_update()
     )
     if invitation is None:
+        session.add(LoginAttempt(username_hash=attempt_key, attempted_at=now))
+        session.commit()
         raise HTTPException(400, "The invitation is invalid, expired, or already used.")
     if session.scalar(select(Account.id).where(Account.username == username)) is not None:
         raise HTTPException(409, "That username is already in use.")
@@ -964,6 +1115,14 @@ def redeem_guardian_invitation(
             )
         )
         invitation.redeemed_at = now
+        linked_request = session.scalar(
+            select(RegistrationRequest).where(
+                RegistrationRequest.invitation_id == invitation.id
+            )
+        )
+        if linked_request is not None:
+            linked_request.account_id = account.id
+            linked_request.registered_at = now
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -991,6 +1150,8 @@ def registration_request_data(item: RegistrationRequest) -> dict[str, Any]:
         "notes": item.notes,
         "status": item.status,
         "email_sent": item.email_sent,
+        "registered": item.account_id is not None,
+        "registered_at": item.registered_at.isoformat() if item.registered_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "decided_at": item.decided_at.isoformat() if item.decided_at else None,
     }
@@ -1004,7 +1165,7 @@ def send_registration_code_email(item: RegistrationRequest, code: str) -> bool:
     base_url = os.getenv(
         "PORTAL_BASE_URL", "https://zahra-123hub.github.io/Zahra-Almadain"
     ).rstrip("/")
-    link = f"{base_url}/parents/?code={quote(code)}"
+    link = f"{base_url}/login/?code={quote(code)}"
     message = EmailMessage()
     message["From"] = sender
     message["To"] = item.email
@@ -1012,10 +1173,10 @@ def send_registration_code_email(item: RegistrationRequest, code: str) -> bool:
     message.set_content(
         f"مرحباً {item.guardian_name}،\n"
         "تمت الموافقة على طلب التسجيل. أكملي/أكمل إنشاء الحساب عبر الرابط التالي "
-        f"(صالح لمرة واحدة ولمدة 7 أيام):\n{link}\n\n"
+        f"(صالح لمرة واحدة ولمدة 7 أيام):\n{link}\n\nرمز التسجيل: {code}\n\n"
         f"Hello {item.guardian_name},\n"
         "Your registration request was approved. Finish creating your account with the "
-        f"one-time link (valid for 7 days):\n{link}\n"
+        f"one-time link (valid for 7 days):\n{link}\nRegistration code: {code}\n"
     )
     try:
         with smtplib.SMTP(host, int(os.getenv("SMTP_PORT", "587")), timeout=15) as smtp:
@@ -1089,6 +1250,126 @@ def list_registration_requests(
     return [registration_request_data(item) for item in items]
 
 
+def locked_registration_request(session: Session, request_id: uuid.UUID) -> RegistrationRequest:
+    item = session.scalar(
+        select(RegistrationRequest)
+        .where(RegistrationRequest.id == request_id)
+        .with_for_update()
+    )
+    if item is None:
+        raise HTTPException(404, "Registration request not found.")
+    return item
+
+
+@app.patch("/api/admin/platform/registration-requests/{request_id}")
+def edit_registration_request(
+    request_id: uuid.UUID,
+    payload: RegistrationRequestCreate,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    item = locked_registration_request(session, request_id)
+    email = payload.email.strip().lower()
+    if email != item.email and item.status == "pending":
+        clash = session.scalar(
+            select(RegistrationRequest.id).where(
+                RegistrationRequest.email == email,
+                RegistrationRequest.status == "pending",
+                RegistrationRequest.id != item.id,
+            )
+        )
+        if clash is not None:
+            raise HTTPException(409, "A request for this email is already awaiting review.")
+    item.guardian_name = payload.guardian_name.strip()
+    item.email = email
+    item.phone = payload.phone.strip()
+    item.child_name = payload.child_name.strip()
+    item.child_birth_date = payload.child_birth_date
+    item.relationship_to_child = payload.relationship_to_child.strip()
+    item.notes = payload.notes.strip()
+    if item.invitation_id is not None:
+        invitation = session.get(GuardianInvitation, item.invitation_id)
+        child = session.get(Child, invitation.child_id) if invitation is not None else None
+        if child is not None:
+            child.display_name = item.child_name
+    session.commit()
+    return registration_request_data(item)
+
+
+@app.delete("/api/admin/platform/registration-requests/{request_id}", status_code=204)
+def delete_registration_request(
+    request_id: uuid.UUID,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> Response:
+    item = locked_registration_request(session, request_id)
+    if item.account_id is not None:
+        raise HTTPException(409, "This request already has a registered account.")
+    if item.invitation_id is not None:
+        invitation = session.get(GuardianInvitation, item.invitation_id)
+        item.invitation_id = None
+        session.flush()
+        if invitation is not None:
+            child_id = invitation.child_id
+            session.delete(invitation)
+            session.flush()
+            has_links = session.scalar(
+                select(func.count()).select_from(parent_child_links).where(
+                    parent_child_links.c.child_id == child_id
+                )
+            )
+            child = session.get(Child, child_id)
+            if child is not None and not has_links:
+                session.delete(child)
+    session.delete(item)
+    session.commit()
+    return Response(status_code=204)
+
+
+@app.post("/api/admin/platform/registration-requests/{request_id}/new-code")
+def reissue_registration_code(
+    request_id: uuid.UUID,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    item = locked_registration_request(session, request_id)
+    if item.status != "approved" or item.account_id is not None or item.invitation_id is None:
+        raise HTTPException(409, "A new code can only be issued for approved requests that are not registered yet.")
+    old = session.get(GuardianInvitation, item.invitation_id)
+    if old is None:
+        raise HTTPException(409, "The original invitation no longer exists.")
+    now = datetime.now(timezone.utc)
+    old.expires_at = now
+    code = new_registration_code()
+    while session.scalar(
+        select(GuardianInvitation.id).where(
+            GuardianInvitation.token_hash
+            == hashlib.sha256(normalize_invitation_code(code).encode()).hexdigest()
+        )
+    ) is not None:
+        code = new_registration_code()
+    invitation = GuardianInvitation(
+        child_id=old.child_id,
+        token_hash=hashlib.sha256(normalize_invitation_code(code).encode()).hexdigest(),
+        auto_approve=True,
+        expires_at=now + timedelta(hours=REGISTRATION_CODE_TTL_HOURS),
+    )
+    session.add(invitation)
+    session.flush()
+    item.invitation_id = invitation.id
+    item.email_sent = send_registration_code_email(item, code)
+    session.commit()
+    return {
+        "request": registration_request_data(item),
+        "registration_code": code,
+        "expires_at": invitation.expires_at.isoformat(),
+    }
+
+
 @app.post("/api/admin/platform/registration-requests/{request_id}/decision")
 def decide_registration_request(
     request_id: uuid.UUID,
@@ -1116,10 +1397,17 @@ def decide_registration_request(
     child = Child(display_name=item.child_name)
     session.add(child)
     session.flush()
-    code = secrets.token_urlsafe(32)
+    code = new_registration_code()
+    while session.scalar(
+        select(GuardianInvitation.id).where(
+            GuardianInvitation.token_hash
+            == hashlib.sha256(normalize_invitation_code(code).encode()).hexdigest()
+        )
+    ) is not None:
+        code = new_registration_code()
     invitation = GuardianInvitation(
         child_id=child.id,
-        token_hash=hashlib.sha256(code.encode()).hexdigest(),
+        token_hash=hashlib.sha256(normalize_invitation_code(code).encode()).hexdigest(),
         auto_approve=True,
         expires_at=datetime.now(timezone.utc)
         + timedelta(hours=REGISTRATION_CODE_TTL_HOURS),
@@ -1380,6 +1668,137 @@ def assign_teacher_to_child(
     )
     session.commit()
     return {"ok": True}
+
+
+@app.get("/api/admin/platform/children")
+def admin_list_children(
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    children = session.scalars(
+        select(Child).where(Child.is_active.is_(True)).order_by(Child.display_name)
+    ).all()
+    teacher_rows = session.execute(
+        select(teacher_child_links.c.child_id, Account.id, Account.username).join(
+            Account, Account.id == teacher_child_links.c.account_id
+        )
+    ).all()
+    parent_rows = session.execute(
+        select(parent_child_links.c.child_id, Account.username).join(
+            Account, Account.id == parent_child_links.c.account_id
+        )
+    ).all()
+    result = []
+    for child in children:
+        result.append(
+            {
+                "id": str(child.id),
+                "display_name": child.display_name,
+                "teachers": [
+                    {"id": str(row[1]), "username": row[2]}
+                    for row in teacher_rows
+                    if row[0] == child.id
+                ],
+                "parents": [row[1] for row in parent_rows if row[0] == child.id],
+            }
+        )
+    return result
+
+
+@app.post("/api/admin/platform/children/{child_id}/teachers", status_code=201)
+def admin_assign_teacher(
+    child_id: uuid.UUID,
+    payload: TeacherAssignmentRequest,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
+    teacher = session.scalar(
+        select(Account)
+        .join(Account.roles)
+        .where(Account.id == payload.teacher_id, Account.is_active.is_(True), Role.name == "teacher")
+    )
+    if child is None or teacher is None:
+        raise HTTPException(404, "Active child or teacher account not found.")
+    if session.execute(
+        select(teacher_child_links.c.account_id).where(
+            teacher_child_links.c.account_id == teacher.id,
+            teacher_child_links.c.child_id == child.id,
+        )
+    ).first():
+        raise HTTPException(409, "Teacher is already assigned to this child.")
+    session.execute(
+        teacher_child_links.insert().values(
+            account_id=teacher.id,
+            child_id=child.id,
+            assigned_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/admin/platform/children/{child_id}/teachers/{teacher_id}", status_code=204)
+def admin_unassign_teacher(
+    child_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> Response:
+    session.execute(
+        delete(teacher_child_links).where(
+            teacher_child_links.c.account_id == teacher_id,
+            teacher_child_links.c.child_id == child_id,
+        )
+    )
+    session.commit()
+    return Response(status_code=204)
+
+
+@app.get("/api/admin/platform/reports")
+def admin_list_reports(
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """Reports waiting for review (submitted by teachers)."""
+    response.headers["Cache-Control"] = "no-store"
+    rows = session.execute(
+        select(DailyReport, Child.display_name, Account.username)
+        .join(Child, Child.id == DailyReport.child_id)
+        .join(Account, Account.id == DailyReport.author_id)
+        .where(DailyReport.status == "submitted")
+        .order_by(DailyReport.created_at.asc())
+    ).all()
+    return [
+        {**report_data(row[0]), "child_name": row[1], "author": row[2]} for row in rows
+    ]
+
+
+@app.patch("/api/admin/platform/reports/{report_id}")
+def admin_review_report(
+    report_id: uuid.UUID,
+    payload: ReportStatusRequest,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    report = session.scalar(
+        select(DailyReport).where(
+            DailyReport.id == report_id, DailyReport.status == "submitted"
+        )
+    )
+    if report is None:
+        raise HTTPException(404, "Submitted report not found.")
+    report.status = payload.status
+    if payload.status == "published":
+        report.published_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(report)
+    return report_data(report)
 
 
 @app.get("/api/platform/teacher/children")

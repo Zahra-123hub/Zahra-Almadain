@@ -200,6 +200,10 @@ class RegistrationRequest(Base):
         Uuid(as_uuid=True), ForeignKey("guardian_invitations.id", ondelete="SET NULL"), nullable=True
     )
     email_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    registered_at: Mapped[datetime | None] = mapped_column(nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

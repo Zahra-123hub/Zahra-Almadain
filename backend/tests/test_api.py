@@ -201,6 +201,7 @@ class PlatformApiTests(unittest.TestCase):
                 yield session
 
         main.app.dependency_overrides[get_session] = override_get_session
+        main.app.dependency_overrides[main.optional_session] = override_get_session
         self.client = TestClient(main.app)
         with Session(self.engine) as session:
             permissions = [
@@ -239,6 +240,7 @@ class PlatformApiTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         main.app.dependency_overrides.pop(get_session, None)
+        main.app.dependency_overrides.pop(main.optional_session, None)
         self.engine.dispose()
         self.env.stop()
 
@@ -274,6 +276,7 @@ class PlatformApiTests(unittest.TestCase):
         )
         self.assertEqual(decision.status_code, 200)
         code = decision.json()["registration_code"]
+        self.assertRegex(code, r"^[A-Z2-9]{4}-[A-Z2-9]{4}$")
         again = self.client.post(
             f"/api/admin/platform/registration-requests/{listed[0]['id']}/decision",
             headers=self.legacy_admin_headers,
@@ -283,7 +286,11 @@ class PlatformApiTests(unittest.TestCase):
 
         signup = self.client.post(
             "/api/platform/auth/redeem-invitation",
-            json={"invitation_code": code, "username": "mona", "password": "mona-password-123"},
+            json={
+                "invitation_code": code.lower().replace("-", " "),
+                "username": "mona",
+                "password": "mona-password-123",
+            },
         )
         self.assertEqual(signup.status_code, 202)
         login = self.client.post(
@@ -291,11 +298,216 @@ class PlatformApiTests(unittest.TestCase):
             json={"username": "mona", "password": "mona-password-123"},
         )
         self.assertEqual(login.status_code, 200)
+        after = self.client.get(
+            "/api/admin/platform/registration-requests", headers=self.legacy_admin_headers
+        ).json()[0]
+        self.assertTrue(after["registered"])
+        accounts = self.client.get(
+            "/api/admin/platform/accounts", headers=self.legacy_admin_headers
+        ).json()
+        mona = next(account for account in accounts if account["username"] == "mona")
+        self.assertEqual(mona["guardian_name"], "Mona Parent")
+        self.assertEqual(mona["child_name"], "Sam")
         reuse = self.client.post(
             "/api/platform/auth/redeem-invitation",
             json={"invitation_code": code, "username": "mona2", "password": "mona-password-123"},
         )
         self.assertEqual(reuse.status_code, 400)
+
+    def test_unified_entry_routes_by_role(self):
+        with Session(self.engine) as session:
+            session.add(Role(name="teacher"))
+            session.commit()
+        self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "entry-teacher", "password": "entry-teacher-password-1"},
+        )
+        teacher = self.client.post(
+            "/api/auth/entry",
+            json={"username": "entry-teacher", "password": "entry-teacher-password-1"},
+        )
+        self.assertEqual(teacher.status_code, 200)
+        self.assertEqual(teacher.json()["role"], "teacher")
+        admin = self.client.post(
+            "/api/auth/entry",
+            json={"username": "legacy-admin", "password": "legacy-admin-password"},
+        )
+        self.assertEqual(admin.status_code, 200)
+        self.assertEqual(admin.json()["role"], "admin")
+        wrong = self.client.post(
+            "/api/auth/entry", json={"username": "legacy-admin", "password": "nope"}
+        )
+        self.assertEqual(wrong.status_code, 401)
+
+    def test_teacher_can_publish_website_content_but_not_manage_accounts(self):
+        with Session(self.engine) as session:
+            session.add(Role(name="teacher"))
+            session.commit()
+        self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "publisher", "password": "publisher-password-123"},
+        )
+        login = self.client.post(
+            "/api/platform/auth/login",
+            json={"username": "publisher", "password": "publisher-password-123"},
+        )
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        original_store = main.store
+        main.store = FakeStore()
+        try:
+            content = self.client.get("/api/admin/content", headers=headers)
+            self.assertEqual(content.status_code, 200)
+            news = self.client.post(
+                "/api/admin/news",
+                headers=headers,
+                data={"tag": "News", "title": "Hello", "text": "From a teacher"},
+            )
+            self.assertIn(news.status_code, (200, 201))
+        finally:
+            main.store = original_store
+        self.assertEqual(
+            self.client.put(
+                "/api/admin/settings", headers=headers, json={"whatsapp": "963985122704"}
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            self.client.get("/api/admin/platform/accounts", headers=headers).status_code,
+            401,
+        )
+
+    def test_wrong_registration_codes_are_rate_limited(self):
+        for _ in range(main.CODE_ATTEMPT_LIMIT):
+            wrong = self.client.post(
+                "/api/platform/auth/redeem-invitation",
+                json={"invitation_code": "AAAA-AAAA", "username": "x-user", "password": "x-password-1234"},
+            )
+            self.assertEqual(wrong.status_code, 400)
+        blocked = self.client.post(
+            "/api/platform/auth/redeem-invitation",
+            json={"invitation_code": "AAAA-AAAA", "username": "x-user", "password": "x-password-1234"},
+        )
+        self.assertEqual(blocked.status_code, 429)
+
+    def test_admin_can_edit_reissue_and_delete_registration_requests(self):
+        body = {
+            "guardian_name": "Edit Parent",
+            "email": "edit@example.com",
+            "phone": "123456789",
+            "child_name": "Old Name",
+        }
+        self.client.post("/api/platform/registration-requests", json=body)
+        listing = lambda: self.client.get(
+            "/api/admin/platform/registration-requests", headers=self.legacy_admin_headers
+        ).json()
+        item = listing()[0]
+        edited = self.client.patch(
+            f"/api/admin/platform/registration-requests/{item['id']}",
+            headers=self.legacy_admin_headers,
+            json={**body, "guardian_name": "Fixed Parent", "child_name": "New Name"},
+        )
+        self.assertEqual(edited.status_code, 200)
+        self.assertEqual(edited.json()["guardian_name"], "Fixed Parent")
+        first = self.client.post(
+            f"/api/admin/platform/registration-requests/{item['id']}/decision",
+            headers=self.legacy_admin_headers,
+            json={"decision": "approve"},
+        ).json()["registration_code"]
+        second = self.client.post(
+            f"/api/admin/platform/registration-requests/{item['id']}/new-code",
+            headers=self.legacy_admin_headers,
+        )
+        self.assertEqual(second.status_code, 200)
+        new_code = second.json()["registration_code"]
+        self.assertNotEqual(first, new_code)
+        old_try = self.client.post(
+            "/api/platform/auth/redeem-invitation",
+            json={"invitation_code": first, "username": "edit-parent", "password": "edit-password-1234"},
+        )
+        self.assertEqual(old_try.status_code, 400)
+        deleted = self.client.delete(
+            f"/api/admin/platform/registration-requests/{item['id']}",
+            headers=self.legacy_admin_headers,
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(listing(), [])
+        with Session(self.engine) as session:
+            self.assertIsNone(session.scalar(select(Child).where(Child.display_name == "New Name")))
+
+    def test_admin_assigns_teacher_and_publishes_report_to_parent(self):
+        with Session(self.engine) as session:
+            session.add(Role(name="teacher"))
+            session.commit()
+        self.client.post(
+            "/api/platform/registration-requests",
+            json={
+                "guardian_name": "Flow Parent",
+                "email": "flow@example.com",
+                "phone": "123456789",
+                "child_name": "Flow Child",
+            },
+        )
+        item = self.client.get(
+            "/api/admin/platform/registration-requests", headers=self.legacy_admin_headers
+        ).json()[0]
+        code = self.client.post(
+            f"/api/admin/platform/registration-requests/{item['id']}/decision",
+            headers=self.legacy_admin_headers,
+            json={"decision": "approve"},
+        ).json()["registration_code"]
+        self.client.post(
+            "/api/platform/auth/redeem-invitation",
+            json={"invitation_code": code, "username": "flow-parent", "password": "flow-parent-password-1"},
+        )
+        teacher = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "flow-teacher", "password": "flow-teacher-password-1"},
+        ).json()
+        children = self.client.get(
+            "/api/admin/platform/children", headers=self.legacy_admin_headers
+        ).json()
+        child = next(c for c in children if c["display_name"] == "Flow Child")
+        self.assertEqual(child["parents"], ["flow-parent"])
+        assigned = self.client.post(
+            f"/api/admin/platform/children/{child['id']}/teachers",
+            headers=self.legacy_admin_headers,
+            json={"teacher_id": teacher["id"]},
+        )
+        self.assertEqual(assigned.status_code, 201)
+
+        teacher_token = self.client.post(
+            "/api/platform/auth/login",
+            json={"username": "flow-teacher", "password": "flow-teacher-password-1"},
+        ).json()["access_token"]
+        parent_token = self.client.post(
+            "/api/platform/auth/login",
+            json={"username": "flow-parent", "password": "flow-parent-password-1"},
+        ).json()["access_token"]
+        report = self.client.post(
+            "/api/platform/teacher/reports",
+            headers={"Authorization": "Bearer " + teacher_token},
+            json={"child_id": child["id"], "title": "Today", "body": "A good day", "submit_for_review": True},
+        )
+        self.assertEqual(report.status_code, 201)
+        parent_headers = {"Authorization": "Bearer " + parent_token}
+        before = self.client.get(f"/api/platform/children/{child['id']}/reports", headers=parent_headers)
+        self.assertEqual(before.json(), [])
+        pending = self.client.get(
+            "/api/admin/platform/reports", headers=self.legacy_admin_headers
+        ).json()
+        self.assertEqual(pending[0]["child_name"], "Flow Child")
+        self.assertEqual(pending[0]["author"], "flow-teacher")
+        published = self.client.patch(
+            f"/api/admin/platform/reports/{pending[0]['id']}",
+            headers=self.legacy_admin_headers,
+            json={"status": "published"},
+        )
+        self.assertEqual(published.status_code, 200)
+        after = self.client.get(f"/api/platform/children/{child['id']}/reports", headers=parent_headers)
+        self.assertEqual([r["title"] for r in after.json()], ["Today"])
 
     def test_rejected_registration_request_gets_no_code(self):
         self.client.post(
