@@ -45,7 +45,7 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     create = commands.add_parser("create-account", help="Create an account with a platform role.")
     create.add_argument("--username", required=True)
-    create.add_argument("--role", required=True, choices=("admin", "manager", "teacher", "parent"))
+    create.add_argument("--role", required=True, choices=("admin", "manager", "teacher", "accountant", "parent"))
     args = parser.parse_args()
 
     password = getpass.getpass("New password (minimum 12 characters): ")

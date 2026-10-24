@@ -46,3 +46,101 @@ h2,h3{font-weight:800}
 .a-account-date{color:var(--muted);font-size:.88rem}
 .a-check{display:flex;gap:10px;align-items:center;margin:10px 0;font-family:var(--body);font-weight:400!important}
 .a-meter{height:12px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}.a-meter i{display:block;height:100%;background:var(--sun)}
+
+/* Children & reports tab */
+.a-card select{min-height:44px;padding:8px 12px;border:2px solid var(--line);border-radius:12px;background:var(--bg2);color:var(--ink);font:inherit;min-width:180px;flex:1 1 180px}
+.a-card select:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.a-child,.a-report{border:2px solid var(--line);border-radius:16px;padding:16px 18px;margin-top:14px;background:var(--bg2)}
+.a-child-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.a-child-name{font-family:var(--display);font-size:1.25rem;font-weight:800;color:var(--head);overflow-wrap:anywhere}
+.a-child dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:12px 0 0;align-items:center}
+.a-child dt{color:var(--muted);font-weight:700;font-size:.92rem}
+.a-child dd{margin:0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0}
+.a-tag{display:inline-flex;align-items:center;gap:6px;padding:3px 12px;border-radius:999px;background:var(--bg);border:1px solid var(--line);font-size:.95rem;color:var(--ink);overflow-wrap:anywhere}
+.a-tag.sun{background:var(--sun);border-color:var(--sun);color:var(--on-sun);font-weight:700}
+.a-tag button{border:0;background:transparent;color:var(--red);cursor:pointer;font-size:1rem;line-height:1;padding:2px 2px 2px 4px}
+.a-tag button:hover{color:var(--ink)}
+.a-assign{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.a-assign .a-btn{flex:0 0 auto}
+.a-empty{padding:16px;border:2px dashed var(--line);border-radius:14px;color:var(--muted);text-align:center;margin-top:12px}
+.a-report h4{margin:0;font-family:var(--display);font-size:1.15rem;color:var(--head);overflow-wrap:anywhere}
+.a-report .a-meta{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.a-report .a-body{white-space:pre-wrap;line-height:1.8;padding:12px 14px;border-radius:12px;background:var(--bg);margin:10px 0 0;overflow-wrap:anywhere}
+.a-report .a-row{margin-top:14px}
+@media(max-width:560px){.a-child dl{grid-template-columns:1fr}.a-assign .a-btn{flex:1 1 100%}}
+
+/* Fees (الاشتراكات والرسوم) */
+.a-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end}
+.a-form-grid[hidden]{display:none}
+.a-form-grid>h3,.a-form-grid>.hint,.a-form-grid>strong,.a-form-grid>.a-row{grid-column:1 / -1}
+.a-field{display:grid;gap:4px;margin:0}
+.a-field span{font-family:var(--display);font-weight:700;color:var(--head);font-size:.95rem}
+.a-field input,.a-field select{width:100%;box-sizing:border-box;min-height:44px;padding:8px 12px;border:2px solid var(--line);border-radius:12px;background:var(--bg2);color:var(--ink);font:inherit}
+.a-field input:focus-visible,.a-field select:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.a-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:14px}
+.a-table{width:100%;border-collapse:collapse;min-width:860px;font-size:.97rem}
+.a-table th,.a-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:right;vertical-align:middle}
+.a-table th{background:var(--bg);color:var(--head);font-family:var(--display);white-space:nowrap}
+.a-table td.num{white-space:nowrap;font-variant-numeric:tabular-nums}
+.a-table td.name{font-weight:700}
+.a-table tfoot td{font-weight:800;background:var(--bg);border-top:3px double var(--head);border-bottom:0}
+.a-remaining{font-weight:800;font-variant-numeric:tabular-nums}
+.a-badge{display:inline-block;margin-top:4px;padding:2px 10px;border-radius:999px;font-size:.82rem;font-weight:700;white-space:nowrap}
+.a-badge.paid{background:#dff3d4;color:#2d6410}
+.a-badge.partial{background:#fff0c2;color:#7a5400}
+.a-badge.open{background:#ffdcd9;color:#a02420}
+@media(prefers-color-scheme:dark){.a-badge.paid{background:#24402b;color:#c7f1b0}.a-badge.partial{background:#4a3c10;color:#ffe08a}.a-badge.open{background:#4d1f22;color:#ffb3ae}}
+.a-fee-row.open .a-remaining{color:var(--red)}
+.a-fee-row.partial{background:rgba(253,185,19,.09)}
+.a-fee-row.open{background:rgba(224,64,61,.07)}
+.a-detail{background:var(--bg);padding:14px 16px!important}
+.a-pay-line{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+.a-pay-form{margin:12px 0;padding:12px 0;border-top:1px dashed var(--line)}
+.a-empty[colspan]{text-align:center!important}
+.a-table .a-btn{white-space:nowrap;padding:6px 14px;font-size:.9rem}
+.a-field[hidden]{display:none}
+.a-table{min-width:720px}.a-table th,.a-table td{padding:8px 10px}
+
+/* Accounting area */
+.a-subnav{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.a-subnav button{border:2px solid var(--line);background:var(--surface);color:var(--head);border-radius:999px;padding:8px 18px;font-family:var(--display);font-weight:700;cursor:pointer}
+.a-subnav button[aria-selected=true]{background:var(--sun);border-color:var(--sun);color:var(--on-sun)}
+.a-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 16px}
+.a-kpi{border:2px solid var(--line);border-radius:14px;padding:10px 14px;background:var(--bg2);display:grid;gap:2px}
+.a-kpi span{color:var(--muted);font-size:.9rem}
+.a-kpi strong{font-size:1.2rem;font-variant-numeric:tabular-nums}
+.a-kpi.due strong,.a-table td.due,.a-table td.num.due{color:var(--red)}
+.a-chart{border:1px solid var(--line);border-radius:14px;padding:10px;background:var(--bg2);color:var(--ink);margin-top:6px}
+.a-review-note{border:2px solid #e5a800;border-radius:14px;background:rgba(253,185,19,.12);padding:12px 14px;margin:8px 0}
+.a-review-note p{margin:0 0 8px}
+.a-fee-row.review{background:rgba(253,185,19,.2);box-shadow:inset 4px 0 0 #e5a800}
+.a-badge.review{background:#fde29a;color:#6b4a00;margin-inline-start:8px}
+@media(prefers-color-scheme:dark){.a-badge.review{background:#5a4500;color:#ffe08a}}
+.a-net{align-self:center;font-size:1.05rem}
+.a-amount{display:flex;gap:8px;align-items:center}
+.a-amount input{min-width:110px}
+.a-table td.strong{font-weight:800}
+.a-table td.sig{min-width:110px;border-bottom:1px dashed var(--muted)}
+.a-sheet input,.a-sheet select{width:100%;min-width:90px;box-sizing:border-box;min-height:38px;padding:6px 10px;border:2px solid var(--line);border-radius:10px;background:var(--bg2);color:var(--ink);font:inherit}
+.a-sheet td{vertical-align:top}
+.a-sheet td.name small{display:block;margin-top:4px}
+.a-custom{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.a-table.compact{font-size:.9rem;min-width:0}
+.a-table.compact th,.a-table.compact td{padding:6px 6px;white-space:normal}
+.a-table.compact th{line-height:1.3}
+.a-table.compact .a-btn{padding:5px 10px;font-size:.85rem}
+.a-table.compact td.num{white-space:nowrap}
+.a-amount{flex-wrap:nowrap}
+.a-amount .a-tag,.a-amount select{flex:none;white-space:nowrap;min-width:64px}
+.a-sheet input{min-width:110px}
+.a-fee-row.review{background:rgba(253,185,19,.28)}
+.a-table.compact td.sig{min-width:56px}.a-table.compact th:last-child,.a-table.compact td:last-child{padding-inline:4px}
+
+.a-check-field{display:flex;align-items:center;gap:8px;align-self:end;min-height:44px}
+.a-check-field input{width:22px;height:22px;accent-color:var(--sun)}
+.a-fee-row.review input{min-width:90px;width:100%;box-sizing:border-box;padding:6px 8px;border:2px solid #e5a800;border-radius:10px;background:var(--bg2);color:var(--ink);font:inherit}
+.a-fee-row.review td .a-btn{margin:2px 0}
+.a-table.compact .a-fee-row.review input{min-width:0;width:100%;padding:4px 6px;font-size:.88rem}
+.a-table.compact .a-fee-row.review input[type=date]{min-width:112px}
+.a-table.compact .a-fee-row.review td{min-width:0}
+.a-fee-row.review td.num input{min-width:100px}

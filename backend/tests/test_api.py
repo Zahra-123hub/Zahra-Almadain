@@ -509,6 +509,87 @@ class PlatformApiTests(unittest.TestCase):
         after = self.client.get(f"/api/platform/children/{child['id']}/reports", headers=parent_headers)
         self.assertEqual([r["title"] for r in after.json()], ["Today"])
 
+    def test_admin_edits_account_and_resets_password(self):
+        with Session(self.engine) as session:
+            session.add(Role(name="teacher"))
+            session.commit()
+        created = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "old-name", "password": "old-password-1234"},
+        ).json()
+        other = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "taken-name", "password": "other-password-1234"},
+        ).json()
+        base = f"/api/admin/platform/accounts/{created['id']}"
+        token = self.client.post(
+            "/api/platform/auth/login", json={"username": "old-name", "password": "old-password-1234"}
+        ).json()["access_token"]
+        self.assertEqual(
+            self.client.patch(base, headers=self.legacy_admin_headers, json={"username": "taken-name"}).status_code, 409
+        )
+        renamed = self.client.patch(
+            base, headers=self.legacy_admin_headers, json={"username": "New-Name", "preferred_language": "en"}
+        )
+        self.assertEqual(renamed.json()["username"], "new-name")
+        self.assertEqual(  # open sessions end when the name changes
+            self.client.get("/api/platform/auth/me", headers={"Authorization": "Bearer " + token}).status_code, 401
+        )
+        # a generated password is returned once and works; the stored value is only a hash
+        reset = self.client.post(f"{base}/reset-password", headers=self.legacy_admin_headers, json={}).json()
+        self.assertTrue(reset["generated"])
+        self.assertGreaterEqual(len(reset["password"]), 12)
+        with Session(self.engine) as session:
+            stored = session.scalar(select(Account.password_hash).where(Account.username == "new-name"))
+            self.assertNotIn(reset["password"], stored)
+        self.assertEqual(
+            self.client.post("/api/platform/auth/login", json={"username": "new-name", "password": "old-password-1234"}).status_code, 401
+        )
+        self.assertEqual(
+            self.client.post("/api/platform/auth/login", json={"username": "new-name", "password": reset["password"]}).status_code, 200
+        )
+        # a password chosen by the admin; too short is refused; other roles cannot do this
+        chosen = self.client.post(f"{base}/reset-password", headers=self.legacy_admin_headers, json={"password": "chosen-password-99"})
+        self.assertFalse(chosen.json()["generated"])
+        self.assertEqual(
+            self.client.post(f"{base}/reset-password", headers=self.legacy_admin_headers, json={"password": "short"}).status_code, 422
+        )
+        self.assertEqual(self.client.post(f"{base}/reset-password", json={}).status_code, 401)
+        self.assertEqual(other["username"], "taken-name")
+
+    def test_account_can_hold_several_roles(self):
+        with Session(self.engine) as session:
+            session.add_all([Role(name="teacher"), Role(name="accountant")])
+            session.commit()
+        created = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "double-role", "password": "double-role-password-1"},
+        ).json()
+        base = f"/api/admin/platform/accounts/{created['id']}"
+        login = lambda: self.client.post(
+            "/api/auth/entry", json={"username": "double-role", "password": "double-role-password-1"}
+        ).json()
+        self.assertEqual(login()["portals"], ["teacher"])
+        both = self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["teacher", "accountant"]})
+        self.assertEqual(both.status_code, 200)
+        self.assertEqual(both.json()["roles"], ["accountant", "teacher"])
+        entry = login()
+        self.assertEqual(entry["portals"], ["teacher", "accountant"])
+        headers = {"Authorization": "Bearer " + entry["access_token"]}
+        # one token works for what both roles allow
+        self.assertEqual(self.client.get("/api/admin/fees", headers=headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/accounting/salaries", headers=headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/content", headers=headers).status_code, 503)  # passed the guard (no GitHub here)
+        # roles can be reduced again, but never to nothing or to unknown roles
+        self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": []}).status_code, 422)
+        self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["admin"]}).status_code, 422)
+        only = self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["teacher"]})
+        self.assertEqual(only.json()["roles"], ["teacher"])
+        self.assertEqual(self.client.get("/api/admin/fees", headers=headers).status_code, 403)
+
     def test_rejected_registration_request_gets_no_code(self):
         self.client.post(
             "/api/platform/registration-requests",

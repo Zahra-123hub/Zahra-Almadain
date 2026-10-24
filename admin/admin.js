@@ -2,14 +2,20 @@ var DATA = {settings:{}, gallery:[], news:[]}, tab = "gallery";
 var API_BASE = (window.ZM_API_BASE || (/^(localhost|127.0.0.1)$/.test(location.hostname) ? "http://127.0.0.1:8001" : "https://zahra-123hub-almadain-api.onrender.com")).replace(/\/+$/, "");
 var ADMIN_TOKEN = sessionStorage.getItem("zm-admin-session") || "";
 // Teachers publish website content with their portal session; accounts and settings stay admin-only.
-var TEACHER_MODE = false;
+// An account may hold several roles (e.g. teacher + accountant): the tabs are the union of what its roles allow.
+var TEACHER_MODE = false, ACCOUNTANT_MODE = false, PORTALS = [];
 if(!ADMIN_TOKEN){
-  ADMIN_TOKEN = sessionStorage.getItem("zm-teacher-session") || "";
-  TEACHER_MODE = !!ADMIN_TOKEN;
+  try{ PORTALS = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); }catch(e){}
+  var teacherSession = sessionStorage.getItem("zm-teacher-session") || "", accountantSession = sessionStorage.getItem("zm-accountant-session") || "";
+  ADMIN_TOKEN = accountantSession || teacherSession;
+  TEACHER_MODE = !!ADMIN_TOKEN && (PORTALS.length ? PORTALS.indexOf("teacher") !== -1 : !!teacherSession);
+  ACCOUNTANT_MODE = !!ADMIN_TOKEN && (PORTALS.length ? PORTALS.indexOf("accountant") !== -1 : !!accountantSession);
+  if(!TEACHER_MODE && !ACCOUNTANT_MODE) ADMIN_TOKEN = "";
+  if(ACCOUNTANT_MODE && !TEACHER_MODE) tab = "fees";
 }
 function clearSessions(){
   ADMIN_TOKEN = "";
-  try{ sessionStorage.removeItem("zm-admin-session"); sessionStorage.removeItem("zm-teacher-session"); }catch(e){}
+  try{ sessionStorage.removeItem("zm-admin-session"); sessionStorage.removeItem("zm-teacher-session"); sessionStorage.removeItem("zm-accountant-session"); sessionStorage.removeItem("zm-parent-session"); sessionStorage.removeItem("zm-portals"); }catch(e){}
 }
 var ADMIN_LANG = localStorage.getItem("zm-admin-lang") === "en" ? "en" : "ar";
 var FILE_RE = /^[0-9a-f]{32}\.(jpg|png|webp|gif|mp4|webm)$/;
@@ -70,7 +76,7 @@ var EN_TEXT = {
   "الإعدادات":"Settings",
   "حسابات المنصة":"Platform accounts",
   "طلبات أولياء الأمور والمعلمات":"Parent and teacher accounts",
-  "أنشئ حساب معلمة جديداً. يكون الحساب مفعّلاً فوراً.":"Create a teacher account. It will remain pending until you activate it.",
+  "أنشئ حساب معلمة أو محاسب جديداً. يكون الحساب مفعّلاً فوراً.":"Create a teacher account. It will remain pending until you activate it.",
   "كلمة المرور الأولية (12 محرفاً على الأقل)":"Initial password (at least 12 characters)",
   "إنشاء حساب المعلمة":"Create teacher account",
   "الحسابات بانتظار التفعيل":"Accounts awaiting activation",
@@ -82,7 +88,7 @@ var EN_TEXT = {
   "تفعيل الحساب":"Activate account",
   "إيقاف الحساب":"Disable account",
   "لا توجد حسابات أولياء أمور أو معلمات.":"No parent or teacher accounts yet.",
-  "تم إنشاء حساب المعلمة وتفعيله. يمكنها تسجيل الدخول الآن.":"Teacher account created and active. She can sign in now.",
+  "تم إنشاء الحساب وتفعيله. يمكن تسجيل الدخول الآن.":"Teacher account created and active. She can sign in now.",
   "تم تحديث حالة الحساب.":"Account status updated.",
   "الاسم أو كلمة المرور غير صالحة.":"The username or password is invalid.",
   "هذا الاسم مستخدم بالفعل.":"That username is already in use.",
@@ -360,9 +366,13 @@ function tabAccounts(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var username = h("input", {type:"text", id:"a-teacher-username", autocomplete:"username", minlength:"3", maxlength:"80", pattern:"[A-Za-z0-9_.\\-]{3,80}"});
   var password = h("input", {type:"password", id:"a-teacher-password", autocomplete:"new-password", minlength:"12", maxlength:"256"});
-  var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء حساب المعلمة"});
+  var roleSelect = h("select", {id:"a-new-role", "aria-label":"نوع الحساب"});
+  roleSelect.appendChild(new Option("معلمة", "teacher"));
+  roleSelect.appendChild(new Option("محاسب", "accountant"));
+  var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء الحساب"});
   var form = h("form", {class:"a-card"}, [
     h("h3", {text:"أنشئ حساب معلمة جديداً. يكون الحساب مفعّلاً فوراً."}),
+    h("label", {for:"a-new-role", text:"نوع الحساب"}), roleSelect,
     h("label", {for:"a-teacher-username", text:"اسم المستخدم"}), username,
     h("label", {for:"a-teacher-password", text:"كلمة المرور الأولية (12 محرفاً على الأقل)"}), password,
     h("div", {class:"a-row"}, [create]), msg
@@ -504,7 +514,7 @@ function tabAccounts(){
       var accounts = await request("/api/admin/platform/accounts");
       if(!accounts.length){ listBody.appendChild(h("p", {class:"hint", text:"لا توجد حسابات أولياء أمور أو معلمات."})); return; }
       accounts.forEach(function(account){
-        var role = account.roles.indexOf("teacher") !== -1 ? "معلمة" : "ولي أمر";
+        var role = account.roles.map(function(r){ return ROLE_LABEL[r] || r; }).join(" + ");
         var status = account.approval_status === "active" ? "نشط" : account.approval_status === "pending" ? "بانتظار التفعيل" : "موقوف";
         var row = h("article", {class:"a-account-row"}, [
           h("div", {}, [
@@ -515,18 +525,79 @@ function tabAccounts(){
             account.created_at ? h("time", {class:"a-account-date", text:new Date(account.created_at).toLocaleDateString(ADMIN_LANG === "ar" ? "ar" : "en")}) : null
           ])
         ]);
+        var editHolder = h("div", {style:"flex-basis:100%;width:100%"});
+        var actions = h("div", {class:"a-row", style:"margin:0"}, [
+          h("button", {type:"button", class:"a-btn ghost", text:"تعديل", onclick:function(){
+            if(editHolder.firstChild){ editHolder.innerHTML = ""; return; }
+            editHolder.appendChild(accountEditor(account, function(){ editHolder.innerHTML = ""; }));
+          }})
+        ]);
         if(account.approval_status !== "active"){
-          row.appendChild(h("button", {type:"button", class:"a-btn sun", text:"تفعيل الحساب", onclick:function(){
+          actions.appendChild(h("button", {type:"button", class:"a-btn sun", text:"تفعيل الحساب", onclick:function(){
             updateStatus(account.id, "active");
           }}));
         } else {
-          row.appendChild(h("button", {type:"button", class:"a-btn danger", text:"إيقاف الحساب", onclick:function(){
+          actions.appendChild(h("button", {type:"button", class:"a-btn danger", text:"إيقاف الحساب", onclick:function(){
             updateStatus(account.id, "disabled");
           }}));
         }
+        row.appendChild(actions);
+        row.appendChild(editHolder);
         listBody.appendChild(row);
       });
     }catch(error){ listBody.appendChild(h("p", {class:"a-msg err", text:error.message || "تعذّر تنفيذ العملية على الخادم."})); }
+  }
+  var ROLE_LABEL = {teacher:"معلمة", accountant:"محاسب", parent:"ولي أمر", admin:"مدير", manager:"مشرف"};
+  /* Edit name/language/roles and set a new password. Existing passwords cannot be shown: they are
+     stored as one-way hashes, so the admin sets or generates a new one, shown once. */
+  function accountEditor(account, close){
+    var username = h("input", {type:"text", maxlength:"80", value:account.username, dir:"ltr", autocomplete:"off", pattern:"[A-Za-z0-9_.\\-]{3,80}"});
+    var language = h("select", {});
+    [["ar", "العربية"], ["en", "English"]].forEach(function(o){ language.appendChild(new Option(o[1], o[0])); });
+    language.value = account.preferred_language || "ar";
+    var password = h("input", {type:"text", value:"", dir:"ltr", autocomplete:"new-password", placeholder:"اتركه فارغاً ليُولَّد تلقائياً"});
+    var result = h("div", {});
+    var roleBoxes = {};
+    var rolesRow = h("div", {class:"a-field", style:"grid-column:1 / -1"}, [h("span", {text:"الأدوار (يمكن اختيار أكثر من دور)"})]);
+    [["teacher", "معلمة"], ["accountant", "محاسب"], ["parent", "ولي أمر"]].forEach(function(r){
+      var box = h("input", {type:"checkbox"});
+      box.checked = account.roles.indexOf(r[0]) !== -1;
+      roleBoxes[r[0]] = box;
+      rolesRow.appendChild(h("label", {class:"a-check-field"}, [box, h("span", {text:r[1]})]));
+    });
+    var form = h("form", {class:"a-form-grid", style:"margin-top:10px"}, [
+      h("label", {class:"a-field"}, [h("span", {text:"اسم المستخدم"}), username]),
+      h("label", {class:"a-field"}, [h("span", {text:"اللغة"}), language]),
+      rolesRow,
+      h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ البيانات"}), h("button", {type:"button", class:"a-btn ghost", text:"إغلاق", onclick:close})]),
+      h("p", {class:"hint", style:"grid-column:1 / -1", text:"لا يمكن عرض كلمات المرور الحالية: تُحفظ بصيغة مشفّرة لا يمكن عكسها. يمكنك تعيين كلمة مرور جديدة أو توليدها وإعطاؤها للمستخدم."}),
+      h("label", {class:"a-field", style:"grid-column:1 / -1"}, [h("span", {text:"كلمة مرور جديدة (12 محرفاً على الأقل)"}), password]),
+      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تعيين كلمة المرور الجديدة", onclick:async function(){
+        try{
+          var res = await request("/api/admin/platform/accounts/" + encodeURIComponent(account.id) + "/reset-password", {method:"POST", body:JSON.stringify(password.value ? {password:password.value} : {})});
+          password.value = "";
+          result.innerHTML = "";
+          result.appendChild(h("div", {class:"a-card", style:"border:2px solid var(--sun)"}, [
+            h("strong", {text:"كلمة المرور الجديدة للحساب " + res.username + " (تظهر مرة واحدة فقط):"}),
+            h("div", {style:"font-size:1.6rem;font-weight:800;letter-spacing:.1em;direction:ltr;text-align:center;padding:12px;margin:10px 0;border:2px dashed var(--sun);border-radius:14px;user-select:all", text:res.password}),
+            h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"نسخ", onclick:function(){ try{ navigator.clipboard.writeText(res.password); }catch(e){} }})]),
+            h("p", {class:"hint", text:"أُنهيت جلسات هذا الحساب المفتوحة. سلّم كلمة المرور للمستخدم بطريقة آمنة ويُفضّل أن يغيّرها."})
+          ]));
+        }catch(error){ setMsg(msg, errText(error), "err"); }
+      }})]),
+      result
+    ]);
+    form.addEventListener("submit", async function(event){
+      event.preventDefault();
+      var chosen = Object.keys(roleBoxes).filter(function(k){ return roleBoxes[k].checked; });
+      if(!chosen.length){ setMsg(msg, "اختر دوراً واحداً على الأقل.", "err"); return; }
+      try{
+        await request("/api/admin/platform/accounts/" + encodeURIComponent(account.id), {method:"PATCH", body:JSON.stringify({username:username.value.trim(), preferred_language:language.value, roles:chosen})});
+        setMsg(msg, "تم حفظ بيانات الحساب.", "ok");
+        await reloadAccounts();
+      }catch(error){ setMsg(msg, errText(error), "err"); }
+    });
+    return form;
   }
   async function updateStatus(accountId, status){
     try{
@@ -547,6 +618,7 @@ function tabAccounts(){
       await request("/api/admin/platform/teacher-accounts", {
         method:"POST",
         body:JSON.stringify({
+          role:roleSelect.value,
           username:username.value.trim(),
           password:password.value,
           preferred_language:"ar"
@@ -583,7 +655,7 @@ function tabChildren(){
     reportsBody.innerHTML = "";
     try{
       var reports = await request("/api/admin/platform/reports");
-      if(!reports.length){ reportsBody.appendChild(h("p", {class:"hint", text:"لا توجد تقارير بانتظار المراجعة."})); return; }
+      if(!reports.length){ reportsBody.appendChild(h("div", {class:"a-empty", text:"لا توجد تقارير بانتظار المراجعة."})); return; }
       reports.forEach(function(report){
         function review(status){
           return async function(){
@@ -594,12 +666,13 @@ function tabChildren(){
             }catch(error){ setMsg(msg, errText(error), "err"); }
           };
         }
-        reportsBody.appendChild(h("article", {class:"a-account-row"}, [
-          h("div", {style:"flex:1;min-width:220px"}, [
-            h("strong", {dir:"auto", text:report.title}),
-            h("span", {class:"a-account-meta", dir:"auto", text:"الطفل: " + report.child_name + " · المعلمة: " + report.author}),
-            h("span", {class:"a-account-date", dir:"auto", style:"white-space:pre-wrap", text:report.body})
+        reportsBody.appendChild(h("article", {class:"a-report"}, [
+          h("h4", {dir:"auto", text:report.title}),
+          h("div", {class:"a-meta"}, [
+            h("span", {class:"a-tag", text:"الطفل: " + report.child_name}),
+            h("span", {class:"a-tag", text:"المعلمة: " + report.author})
           ]),
+          h("p", {class:"a-body", dir:"auto", text:report.body}),
           h("div", {class:"a-row"}, [
             h("button", {type:"button", class:"a-btn sun", text:"نشر للأهل", onclick:review("published")}),
             h("button", {type:"button", class:"a-btn ghost", text:"إرجاع للتعديل", onclick:review("rejected")})
@@ -614,38 +687,42 @@ function tabChildren(){
       var results = await Promise.all([request("/api/admin/platform/children"), request("/api/admin/platform/accounts")]);
       var children = results[0];
       var teachers = results[1].filter(function(a){ return a.roles.indexOf("teacher") !== -1 && a.approval_status === "active"; });
-      if(!children.length){ childrenBody.appendChild(h("p", {class:"hint", text:"لا توجد ملفات أطفال بعد. تُنشأ تلقائياً عند الموافقة على طلب تسجيل."})); return; }
+      if(!children.length){ childrenBody.appendChild(h("div", {class:"a-empty", text:"لا توجد ملفات أطفال بعد. تُنشأ تلقائياً عند الموافقة على طلب تسجيل."})); return; }
       children.forEach(function(child){
-        var chips = h("div", {class:"a-row", style:"margin:6px 0"});
+        var teacherCell = h("dd", {});
+        if(!child.teachers.length) teacherCell.appendChild(h("span", {class:"a-tag", text:"لا توجد معلمة معيّنة"}));
         child.teachers.forEach(function(teacher){
-          chips.appendChild(h("button", {type:"button", class:"a-btn ghost", title:"إزالة التعيين", text:teacher.username + " ✕", onclick:async function(){
+          teacherCell.appendChild(h("span", {class:"a-tag sun"}, [teacher.username, h("button", {type:"button", title:"إزالة التعيين", "aria-label":"إزالة التعيين", text:"✕", onclick:async function(){
             try{
               await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/teachers/" + encodeURIComponent(teacher.id), {method:"DELETE"});
               await loadChildren();
             }catch(error){ setMsg(msg, errText(error), "err"); }
-          }}));
+          }})]));
         });
+        var parentCell = h("dd", {});
+        if(child.parents.length) child.parents.forEach(function(name){ parentCell.appendChild(h("span", {class:"a-tag", text:name})); });
+        else parentCell.appendChild(h("span", {class:"a-tag", text:"لم يكتمل تسجيل ولي الأمر بعد"}));
         var assignedIds = child.teachers.map(function(t){ return t.id; });
         var options = teachers.filter(function(t){ return assignedIds.indexOf(t.id) === -1; });
-        var select = h("select", {"aria-label":"اختر معلمة"});
-        options.forEach(function(t){ select.appendChild(new Option(t.username, t.id)); });
-        var add = h("button", {type:"button", class:"a-btn sun", text:"تعيين معلمة", onclick:async function(){
-          if(!select.value) return;
-          try{
-            await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/teachers", {method:"POST", body:JSON.stringify({teacher_id:select.value})});
-            setMsg(msg, "تم تعيين المعلمة.", "ok");
-            await loadChildren();
-          }catch(error){ setMsg(msg, errText(error), "err"); }
-        }});
-        childrenBody.appendChild(h("article", {class:"a-account-row"}, [
-          h("div", {style:"flex:1;min-width:220px"}, [
-            h("strong", {dir:"auto", text:child.display_name}),
-            h("span", {class:"a-account-date", text:child.parents.length ? "ولي الأمر: " + child.parents.join("، ") : "لم يكتمل تسجيل ولي الأمر بعد"}),
-            h("span", {class:"a-account-date", text:child.teachers.length ? "المعلمات:" : "لا توجد معلمة معيّنة"}),
-            chips
-          ]),
-          options.length ? h("div", {class:"a-row"}, [select, add]) : h("span", {class:"a-account-date", text:teachers.length ? "كل المعلمات معيّنات" : "أنشئ حساب معلمة أولاً"})
-        ]));
+        var card = h("article", {class:"a-child"}, [
+          h("div", {class:"a-child-head"}, [h("span", {class:"a-child-name", dir:"auto", text:child.display_name})]),
+          h("dl", {}, [h("dt", {text:"ولي الأمر"}), parentCell, h("dt", {text:"المعلمات"}), teacherCell])
+        ]);
+        if(options.length){
+          var select = h("select", {"aria-label":"اختر معلمة"});
+          options.forEach(function(t){ select.appendChild(new Option(t.username, t.id)); });
+          card.appendChild(h("div", {class:"a-assign"}, [select, h("button", {type:"button", class:"a-btn sun", text:"تعيين معلمة", onclick:async function(){
+            if(!select.value) return;
+            try{
+              await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/teachers", {method:"POST", body:JSON.stringify({teacher_id:select.value})});
+              setMsg(msg, "تم تعيين المعلمة.", "ok");
+              await loadChildren();
+            }catch(error){ setMsg(msg, errText(error), "err"); }
+          }})]));
+        } else {
+          card.appendChild(h("p", {class:"hint", text:teachers.length ? "كل المعلمات معيّنات لهذا الطفل." : "أنشئ حساب معلمة أولاً من تبويب «حسابات المنصة»."}));
+        }
+        childrenBody.appendChild(card);
       });
     }catch(error){ childrenBody.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
   }
@@ -654,21 +731,354 @@ function tabChildren(){
   return h("section", {}, [msg, reportsCard, childrenCard]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["accounts","حسابات المنصة"],["settings","الإعدادات"]]
-  .filter(function(t){ return !TEACHER_MODE || ["gallery","video","news"].indexOf(t[0]) !== -1; });
+var MONTHS_AR = ["كانون الثاني","شباط","آذار","نيسان","أيار","حزيران","تموز","آب","أيلول","تشرين الأول","تشرين الثاني","كانون الأول"];
+var CURRENCY_LABEL = {USD:"الدولار الأمريكي (USD)", SYP:"الليرة السورية (SYP)"};
+var STATUS_LABEL = {paid:"مدفوع", partial:"مدفوع جزئياً", open:"غير مدفوع", review:"يحتاج مراجعة"};
+function money(value){ if(value === null || value === undefined || value === "") return "—"; return Number(value).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function esc(value){ return String(value == null ? "" : value).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+function tabFees(){
+  var now = new Date();
+  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), class_name:"", currency:"", status:"", needs_review:""};
+  var data = {rows:[], totals:{}, classes:[]};
+  var viewer = {name:"", role:""};
+  var openId = "";
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var tables = h("div", {});
+
+  function field(label, input){ return h("label", {class:"a-field"}, [h("span", {text:label}), input]); }
+  function select(options, value){
+    var el = h("select", {});
+    options.forEach(function(o){ el.appendChild(new Option(o[1], o[0])); });
+    el.value = value;
+    return el;
+  }
+  function numberInput(value, extra){ return h("input", Object.assign({type:"number", min:"0", step:"0.01", inputmode:"decimal", value:value || ""}, extra || {})); }
+  function monthOptions(withAll){ return (withAll ? [["", "كل الأشهر"]] : []).concat(MONTHS_AR.map(function(name, i){ return [String(i + 1), name]; })); }
+  var CURRENCY_OPTIONS = [["USD","دولار أمريكي (USD)"], ["SYP","ليرة سورية (SYP)"]];
+
+  // ----- filters -------------------------------------------------------
+  var fYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
+  var fMonth = select(monthOptions(true), filters.month);
+  var fClass = select([["", "كل الصفوف"]], "");
+  var fCurrency = select([["", "كل العملات"]].concat(CURRENCY_OPTIONS), "");
+  var fStatus = select([["", "كل الحالات"], ["paid", "مدفوع"], ["partial", "مدفوع جزئياً"], ["open", "غير مدفوع"], ["review", "يحتاج مراجعة"]], "");
+  var fReview = h("input", {type:"checkbox"});
+  [fYear, fMonth, fClass, fCurrency, fStatus, fReview].forEach(function(el){ el.addEventListener("change", function(){ readFilters(); load(); }); });
+  function readFilters(){
+    filters.year = fYear.value; filters.month = fMonth.value; filters.class_name = fClass.value;
+    filters.currency = fCurrency.value; filters.status = fStatus.value; filters.needs_review = fReview.checked ? "true" : "";
+  }
+  function fillClasses(){
+    var current = filters.class_name;
+    fClass.innerHTML = "";
+    fClass.appendChild(new Option("كل الصفوف", ""));
+    data.classes.forEach(function(name){ fClass.appendChild(new Option(name, name)); });
+    fClass.value = data.classes.indexOf(current) !== -1 ? current : "";
+    filters.class_name = fClass.value;
+  }
+
+  // ----- add charge / generate forms ----------------------------------
+  var NEW_CHILD = "__new__";
+  var addChild = select([[NEW_CHILD, "＋ طفل جديد (اكتب الاسم)"]], NEW_CHILD);
+  var addName = h("input", {type:"text", maxlength:"120", placeholder:"الاسم الكامل للطفل", autocomplete:"off"});
+  var addClass = h("input", {type:"text", maxlength:"60", placeholder:"مثال: الروضة الأولى / شعبة أ", list:"fee-classes", autocomplete:"off"});
+  var classList = h("datalist", {id:"fee-classes"});
+  var addMonth = select(monthOptions(false), filters.month);
+  var addYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
+  var addAmount = numberInput("", {required:"required"});
+  var addCurrency = select(CURRENCY_OPTIONS, "USD");
+  var payAmount = numberInput("", {placeholder:"اتركه فارغاً إن لم يدفع بعد"});
+  var payDate = h("input", {type:"date", value:new Date().toISOString().slice(0, 10)});
+  var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
+  var payNote = h("input", {type:"text", maxlength:"500"});
+  var nameField = field("اسم الطفل", addName), classField = field("الصف / الشعبة", addClass);
+  function syncNewChild(){
+    var isNew = addChild.value === NEW_CHILD;
+    nameField.hidden = !isNew; classField.hidden = !isNew;
+  }
+  addChild.addEventListener("change", syncNewChild);
+  var addForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
+    h("h3", {text:"إضافة صف جديد إلى الجدول"}),
+    field("الطفل", addChild), nameField, classField,
+    field("الشهر", addMonth), field("السنة", addYear),
+    field("الرسم المطلوب", addAmount), field("العملة", addCurrency),
+    h("strong", {text:"دفعة أولى (اختياري)"}),
+    field("المبلغ المدفوع", payAmount), field("تاريخ الدفع", payDate), field("رقم الإيصال", payReceipt), field("ملاحظات", payNote),
+    classList,
+    h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"إضافة الصف"})])
+  ]);
+  addForm.addEventListener("submit", async function(event){
+    event.preventDefault();
+    var body = {year:Number(addYear.value), month:Number(addMonth.value), amount:addAmount.value, currency:addCurrency.value};
+    if(addChild.value === NEW_CHILD){
+      if(addName.value.trim().length < 2){ setMsg(msg, "اكتب اسم الطفل.", "err"); return; }
+      body.child_name = addName.value.trim(); body.class_name = addClass.value.trim();
+    } else body.child_id = addChild.value;
+    if(payAmount.value && Number(payAmount.value) > 0){
+      body.payment = {amount:payAmount.value, paid_on:payDate.value, receipt_no:payReceipt.value.trim() || null, note:payNote.value.trim()};
+    }
+    try{
+      await request("/api/admin/fees/charges", {method:"POST", body:JSON.stringify(body)});
+      setMsg(msg, "تمت إضافة الصف إلى الجدول.", "ok");
+      addName.value = ""; addAmount.value = ""; payAmount.value = ""; payReceipt.value = ""; payNote.value = "";
+      await reloadChildren(); await load();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  });
+  var genMonth = select(monthOptions(false), filters.month);
+  var genYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
+  var genAmount = numberInput("", {required:"required"});
+  var genCurrency = select(CURRENCY_OPTIONS, "USD");
+  var genClass = h("input", {type:"text", maxlength:"60", placeholder:"اتركه فارغاً لكل الصفوف"});
+  var genForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
+    h("h3", {text:"إنشاء رسوم الشهر لجميع الأطفال"}),
+    h("p", {class:"hint", text:"يُنشأ الرسم نفسه لكل طفل ليس له رسم في هذا الشهر وبهذه العملة."}),
+    field("الشهر", genMonth), field("السنة", genYear), field("الرسم المطلوب", genAmount),
+    field("العملة", genCurrency), field("الصف (اختياري)", genClass),
+    h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"إنشاء الرسوم"})])
+  ]);
+  genForm.addEventListener("submit", async function(event){
+    event.preventDefault();
+    try{
+      var result = await request("/api/admin/fees/generate", {method:"POST", body:JSON.stringify({
+        year:Number(genYear.value), month:Number(genMonth.value), amount:genAmount.value, currency:genCurrency.value, class_name:genClass.value.trim()})});
+      setMsg(msg, "تم إنشاء " + result.created + " رسم، وتخطّي " + result.skipped + " (موجود مسبقاً).", "ok"); await load();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  });
+
+  // ----- tables --------------------------------------------------------
+  function badge(status){ return h("span", {class:"a-badge " + status, text:STATUS_LABEL[status]}); }
+  function cell(text, cls){ return h("td", {class:cls || "", dir:"auto", text:text}); }
+
+  function detailRow(row, columns){
+    var box = h("td", {colspan:String(columns), class:"a-detail"});
+    var list = h("div", {});
+    if(!row.payments.length) list.appendChild(h("p", {class:"hint", text:"لا توجد دفعات بعد."}));
+    row.payments.forEach(function(p){ list.appendChild(paymentLine(row, p)); });
+    if(row.needs_review){
+      box.appendChild(h("div", {class:"a-review-note"}, [
+        h("p", {dir:"auto", text:"هذا السطر مستورد وفيه خانة غير واضحة. النص الأصلي: " + (row.raw_text || "—") + " · المصدر: " + (row.source || "—")}),
+        h("button", {type:"button", class:"a-btn ghost", text:"تمت المراجعة", onclick:async function(){
+          try{ await request("/api/admin/fees/charges/" + encodeURIComponent(row.id) + "/reviewed", {method:"POST"}); setMsg(msg, "تم تأكيد المراجعة.", "ok"); await load(); }
+          catch(error){ setMsg(msg, errText(error), "err"); }
+        }})]));
+    }
+    box.appendChild(list);
+    box.appendChild(paymentForm(row, null));
+    var amount = numberInput(row.amount);
+    var cls = h("input", {type:"text", maxlength:"60", value:row.class_name});
+    box.appendChild(h("div", {class:"a-form-grid"}, [
+      field("تعديل الرسم المطلوب", amount),
+      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"حفظ الرسم", onclick:async function(){
+        try{ await request("/api/admin/fees/charges/" + encodeURIComponent(row.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})}); setMsg(msg, "تم تعديل الرسم.", "ok"); await load(); }
+        catch(error){ setMsg(msg, errText(error), "err"); }
+      }})]),
+      field("الصف / الشعبة", cls),
+      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"حفظ الصف", onclick:async function(){
+        try{ await request("/api/admin/fees/children/" + encodeURIComponent(row.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value})}); setMsg(msg, "تم حفظ الصف.", "ok"); await load(); }
+        catch(error){ setMsg(msg, errText(error), "err"); }
+      }}), twoStep("حذف الرسم", async function(){
+        await request("/api/admin/fees/charges/" + encodeURIComponent(row.id), {method:"DELETE"}); openId = ""; setMsg(msg, "تم حذف الرسم.", "ok"); await load();
+      })])
+    ]));
+    return h("tr", {class:"a-detail-row"}, [box]);
+  }
+  function paymentLine(row, p){
+    var line = h("div", {class:"a-pay-line"});
+    function show(){
+      line.innerHTML = "";
+      line.append(
+        h("span", {class:"a-tag", dir:"ltr", text:p.paid_on}),
+        h("strong", {text:money(p.amount) + " " + row.currency}),
+        p.receipt_no ? h("span", {class:"a-tag", text:"إيصال " + p.receipt_no}) : "",
+        p.note ? h("span", {class:"hint", dir:"auto", text:p.note}) : "",
+        p.created_by ? h("span", {class:"hint", text:"سجّلها: " + p.created_by}) : "",
+        h("button", {type:"button", class:"a-btn ghost", text:"تعديل", onclick:function(){ line.innerHTML = ""; line.appendChild(paymentForm(row, p, show)); }}),
+        twoStep("حذف", async function(){
+          await request("/api/admin/fees/payments/" + encodeURIComponent(p.id), {method:"DELETE"}); setMsg(msg, "تم حذف الدفعة.", "ok"); await load();
+        })
+      );
+    }
+    show();
+    return line;
+  }
+  function paymentForm(row, existing, cancel){
+    var amount = numberInput(existing ? existing.amount : "", {required:"required", placeholder:existing ? "" : "المتبقي " + money(row.remaining)});
+    var date = h("input", {type:"date", required:"required", value:existing ? existing.paid_on : new Date().toISOString().slice(0, 10)});
+    var receipt = h("input", {type:"text", maxlength:"40", value:existing ? existing.receipt_no : "", dir:"ltr"});
+    var note = h("input", {type:"text", maxlength:"500", value:existing ? existing.note : ""});
+    var buttons = [h("button", {type:"submit", class:"a-btn sun", text:existing ? "حفظ التعديل" : "تسجيل الدفعة"})];
+    if(existing) buttons.push(h("button", {type:"button", class:"a-btn ghost", text:"إلغاء", onclick:cancel}));
+    var form = h("form", {class:"a-form-grid a-pay-form"}, [
+      h("strong", {text:existing ? "تعديل الدفعة" : "إضافة دفعة"}),
+      field("المبلغ (" + row.currency + ")", amount), field("تاريخ الدفع", date), field("رقم الإيصال", receipt), field("ملاحظات", note),
+      h("div", {class:"a-row"}, buttons)
+    ]);
+    form.addEventListener("submit", async function(event){
+      event.preventDefault();
+      var body = JSON.stringify({amount:amount.value, paid_on:date.value, receipt_no:receipt.value.trim() || null, note:note.value.trim()});
+      try{
+        await request(existing ? "/api/admin/fees/payments/" + encodeURIComponent(existing.id) : "/api/admin/fees/charges/" + encodeURIComponent(row.id) + "/payments",
+          {method:existing ? "PATCH" : "POST", body:body});
+        setMsg(msg, "تم حفظ الدفعة.", "ok"); await load();
+      }catch(error){ setMsg(msg, errText(error), "err"); }
+    });
+    return form;
+  }
+
+  /* Rows flagged by the import can be corrected right in the table. */
+  function inlineEdit(r){
+    var name = h("input", {type:"text", maxlength:"120", value:r.child_name, placeholder:"اسم الطفل", "aria-label":"اسم الطفل"});
+    var cls = h("input", {type:"text", maxlength:"60", value:r.class_name, placeholder:"الصف", "aria-label":"الصف"});
+    var amount = numberInput(r.amount, {placeholder:"الرسم", "aria-label":"الرسم المطلوب"});
+    var save = h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
+      try{
+        await request("/api/admin/fees/children/" + encodeURIComponent(r.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value.trim(), display_name:name.value.trim()})});
+        if(amount.value !== "") await request("/api/admin/fees/charges/" + encodeURIComponent(r.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})});
+        setMsg(msg, "تم حفظ التصحيح. اضغط «تمت المراجعة» بعد التأكد من السطر.", "ok"); await load();
+      }catch(error){ setMsg(msg, errText(error), "err"); }
+    }});
+    return {name:name, cls:cls, amount:amount, save:save};
+  }
+  function currencyTable(code){
+    var rows = data.rows.filter(function(r){ return r.currency === code; });
+    var totals = data.totals[code] || {amount:"0", paid:"0", remaining:"0"};
+    var headers = ["الرقم","اسم الطفل","الصف","الرسم المطلوب","المدفوع","المتبقي","تاريخ الدفع","رقم الإيصال","ملاحظات",""];
+    var thead = h("thead", {}, [h("tr", {}, headers.map(function(t){ return h("th", {text:t}); }))]);
+    var tbody = h("tbody", {});
+    rows.forEach(function(r, i){
+      var edit = r.needs_review ? inlineEdit(r) : null;
+      var tr = h("tr", {class:"a-fee-row " + r.status + (r.needs_review ? " review" : "")}, [
+        cell(String(i + 1), "num"),
+        edit ? h("td", {class:"name"}, [edit.name]) : h("td", {class:"name", dir:"auto"}, [r.child_name || "—"]),
+        edit ? h("td", {}, [edit.cls]) : cell(r.class_name || "—"),
+        edit ? h("td", {class:"num"}, [edit.amount]) : cell(money(r.amount), "num"), cell(money(r.paid), "num"),
+        h("td", {class:"num"}, [h("div", {class:"a-remaining", text:money(r.remaining)}), badge(r.status)]),
+        cell(r.last_paid_on || "—", "num"), cell(r.receipts.join("، ") || "—", "num"), cell(r.notes.join("؛ ") || "—"),
+        h("td", {}, [edit ? edit.save : "", h("button", {type:"button", class:"a-btn " + (openId === r.id ? "ghost" : "sun"), text:openId === r.id ? "إغلاق" : "دفعة / تعديل", onclick:function(){ openId = openId === r.id ? "" : r.id; render(); }})])
+      ]);
+      tbody.appendChild(tr);
+      if(openId === r.id) tbody.appendChild(detailRow(r, headers.length));
+    });
+    if(!rows.length) tbody.appendChild(h("tr", {}, [h("td", {colspan:String(headers.length), class:"a-empty", text:"لا توجد رسوم بهذه العملة."})]));
+    var tfoot = h("tfoot", {}, [h("tr", {class:"a-total"}, [
+      h("td", {colspan:"3", text:"الإجمالي العام (" + code + ")"}), cell(money(totals.amount), "num"), cell(money(totals.paid), "num"),
+      cell(money(totals.remaining), "num"), h("td", {colspan:"4"})])]);
+    return h("div", {class:"a-card"}, [
+      h("h3", {text:"الرسوم بـ" + CURRENCY_LABEL[code]}),
+      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table"}, [thead, tbody, tfoot])])
+    ]);
+  }
+  function render(){
+    tables.innerHTML = "";
+    var shown = filters.currency ? [filters.currency] : ["USD", "SYP"];
+    shown.forEach(function(code){ tables.appendChild(currencyTable(code)); });
+  }
+
+  // ----- data loading --------------------------------------------------
+  async function load(){
+    var q = [];
+    ["year","month","class_name","currency","status","needs_review"].forEach(function(k){ if(filters[k]) q.push(k + "=" + encodeURIComponent(filters[k])); });
+    try{
+      data = await request("/api/admin/fees?" + q.join("&"));
+      fillClasses(); render();
+    }catch(error){ tables.innerHTML = ""; tables.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
+  }
+  async function init(){
+    try{
+      viewer = await request("/api/admin/fees/me");
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+    await reloadChildren();
+    load();
+  }
+  async function reloadChildren(){
+    try{
+      var list = await request("/api/admin/fees/children");
+      var keep = addChild.value;
+      addChild.innerHTML = "";
+      addChild.appendChild(new Option("＋ طفل جديد (اكتب الاسم)", NEW_CHILD));
+      list.forEach(function(c){ addChild.appendChild(new Option(c.display_name + (c.class_name ? " — " + c.class_name : ""), c.id)); });
+      addChild.value = Array.prototype.some.call(addChild.options, function(o){ return o.value === keep; }) ? keep : NEW_CHILD;
+      classList.innerHTML = "";
+      list.map(function(c){ return c.class_name; }).filter(function(v, i, a){ return v && a.indexOf(v) === i; })
+        .forEach(function(name){ classList.appendChild(new Option(name)); });
+      syncNewChild();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  }
+
+  // ----- printable report (A4 landscape, RTL) -------------------------
+  function printReport(){
+    var codes = filters.currency ? [filters.currency] : ["USD", "SYP"];
+    var period = (filters.month ? MONTHS_AR[Number(filters.month) - 1] + " " : "") + (filters.year || "");
+    var today = new Date().toLocaleDateString("ar-SY");
+    var sections = codes.map(function(code){
+      var rows = data.rows.filter(function(r){ return r.currency === code; });
+      var t = data.totals[code] || {amount:"0", paid:"0", remaining:"0"};
+      var body = rows.map(function(r, i){
+        return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.child_name) + "</td><td>" + esc(r.class_name || "—") + "</td><td>" + money(r.amount) +
+          "</td><td>" + money(r.paid) + "</td><td class='" + (Number(r.remaining) > 0 ? "due" : "") + "'>" + money(r.remaining) + "</td><td>" + esc(r.last_paid_on || "—") +
+          "</td><td>" + esc(r.receipts.join("، ") || "—") + "</td><td class='l'>" + esc(r.notes.join("؛ ") || "—") + "</td></tr>";
+      }).join("");
+      return "<section><header><h1>روضة زهرة المدائن</h1><h2>كشف اشتراكات ورسوم الأطفال</h2><p>الفترة: " + esc(period) +
+        " &nbsp;|&nbsp; العملة: " + esc(CURRENCY_LABEL[code]) + (filters.class_name ? " &nbsp;|&nbsp; الصف: " + esc(filters.class_name) : "") + "</p></header>" +
+        "<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>ملاحظات</th></tr></thead><tbody>" +
+        (body || "<tr><td colspan='9'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.amount) +
+        "</td><td>" + money(t.paid) + "</td><td>" + money(t.remaining) + "</td><td colspan='3'></td></tr></tfoot></table>" +
+        "<div class='sign'><div><b>توقيع المحاسب</b><span>" + esc(viewer.role === "accountant" ? viewer.name : "") + "</span><i>التاريخ: ____ / ____ / ________</i></div>" +
+        "<div><b>توقيع الإدارة</b><span></span><i>التاريخ: ____ / ____ / ________</i></div></div><footer>طُبع بتاريخ " + esc(today) + "</footer></section>";
+    }).join("");
+    var css = "@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Almarai,'Segoe UI',Tahoma,sans-serif;color:#111;margin:0;font-size:11pt}" +
+      "section{page-break-after:always}section:last-child{page-break-after:auto}header{text-align:center;margin-bottom:8px}h1{margin:0;font-size:17pt}h2{margin:2px 0;font-size:14pt}header p{margin:4px 0}" +
+      "table{width:100%;border-collapse:collapse}th,td{border:1px solid #444;padding:4px 6px;text-align:center}td.l{text-align:right}th{background:#e8eef9}tfoot td{font-weight:700;background:#f3f3f3}" +
+      ".due{color:#b00020;font-weight:700}.sign{display:flex;justify-content:space-between;gap:40px;margin-top:26px}.sign div{flex:1;text-align:center}.sign b{display:block;margin-bottom:34px}" +
+      ".sign span{display:block;border-top:1px solid #000;padding-top:4px;min-height:24px}.sign i{display:block;margin-top:8px;font-style:normal}footer{margin-top:10px;font-size:9pt;color:#555;text-align:left}";
+    var w = window.open("", "_blank");
+    if(!w){ setMsg(msg, "اسمح بالنوافذ المنبثقة لتصدير PDF.", "err"); return; }
+    w.document.write("<!doctype html><html lang='ar' dir='rtl'><head><meta charset='utf-8'><title>كشف الاشتراكات والرسوم</title>" +
+      "<link href='https://fonts.googleapis.com/css2?family=Almarai:wght@400;700&display=swap' rel='stylesheet'><style>" + css + "</style></head><body>" + sections + "</body></html>");
+    w.document.close();
+    setTimeout(function(){ w.focus(); w.print(); }, 700);
+  }
+
+  var toolbar = h("div", {class:"a-row"}, [
+    h("button", {type:"button", class:"a-btn sun", text:"＋ إضافة صف جديد", onclick:function(){ addForm.hidden = !addForm.hidden; genForm.hidden = true; }}),
+    h("button", {type:"button", class:"a-btn ghost", text:"إنشاء رسوم الشهر للجميع", onclick:function(){ genForm.hidden = !genForm.hidden; addForm.hidden = true; }}),
+    h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:printReport})
+  ]);
+  var filterCard = h("div", {class:"a-card"}, [
+    h("h3", {text:"الاشتراكات والرسوم"}),
+    h("p", {class:"hint", text:"الدولار والليرة السورية يُحسبان كلٌّ على حدة ولا يُجمعان ولا يُحوَّلان. لحفظ الكشف كملف PDF اختر «حفظ كملف PDF» في نافذة الطباعة."}),
+    h("div", {class:"a-form-grid"}, [field("السنة", fYear), field("الشهر", fMonth), field("الصف", fClass), field("العملة", fCurrency), field("الحالة", fStatus), h("label", {class:"a-field a-check-field"}, [fReview, h("span", {text:"فقط ما يحتاج مراجعة"})])]),
+    toolbar, msg
+  ]);
+  init();
+  fill = null;
+  return h("section", {}, [filterCard, addForm, genForm, tables]);
+}
+
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["settings","الإعدادات"]]
+  .filter(function(t){
+    if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
+    return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && t[0] === "fees");
+  });
+if(TABS.length && !TABS.some(function(t){ return t[0] === tab; })) tab = TABS[0][0];
 function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
   var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ clearSessions(); start(); }});
   var view = h("a", {class:"a-btn sun", href:"../", target:"_blank", rel:"noopener", style:"text-decoration:none", text:"عرض الموقع"});
-  var back = TEACHER_MODE ? h("a", {class:"a-btn ghost", href:"../teachers/", style:"color:#fff;border-color:#fff;text-decoration:none", text:"العودة إلى بوابتي"}) : null;
+  var switches = [];  // links to the other portals this account may use
+  [["teacher", "../teachers/", "بوابة المعلمات"], ["parent", "../parents/", "بوابة أولياء الأمور"]].forEach(function(p){
+    if((TEACHER_MODE || ACCOUNTANT_MODE) && PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"a-btn ghost", href:p[1], style:"color:#fff;border-color:#fff;text-decoration:none", text:p[2]}));
+  });
+  var back = TEACHER_MODE && !PORTALS.length ? h("a", {class:"a-btn ghost", href:"../teachers/", style:"color:#fff;border-color:#fff;text-decoration:none", text:"العودة إلى بوابتي"}) : null;
   var tabs = h("div", {class:"a-tabs", role:"tablist"});
   TABS.forEach(function(t){
     var b = h("button", {type:"button", role:"tab", "aria-selected":String(tab === t[0]), text:t[1]});
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "children" ? tabChildren() : tabMedia("image"));
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch(), back, view, out])]), tabs]), main);
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, view, out]))]), tabs]), main);
 }
 function loginScreen(msg){
   var root = document.getElementById("app"); root.innerHTML = "";
@@ -695,6 +1105,7 @@ function loginScreen(msg){
 // If only the GitHub connection is missing (e.g. local testing), still open the dashboard
 // so the platform accounts tab remains usable.
 async function loadContent(){
+  if(!TEACHER_MODE && ACCOUNTANT_MODE) return {settings:{}, gallery:[], news:[]};  // accountants do not use the site content
   try{ return await api("GET", "/admin/api/content"); }
   catch(e){
     if(e && e.message && /GitHub/.test(e.message)){
