@@ -1,18 +1,26 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    UniqueConstraint,
     LargeBinary,
     String,
     Table,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -78,6 +86,7 @@ class Child(Base):
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
+    class_name: Mapped[str] = mapped_column(String(60), default="", server_default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -206,6 +215,149 @@ class RegistrationRequest(Base):
     registered_at: Mapped[datetime | None] = mapped_column(nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class FeeCharge(Base):
+    """Amount a child owes for one month, in one currency (USD or SYP)."""
+
+    __tablename__ = "fee_charges"
+    __table_args__ = (
+        UniqueConstraint("child_id", "year", "month", "currency", name="uq_fee_charge_period"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True
+    )
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    month: Mapped[int] = mapped_column(Integer, index=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    raw_text: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    source: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    payments: Mapped[list[FeePayment]] = relationship(
+        back_populates="charge", cascade="all, delete-orphan", lazy="selectin",
+        order_by="FeePayment.paid_on",
+    )
+
+
+class FeePayment(Base):
+    __tablename__ = "fee_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    charge_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("fee_charges.id", ondelete="CASCADE"), index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    receipt_no: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    charge: Mapped[FeeCharge] = relationship(back_populates="payments")
+    __table_args__ = (
+        Index(
+            "uq_fee_payment_receipt_active",
+            "receipt_no",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL AND receipt_no IS NOT NULL"),
+            sqlite_where=text("deleted_at IS NULL AND receipt_no IS NOT NULL"),
+        ),
+    )
+
+
+class Employee(Base):
+    """Staff master data (teachers and other employees on the payroll)."""
+
+    __tablename__ = "employees"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    job_title: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class SalaryLine(Base):
+    """One employee's pay for one month. Net pay is calculated, never stored."""
+
+    __tablename__ = "salary_lines"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "year", "month", "currency", name="uq_salary_period"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), index=True
+    )
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    month: Mapped[int] = mapped_column(Integer, index=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    base: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    bonus: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    advance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    deduction: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    raw_text: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    source: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    employee: Mapped[Employee] = relationship(lazy="joined")
+
+
+class AccountingEntry(Base):
+    """A row of the monthly or weekly accounting sheet.
+
+    Standard items (item_key) may be filled automatically; a stored row with
+    manual=True overrides the automatic value."""
+
+    __tablename__ = "accounting_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    period_type: Mapped[str] = mapped_column(String(5), index=True)  # "month" | "week"
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    month: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    week_start: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    item_key: Mapped[str] = mapped_column(String(20))  # standard key or "custom"
+    item_label: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    details: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    income: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    expense: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class FeeAuditLog(Base):
+    __tablename__ = "fee_audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    actor_name: Mapped[str] = mapped_column(String(80))
+    action: Mapped[str] = mapped_column(String(40))
+    entity_id: Mapped[str] = mapped_column(String(40))
+    details: Mapped[str] = mapped_column(String(1000), default="", server_default="")
 
 
 class PortalSession(Base):

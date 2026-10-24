@@ -130,3 +130,6 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
   .p-auth-card > a:hover { color: var(--sun); }
 }
 @media (max-width: 560px) { .p-auth-main { padding-block: 16px; } .p-auth-intro { order: 2; } .p-auth-card { order: 1; } }
+
+.p-portal-choice{display:block;text-align:center;margin-top:12px;min-height:50px;line-height:30px}
+.p-auth-card .p-portal-choice{display:block;width:100%;box-sizing:border-box}

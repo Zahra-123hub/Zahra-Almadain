@@ -27,6 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app import accounting, fees
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -308,6 +309,7 @@ class PreferredLanguageRequest(BaseModel):
 
 
 class TeacherAccountCreateRequest(BaseModel):
+    role: str = Field(default="teacher", pattern="^(teacher|accountant)$")
     username: str = Field(min_length=3, max_length=80, pattern=USERNAME_RE.pattern)
     password: str = Field(min_length=12, max_length=256)
     preferred_language: str = Field(
@@ -317,6 +319,23 @@ class TeacherAccountCreateRequest(BaseModel):
 
 class AccountApprovalRequest(BaseModel):
     status: str = Field(pattern="^(active|disabled)$")
+
+
+MANAGED_ROLES = ("parent", "teacher", "accountant")
+
+
+class AccountEditRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=3, max_length=80)
+    # An account may hold several of these roles at once; other roles (admin, manager) are untouched.
+    roles: list[str] | None = Field(default=None, max_length=3)
+    preferred_language: str | None = Field(
+        default=None, min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern
+    )
+
+
+class PasswordResetRequest(BaseModel):
+    # Leave empty to let the server generate a strong password.
+    password: str | None = Field(default=None, min_length=12, max_length=256)
 
 
 class PlatformPrincipal:
@@ -475,6 +494,53 @@ def require_publisher(
     return account.username
 
 
+def require_fees_user(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """Fees are only for accountants and admins; everyone else gets 403."""
+    secret = os.getenv("SESSION_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "لم يتم إعداد جلسات المسؤول على الخادم.")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "سجّل الدخول أولاً.")
+    token = authorization[7:]
+    username = verify_session_token(token, secret)
+    if username and hmac.compare_digest(username, os.getenv("ADMIN_USERNAME", "admin")):
+        return fees.FeesActor(None, username, "admin")
+    verified = verify_portal_session_token(token, secret)
+    if verified is None:
+        raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
+    if session is None:
+        raise HTTPException(503, "Platform storage is not configured on the server.")
+    account_id, token_id = verified
+    portal_session = session.scalar(
+        select(PortalSession).where(
+            PortalSession.account_id == account_id,
+            PortalSession.token_id == token_id,
+            PortalSession.revoked_at.is_(None),
+            PortalSession.expires_at > func.now(),
+        )
+    )
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles))
+        .where(
+            Account.id == account_id,
+            Account.is_active.is_(True),
+            Account.approval_status == "active",
+        )
+    )
+    if portal_session is None or account is None:
+        raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
+    roles = {role.name for role in account.roles}
+    if "accountant" in roles:
+        return fees.FeesActor(account.id, account.username, "accountant")
+    if "admin" in roles:
+        return fees.FeesActor(account.id, account.username, "admin")
+    raise HTTPException(403, "ليس لديك صلاحية الوصول إلى الاشتراكات والرسوم.")
+
+
 def get_platform_principal(
     authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
@@ -619,6 +685,10 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
         status_code=exc.status_code if exc.status_code < 500 else 502,
         content={"detail": exc.message},
     )
+
+
+app.include_router(fees.build_router(require_fees_user))
+app.include_router(accounting.build_router(require_fees_user))
 
 
 @app.get("/healthz")
@@ -836,6 +906,7 @@ def admin_account_data(account: Account) -> dict[str, Any]:
         "username": account.username,
         "roles": sorted(role.name for role in account.roles),
         "approval_status": account.approval_status,
+        "preferred_language": account.preferred_language,
         "created_at": account.created_at.isoformat() if account.created_at else None,
     }
 
@@ -851,7 +922,7 @@ def list_platform_accounts(
         select(Account)
         .options(selectinload(Account.roles))
         .join(Account.roles)
-        .where(Role.name.in_(("parent", "teacher")))
+        .where(Role.name.in_(("parent", "teacher", "accountant")))
         .order_by(Account.created_at.desc())
     ).unique().all()
     details = {
@@ -890,7 +961,7 @@ def create_platform_teacher_account(
         raise HTTPException(422, "Username contains unsupported characters.")
     if session.scalar(select(Account.id).where(Account.username == username)) is not None:
         raise HTTPException(409, "That username is already in use.")
-    teacher_role = session.scalar(select(Role).where(Role.name == "teacher"))
+    teacher_role = session.scalar(select(Role).where(Role.name == payload.role))
     if teacher_role is None:
         raise HTTPException(503, "Platform roles are not initialized. Run database migrations.")
     account = Account(
@@ -926,7 +997,7 @@ def update_platform_account_status(
         .where(Account.id == account_id)
         .with_for_update()
     )
-    if account is None or not {"parent", "teacher"}.intersection(
+    if account is None or not {"parent", "teacher", "accountant"}.intersection(
         role.name for role in account.roles
     ):
         raise HTTPException(404, "Parent or teacher account not found.")
@@ -944,6 +1015,99 @@ def update_platform_account_status(
     session.commit()
     session.refresh(account)
     return admin_account_data(account)
+
+
+PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def managed_account(session: Session, account_id: uuid.UUID) -> Account:
+    account = session.scalar(
+        select(Account)
+        .options(selectinload(Account.roles))
+        .where(Account.id == account_id)
+        .with_for_update()
+    )
+    if account is None or not {"parent", "teacher", "accountant"}.intersection(
+        role.name for role in account.roles
+    ):
+        raise HTTPException(404, "الحساب غير موجود.")
+    return account
+
+
+def revoke_sessions(session: Session, account_id: uuid.UUID) -> None:
+    session.execute(
+        update(PortalSession)
+        .where(PortalSession.account_id == account_id, PortalSession.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+
+
+@app.patch("/api/admin/platform/accounts/{account_id}")
+def edit_platform_account(
+    account_id: uuid.UUID,
+    payload: AccountEditRequest,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Change the username or language of a parent, teacher or accountant account."""
+    response.headers["Cache-Control"] = "no-store"
+    account = managed_account(session, account_id)
+    if payload.username is not None:
+        username = payload.username.strip().lower()
+        if not USERNAME_RE.fullmatch(username):
+            raise HTTPException(422, "اسم المستخدم يحتوي على أحرف غير مدعومة.")
+        if username != account.username:
+            taken = session.scalar(
+                select(Account.id).where(Account.username == username, Account.id != account.id)
+            )
+            if taken is not None:
+                raise HTTPException(409, "اسم المستخدم مستخدم بالفعل.")
+            account.username = username
+            revoke_sessions(session, account.id)  # the old name is no longer valid for open sessions
+    if payload.preferred_language is not None:
+        account.preferred_language = payload.preferred_language
+    if payload.roles is not None:
+        wanted = set(payload.roles)
+        if not wanted or not wanted <= set(MANAGED_ROLES):
+            raise HTTPException(422, "اختر دوراً واحداً على الأقل من: معلمة، محاسب، ولي أمر.")
+        found = {r.name: r for r in session.scalars(select(Role).where(Role.name.in_(MANAGED_ROLES)))}
+        if wanted - set(found):
+            raise HTTPException(503, "Platform roles are not initialized. Run database migrations.")
+        kept = [role for role in account.roles if role.name not in MANAGED_ROLES]
+        account.roles = kept + [found[name] for name in sorted(wanted)]
+    session.commit()
+    session.refresh(account)
+    return admin_account_data(account)
+
+
+@app.post("/api/admin/platform/accounts/{account_id}/reset-password")
+def reset_platform_account_password(
+    account_id: uuid.UUID,
+    payload: PasswordResetRequest,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Set a new password (given or generated). Existing passwords can never be read: they are
+    stored as one-way hashes. The new password is returned once and is not stored in clear."""
+    response.headers["Cache-Control"] = "no-store"
+    account = managed_account(session, account_id)
+    password = payload.password or "".join(
+        secrets.choice(PASSWORD_ALPHABET) for _ in range(14)
+    )
+    account.password_hash = PASSWORD_HASHER.hash(password)
+    revoke_sessions(session, account.id)
+    session.execute(
+        delete(LoginAttempt).where(
+            LoginAttempt.username_hash
+            == hmac.new(
+                os.getenv("SESSION_SECRET", "").encode(), account.username.encode(), hashlib.sha256
+            ).hexdigest()
+        )
+    )
+    session.commit()
+    return {"username": account.username, "password": password, "generated": payload.password is None}
 
 
 @app.post("/api/platform/auth/login")
@@ -1026,6 +1190,7 @@ def unified_login(
         if same_user and same_password:
             return {
                 "role": "admin",
+                "portals": ["admin"],
                 "access_token": create_session_token(payload.username.strip(), secret),
                 "token_type": "bearer",
                 "expires_in": SESSION_TTL_SECONDS,
@@ -1037,12 +1202,18 @@ def unified_login(
         .where(Account.username == payload.username.strip().lower())
     )
     names = {role.name for role in account.roles} if account is not None else set()
+    portals = []
     if names & {"teacher", "manager", "admin"}:
-        result["role"] = "teacher"
-    elif "parent" in names:
-        result["role"] = "parent"
-    else:
+        portals.append("teacher")
+    if "accountant" in names:
+        portals.append("accountant")
+    if "parent" in names:
+        portals.append("parent")
+    if not portals:
         raise HTTPException(403, "You do not have permission to perform this action.")
+    # One role: go straight to its portal. Several roles: the client lets the user choose.
+    result["role"] = portals[0]
+    result["portals"] = portals
     return result
 
 

@@ -10,7 +10,8 @@
   var PORTAL_TARGETS = {
     admin: {key: "zm-admin-session", lang: "zm-admin-lang", url: "../admin/"},
     teacher: {key: "zm-teacher-session", lang: "zm-teacher-lang", url: "../teachers/"},
-    parent: {key: "zm-parent-session", lang: "zm-parent-lang", url: "../parents/"}
+    parent: {key: "zm-parent-session", lang: "zm-parent-lang", url: "../parents/"},
+    accountant: {key: "zm-accountant-session", lang: "zm-accountant-lang", url: "../admin/"}
   };
   var token = sessionStorage.getItem(storeKey) || "";
   var lang = localStorage.getItem(langKey) === "en" ? "en" : "ar";
@@ -36,7 +37,9 @@
       publishSite: "النشر على الموقع (صور، فيديو، أخبار)",      finishTitle: "إكمال التسجيل: أنشئي حسابك", finishHint: "أدخلي رمز التسجيل الذي وصلك، ثم اختاري اسم مستخدم وكلمة مرور لحسابك.",
       newUsername: "اختاري اسم مستخدم", usernameRule: "أحرف إنجليزية وأرقام و . _ - فقط، 3 أحرف على الأقل.",
       newPassword: "اختاري كلمة مرور", passwordRule: "12 حرفاً على الأقل.", confirmPassword: "أعيدي كتابة كلمة المرور",
-      passwordMismatch: "كلمتا المرور غير متطابقتين.", loginTitle: "تسجيل الدخول", loginIntro: "ادخلي ببياناتك، وسننقلك تلقائياً إلى بوابتك حسب نوع حسابك.",
+      passwordMismatch: "كلمتا المرور غير متطابقتين.", accountantTitle: "المحاسبة (الاشتراكات والرسوم)", chooseTitle: "اختر البوابة",
+      chooseHint: "حسابك يملك أكثر من صلاحية. إلى أين تريد الدخول؟", switchPortal: "تبديل البوابة",
+      loginTitle: "تسجيل الدخول", loginIntro: "ادخلي ببياناتك، وسننقلك تلقائياً إلى بوابتك حسب نوع حسابك.",
       school: "روضة زهرة المدائن", parentWelcome: "تابع التقارير اليومية المنشورة لأطفالك.",
       teacherWelcome: "أنشئي مسودات التقارير وأرسليها للمراجعة. لن تظهر للأهل حتى اعتمادها.",
       login: "تسجيل الدخول", signup: "إنشاء حساب بدعوة", username: "اسم المستخدم",
@@ -95,7 +98,9 @@
       publishSite: "Publish to website (photos, videos, news)",      finishTitle: "Finish registration: create your account", finishHint: "Enter the registration code you received, then choose a username and password for your account.",
       newUsername: "Choose a username", usernameRule: "English letters, digits and . _ - only, at least 3 characters.",
       newPassword: "Choose a password", passwordRule: "At least 12 characters.", confirmPassword: "Repeat the password",
-      passwordMismatch: "The two passwords do not match.", loginTitle: "Sign in", loginIntro: "Sign in and we will take you to the right portal for your account.",
+      passwordMismatch: "The two passwords do not match.", accountantTitle: "Accounting (fees and payroll)", chooseTitle: "Choose a portal",
+      chooseHint: "Your account has more than one role. Where do you want to go?", switchPortal: "Switch portal",
+      loginTitle: "Sign in", loginIntro: "Sign in and we will take you to the right portal for your account.",
       school: "Zahrat Al-Madayn Kindergarten", parentWelcome: "View the published daily reports for your children.",
       teacherWelcome: "Save reports as drafts or submit them for review. Families will not see them until approved.",
       login: "Sign in", signup: "Join with an invitation", username: "Username",
@@ -177,6 +182,15 @@
     "The file exceeds its size or storage limit.": {ar:"تجاوز الملف الحد المسموح للحجم أو التخزين.",en:"The file exceeds its size or storage limit."}
   };
   var t = function (key) { return copy[lang][key] || key; };
+  function portalLabel(name) {
+    return name === "teacher" ? t("teacherTitle") : name === "parent" ? t("parentTitle") : name === "accountant" ? t("accountantTitle") : name;
+  }
+  function otherPortals() {
+    var list = [];
+    try { list = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); } catch (e) {}
+    var current = isTeacherPortal ? "teacher" : "parent";
+    return list.filter(function (name) { return name !== current && PORTAL_TARGETS[name] && name !== "admin"; });
+  }
   function portalTitle() { return isLogin ? t("loginTitle") : isTeacherPortal ? t("teacherTitle") : t("parentTitle"); }
   var element = function (tag, className, text) {
     var node = document.createElement(tag);
@@ -254,6 +268,14 @@
       langGroup.appendChild(languageButton);
     });
     actions.appendChild(langGroup);
+    if (token && !isLogin) {
+      otherPortals().forEach(function (name) {
+        var other = element("a", "p-button outline", portalLabel(name));
+        other.href = PORTAL_TARGETS[name].url;
+        other.title = t("switchPortal");
+        actions.appendChild(other);
+      });
+    }
     if (token && isTeacherPortal) {
       var publishLink = element("a", "p-button sun", t("publishSite"));
       publishLink.href = "../admin/";
@@ -357,13 +379,7 @@
             formState.invitation_code = "";
             if (result.approval_status === "active" && isLogin) {
               // The code was issued by the kindergarten, so the account is ready: sign in right away.
-              return request("/api/auth/entry", {method: "POST", body: JSON.stringify(chosen)}).then(function (login) {
-                var target = PORTAL_TARGETS[login.role];
-                if (!target) throw new Error(t("accessDenied"));
-                sessionStorage.setItem(target.key, login.access_token);
-                localStorage.setItem(target.lang, lang);
-                window.location.href = target.url;
-              });
+              return request("/api/auth/entry", {method: "POST", body: JSON.stringify(chosen)}).then(enterPortals);
             }
             loginAlert = result.approval_status === "active" ? t("accountReadyNotice") : t("approvalPendingNotice");
             drawForm();
@@ -371,11 +387,7 @@
           }
           formState.password = "";
           if (isLogin) {
-            var target = PORTAL_TARGETS[result.role];
-            if (!target) throw new Error(t("accessDenied"));
-            sessionStorage.setItem(target.key, result.access_token);
-            localStorage.setItem(target.lang, lang);
-            window.location.href = target.url;
+            enterPortals(result);
             return;
           }
           token = result.access_token;
@@ -465,6 +477,25 @@
         error.className = "p-alert error";
         drawForm();
       }));
+    }
+    /* One role: straight to its portal. Several roles: the user picks (one session works for all). */
+    function enterPortals(result) {
+      var portals = (result.portals && result.portals.length ? result.portals : [result.role]).filter(function (name) { return PORTAL_TARGETS[name]; });
+      if (!portals.length) throw new Error(t("accessDenied"));
+      try { sessionStorage.setItem("zm-portals", JSON.stringify(portals)); } catch (e) {}
+      portals.forEach(function (name) {
+        sessionStorage.setItem(PORTAL_TARGETS[name].key, result.access_token);
+        localStorage.setItem(PORTAL_TARGETS[name].lang, lang);
+      });
+      if (portals.length === 1) { window.location.href = PORTAL_TARGETS[portals[0]].url; return; }
+      card.innerHTML = "";
+      card.appendChild(element("h2", "", t("chooseTitle")));
+      card.appendChild(element("p", "p-subtitle", t("chooseHint")));
+      portals.forEach(function (name) {
+        var link = element("a", "p-button sun p-portal-choice", portalLabel(name));
+        link.href = PORTAL_TARGETS[name].url;
+        card.appendChild(link);
+      });
     }
     function field(labelText, type, autocomplete) {
       var wrap = element("div", "p-field");
