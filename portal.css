@@ -259,3 +259,10 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-field textarea{min-height:120px;padding:12px 14px}
 .p-field input[type=file]{min-height:52px;padding:8px 10px}
 .p-field select{padding-inline-end:10px}
+
+/* ===== Logo plate ===== */
+.p-brand img{width:auto;height:48px;min-width:0;padding:5px 12px;border-radius:15px;background:#fff;object-fit:contain;box-shadow:0 2px 10px #00000038,inset 0 0 0 1px #17408f1a}
+.p-brand{gap:14px}
+@media(max-width:560px){.p-brand img{height:42px;padding:4px 10px}}
+.p-brand img{height:56px;padding:6px 14px}
+@media(max-width:560px){.p-brand img{height:46px;padding:5px 11px}}

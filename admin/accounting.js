@@ -57,7 +57,7 @@ function accPrint(title, subtitle, parts, msgEl){
   var sign = "<div class='sign'><div><b>توقيع المحاسب</b><span>" + esc(ACC_VIEWER.role === "accountant" ? ACC_VIEWER.name : "") + "</span><i>التاريخ: ____ / ____ / ________</i></div>" +
     "<div><b>توقيع الإدارة</b><span></span><i>التاريخ: ____ / ____ / ________</i></div></div>";
   var today = new Date().toLocaleDateString("ar-SY");
-  var logo = new URL("../images/logo.png", window.location.href).href;
+  var logo = new URL("../images/logo.png?v=2", window.location.href).href;
   var html = "<!doctype html><html lang='ar' dir='rtl'><head><meta charset='utf-8'><title>" + esc(title) + "</title>" +
     "<link href='https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&display=swap' rel='stylesheet'><style>" + css + "</style></head><body>" +
     parts.map(function(part){

@@ -1139,7 +1139,7 @@ function draw(){
     var hello = document.getElementById("a-hello");
     if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }
   });
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("span", {class:"a-hello", id:"a-hello", hidden:"hidden"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("div", {class:"a-brand"}, [h("img", {class:"a-logo", src:"../images/logo.png?v=2", alt:"شعار روضة زهرة المدائن"}), h("h2", {text:"لوحة تحكم روضة زهرة المدائن"})]), h("span", {class:"a-hello", id:"a-hello", hidden:"hidden"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
 }
 /* A signed-in teacher/accountant changes their own password here (the admin password lives on the server). */
 function toggleChangePassword(){
