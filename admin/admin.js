@@ -212,8 +212,8 @@ function applyAdminLanguage(){
 }
 function languageSwitch(){
   var group = h("div", {class:"a-lang", role:"group", "aria-label":"اللغة / Language"});
-  [["ar","ع"],["en","EN"]].forEach(function(choice){
-    var button = h("button", {type:"button", "aria-pressed":String(ADMIN_LANG === choice[0]), text:choice[1]});
+  [["ar","العربية"],["en","English"]].forEach(function(choice){
+    var button = h("button", {type:"button", lang:choice[0], "aria-pressed":String(ADMIN_LANG === choice[0]), text:choice[1]});
     button.addEventListener("click", function(){ setAdminLanguage(choice[0]); });
     group.appendChild(button);
   });
@@ -381,13 +381,21 @@ function tabAccounts(){
   var roleSelect = h("select", {id:"a-new-role", "aria-label":"نوع الحساب"});
   roleSelect.appendChild(new Option("معلمة", "teacher"));
   roleSelect.appendChild(new Option("محاسب", "accountant"));
+  roleSelect.appendChild(new Option("ولي أمر", "parent"));
   roleSelect.appendChild(new Option("مدير (صلاحيات كاملة)", "admin"));
+  var childSelect = h("select", {id:"a-new-child", "aria-label":"الطفل"});
+  childSelect.appendChild(new Option("— بدون ربط الآن —", ""));
+  var childRow = h("div", {hidden:"hidden"}, [h("label", {for:"a-new-child", text:"الطفل (يرى ولي الأمر تقاريره ومنشوراته الخاصة)"}), childSelect]);
+  request("/api/admin/platform/children").then(function(list){
+    list.forEach(function(c){ childSelect.appendChild(new Option(c.display_name, c.id)); });
+  }).catch(function(){});
+  roleSelect.addEventListener("change", function(){ childRow.hidden = roleSelect.value !== "parent"; });
   var fullNameInput = h("input", {type:"text", id:"a-new-fullname", maxlength:"120", autocomplete:"off", placeholder:"مثال: ريما صالح"});
   var jobInput = h("input", {type:"text", id:"a-new-job", maxlength:"80", autocomplete:"off", placeholder:"معلمة، محاسب..."});
   var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء الحساب"});
   var form = h("form", {class:"a-card"}, [
-    h("h3", {text:"أنشئ حساب معلمة جديداً. يكون الحساب مفعّلاً فوراً."}),
-    h("label", {for:"a-new-role", text:"نوع الحساب"}), roleSelect,
+    h("h3", {text:"أنشئ حساباً جديداً (معلمة، محاسب، ولي أمر أو مدير). يكون الحساب مفعّلاً فوراً."}),
+    h("label", {for:"a-new-role", text:"نوع الحساب"}), roleSelect, childRow,
     h("label", {for:"a-new-fullname", text:"الاسم الكامل (يُحفظ كموظف مرتبط بالحساب)"}), fullNameInput,
     h("label", {for:"a-new-job", text:"المسمى الوظيفي"}), jobInput,
     h("label", {for:"a-teacher-username", text:"اسم المستخدم"}), username,
@@ -643,6 +651,7 @@ function tabAccounts(){
           role:roleSelect.value,
           full_name:fullNameInput.value.trim(),
           job_title:jobInput.value.trim(),
+          child_id:(roleSelect.value === "parent" && childSelect.value) ? childSelect.value : null,
           username:username.value.trim(),
           password:password.value,
           preferred_language:"ar"
@@ -711,6 +720,7 @@ function tabChildren(){
       var results = await Promise.all([request("/api/admin/platform/children"), request("/api/admin/platform/accounts")]);
       var children = results[0];
       var teachers = results[1].filter(function(a){ return a.roles.indexOf("teacher") !== -1 && a.approval_status === "active"; });
+      var parentAccounts = results[1].filter(function(a){ return a.roles.indexOf("parent") !== -1 && a.approval_status === "active"; });
       if(!children.length){ childrenBody.appendChild(h("div", {class:"a-empty", text:"لا توجد ملفات أطفال بعد. تُنشأ تلقائياً عند الموافقة على طلب تسجيل."})); return; }
       children.forEach(function(child){
         var teacherCell = h("dd", {});
@@ -724,7 +734,16 @@ function tabChildren(){
           }})]));
         });
         var parentCell = h("dd", {});
-        if(child.parents.length) child.parents.forEach(function(name){ parentCell.appendChild(h("span", {class:"a-tag", text:name})); });
+        var linkedParents = child.parent_accounts || [];
+        if(linkedParents.length) linkedParents.forEach(function(parent){
+          parentCell.appendChild(h("span", {class:"a-tag"}, [parent.username, h("button", {type:"button", title:"إلغاء الربط", "aria-label":"إلغاء الربط", text:"✕", onclick:async function(){
+            if(!window.confirm("إلغاء ربط ولي الأمر بهذا الطفل؟")) return;
+            try{
+              await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/parents/" + encodeURIComponent(parent.id), {method:"DELETE"});
+              await loadChildren();
+            }catch(error){ setMsg(msg, errText(error), "err"); }
+          }})]));
+        });
         else parentCell.appendChild(h("span", {class:"a-tag", text:"لم يكتمل تسجيل ولي الأمر بعد"}));
         var assignedIds = child.teachers.map(function(t){ return t.id; });
         var options = teachers.filter(function(t){ return assignedIds.indexOf(t.id) === -1; });
@@ -732,6 +751,20 @@ function tabChildren(){
           h("div", {class:"a-child-head"}, [h("span", {class:"a-child-name", dir:"auto", text:child.display_name})]),
           h("dl", {}, [h("dt", {text:"ولي الأمر"}), parentCell, h("dt", {text:"المعلمات"}), teacherCell])
         ]);
+        var linkedIds = linkedParents.map(function(p){ return p.id; });
+        var parentOptions = parentAccounts.filter(function(p){ return linkedIds.indexOf(p.id) === -1; });
+        if(parentOptions.length){
+          var parentSelect = h("select", {"aria-label":"اختر ولي أمر"});
+          parentOptions.forEach(function(p){ parentSelect.appendChild(new Option(p.username, p.id)); });
+          card.appendChild(h("div", {class:"a-assign"}, [parentSelect, h("button", {type:"button", class:"a-btn sun", text:"ربط ولي أمر", onclick:async function(){
+            if(!parentSelect.value) return;
+            try{
+              await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/parents", {method:"POST", body:JSON.stringify({parent_id:parentSelect.value})});
+              setMsg(msg, "تم ربط ولي الأمر بالطفل.", "ok");
+              await loadChildren();
+            }catch(error){ setMsg(msg, errText(error), "err"); }
+          }})]));
+        }
         if(options.length){
           var select = h("select", {"aria-label":"اختر معلمة"});
           options.forEach(function(t){ select.appendChild(new Option(t.username, t.id)); });
