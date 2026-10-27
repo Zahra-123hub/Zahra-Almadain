@@ -23,8 +23,11 @@
   var teacherControls = null;
   var formState = {username:"", password:"", invitation_code:"", child_id:"", title:"", body:""};
   var loginAlert = "";
+  var expiredNotice = false;
   (function readCodeFromLink() {
-    var code = new URLSearchParams(window.location.search).get("code");
+    var query = new URLSearchParams(window.location.search);
+    if (query.get("expired")) { expiredNotice = true; history.replaceState(null, "", window.location.pathname); }
+    var code = query.get("code");
     if (!code || !/^[A-Za-z0-9_-]{6,64}$/.test(code)) return;
     signupMode = true;
     formState.invitation_code = code;
@@ -38,6 +41,12 @@
       newUsername: "اختاري اسم مستخدم", usernameRule: "أحرف إنجليزية وأرقام و . _ - فقط، 3 أحرف على الأقل.",
       newPassword: "اختاري كلمة مرور", passwordRule: "12 حرفاً على الأقل.", confirmPassword: "أعيدي كتابة كلمة المرور",
       passwordMismatch: "كلمتا المرور غير متطابقتين.", accountantTitle: "المحاسبة (الاشتراكات والرسوم)", chooseTitle: "اختر البوابة",
+      showPassword: "إظهار", hidePassword: "إخفاء", capsOn: "مفتاح الأحرف الكبيرة (Caps Lock) مفعّل.",
+      strengthWeak: "ضعيفة", strengthMedium: "متوسطة", strengthStrong: "قوية", strengthLabel: "قوة كلمة المرور",
+      ruleLength: "12 حرفاً على الأقل", ruleCommon: "ليست كلمة مرور شائعة", ruleUser: "لا تحتوي على اسم المستخدم", ruleVariety: "متنوّعة الأحرف وليست أرقاماً فقط",
+      changePassword: "تغيير كلمة المرور", currentPassword: "كلمة المرور الحالية", repeatPassword: "أعيدي كتابة كلمة المرور الجديدة",
+      passwordChanged: "تم تغيير كلمة المرور، وأُنهيت جلساتك الأخرى.", sessionExpired: "انتهت جلستك بعد فترة من عدم النشاط. سجّلي الدخول من جديد.",
+      cancel: "إلغاء", save: "حفظ",
       chooseHint: "حسابك يملك أكثر من صلاحية. إلى أين تريد الدخول؟", switchPortal: "تبديل البوابة",
       loginTitle: "تسجيل الدخول", loginIntro: "ادخلي ببياناتك، وسننقلك تلقائياً إلى بوابتك حسب نوع حسابك.",
       school: "روضة زهرة المدائن", parentWelcome: "تابع التقارير اليومية المنشورة لأطفالك.",
@@ -99,6 +108,12 @@
       newUsername: "Choose a username", usernameRule: "English letters, digits and . _ - only, at least 3 characters.",
       newPassword: "Choose a password", passwordRule: "At least 12 characters.", confirmPassword: "Repeat the password",
       passwordMismatch: "The two passwords do not match.", accountantTitle: "Accounting (fees and payroll)", chooseTitle: "Choose a portal",
+      showPassword: "Show", hidePassword: "Hide", capsOn: "Caps Lock is on.",
+      strengthWeak: "Weak", strengthMedium: "Fair", strengthStrong: "Strong", strengthLabel: "Password strength",
+      ruleLength: "At least 12 characters", ruleCommon: "Not a common password", ruleUser: "Does not contain the username", ruleVariety: "Varied characters, not only digits",
+      changePassword: "Change password", currentPassword: "Current password", repeatPassword: "Repeat the new password",
+      passwordChanged: "Password changed. Your other sessions were signed out.", sessionExpired: "Your session ended after a period of inactivity. Please sign in again.",
+      cancel: "Cancel", save: "Save",
       chooseHint: "Your account has more than one role. Where do you want to go?", switchPortal: "Switch portal",
       loginTitle: "Sign in", loginIntro: "Sign in and we will take you to the right portal for your account.",
       school: "Zahrat Al-Madayn Kindergarten", parentWelcome: "View the published daily reports for your children.",
@@ -164,6 +179,14 @@
     "Too many requests. Try again later.": {ar:"طلبات كثيرة. حاولي لاحقاً.",en:"Too many requests. Try again later."},
     "The invitation is invalid, expired, or already used.": {ar:"رمز التسجيل غير صالح أو منتهي أو مستخدم من قبل.",en:"The registration code is invalid, expired or already used."},
     "That username is already in use.": {ar:"اسم المستخدم مستخدم بالفعل.",en:"That username is already in use."},
+    "Too many sign-in attempts. Try again later.": {ar:"محاولات دخول كثيرة. حاولي مجدداً بعد 15 دقيقة.",en:"Too many sign-in attempts. Try again in 15 minutes."},
+    "Password is too short.": {ar:"كلمة المرور قصيرة (12 حرفاً على الأقل).",en:"The password is too short (at least 12 characters)."},
+    "Password is too common or too easy to guess.": {ar:"كلمة المرور شائعة وسهلة التخمين. اختاري كلمة أصعب.",en:"This password is too common or easy to guess. Choose a harder one."},
+    "Password must not contain the username.": {ar:"يجب ألا تحتوي كلمة المرور على اسم المستخدم.",en:"The password must not contain the username."},
+    "Password must not be only digits.": {ar:"يجب ألا تكون كلمة المرور أرقاماً فقط.",en:"The password must not be only digits."},
+    "Password needs at least 6 different characters.": {ar:"استخدمي 6 محارف مختلفة على الأقل.",en:"Use at least 6 different characters."},
+    "The current password is incorrect.": {ar:"كلمة المرور الحالية غير صحيحة.",en:"The current password is incorrect."},
+    "Choose a new password that differs from the current one.": {ar:"اختاري كلمة مرور جديدة تختلف عن الحالية.",en:"Choose a new password that differs from the current one."},
     "Sign in to the platform.": {ar:"سجّلي الدخول أولاً.",en:"Please sign in first."},
     "Your platform session expired. Sign in again.": {ar:"انتهت الجلسة. سجّلي الدخول مرة أخرى.",en:"Your session expired. Sign in again."},
     "Your platform session is no longer valid.": {ar:"انتهت الجلسة. سجّلي الدخول مرة أخرى.",en:"Your session is no longer valid. Sign in again."},
@@ -182,6 +205,105 @@
     "The file exceeds its size or storage limit.": {ar:"تجاوز الملف الحد المسموح للحجم أو التخزين.",en:"The file exceeds its size or storage limit."}
   };
   var t = function (key) { return copy[lang][key] || key; };
+  /* ---- password helpers: strength meter, show/hide, Caps Lock warning ---- */
+  var COMMON_PASSWORDS = ["password", "passw0rd", "qwertyuiop", "qwerty", "asdfghjkl", "zxcvbnm", "iloveyou", "welcome", "letmein", "admin", "administrator",
+    "changeme", "abc123", "123456789012", "1234567890", "zahra", "zahrat", "zahratalmadain", "almadain", "kindergarten", "damascus", "syria"];
+  function passwordRules(pw, user) {
+    var lowered = pw.toLowerCase().replace(/\s/g, "");
+    var stripped = lowered.replace(/[0-9!@#$%^&*._-]+$/, "");
+    var common = COMMON_PASSWORDS.indexOf(lowered) !== -1 || COMMON_PASSWORDS.indexOf(stripped) !== -1;
+    var uniq = {}; pw.split("").forEach(function (c) { uniq[c] = true; });
+    return [
+      {ok: pw.length >= 12, label: t("ruleLength")},
+      {ok: pw.length > 0 && !common, label: t("ruleCommon")},
+      {ok: pw.length > 0 && !(user && user.length >= 3 && lowered.indexOf(user) !== -1), label: t("ruleUser")},
+      {ok: pw.length > 0 && !/^\d+$/.test(pw) && Object.keys(uniq).length >= 6, label: t("ruleVariety")}
+    ];
+  }
+  function strengthMeter(input, getUser, container) {
+    var box = element("div", "p-meter");
+    var bar = element("div", "p-meter-bar");
+    var fill = element("span");
+    bar.appendChild(fill);
+    var caption = element("small", "p-meter-text");
+    var list = element("ul", "p-rules");
+    box.appendChild(bar); box.appendChild(caption); box.appendChild(list);
+    function update() {
+      var pw = input.value;
+      var rules = passwordRules(pw, getUser());
+      var passed = rules.filter(function (r) { return r.ok; }).length;
+      var classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(function (re) { return re.test(pw); }).length;
+      var score = passed === rules.length ? (pw.length >= 16 && classes >= 3 ? 3 : 2) : (passed >= 3 ? 1 : 0);
+      fill.style.width = (pw ? (score + 1) * 25 : 0) + "%";
+      box.className = "p-meter level-" + (pw ? score : "none");
+      caption.textContent = pw ? t("strengthLabel") + ": " + t(score >= 3 ? "strengthStrong" : score === 2 ? "strengthMedium" : "strengthWeak") : "";
+      list.innerHTML = "";
+      rules.forEach(function (r) { var li = element("li", r.ok ? "ok" : "", (r.ok ? "✓ " : "• ") + r.label); list.appendChild(li); });
+    }
+    input.addEventListener("input", update);
+    update();
+    container.appendChild(box);
+    return update;
+  }
+  function decoratePassword(label, input) {
+    var toggle = element("button", "p-eye", t("showPassword"));
+    toggle.type = "button";
+    toggle.addEventListener("click", function () {
+      var show = input.type === "password";
+      input.type = show ? "text" : "password";
+      toggle.textContent = show ? t("hidePassword") : t("showPassword");
+    });
+    var caps = element("small", "p-caps", t("capsOn"));
+    caps.hidden = true;
+    function checkCaps(event) { caps.hidden = !(event.getModifierState && event.getModifierState("CapsLock")); }
+    input.addEventListener("keydown", checkCaps);
+    input.addEventListener("keyup", checkCaps);
+    input.addEventListener("blur", function () { caps.hidden = true; });
+    label.appendChild(toggle);
+    label.appendChild(caps);
+  }
+  function toggleChangePassword() {
+    var main = root.querySelector("main");
+    if (!main) return;
+    var existing = main.querySelector(".p-change-password");
+    if (existing) { existing.remove(); return; }
+    var card = element("section", "p-card p-change-password");
+    card.appendChild(element("h2", "", t("changePassword")));
+    var form = element("form");
+    function secret(labelText, autocomplete) {
+      var wrap = element("div", "p-field");
+      var label = element("label", "", labelText);
+      var input = element("input");
+      input.type = "password"; input.required = true; input.autocomplete = autocomplete;
+      label.appendChild(input); wrap.appendChild(label); form.appendChild(wrap);
+      decoratePassword(label, input);
+      return input;
+    }
+    var current = secret(t("currentPassword"), "current-password");
+    var fresh = secret(t("password"), "new-password");
+    strengthMeter(fresh, function () { return (profile && profile.username || "").toLowerCase(); }, fresh.parentNode.parentNode);
+    var again = secret(t("repeatPassword"), "new-password");
+    var message = element("p", "p-alert");
+    message.setAttribute("role", "alert");
+    var save = element("button", "p-button sun", t("save"));
+    save.type = "submit";
+    var cancel = button(t("cancel"), "outline", function () { card.remove(); });
+    form.appendChild(save); form.appendChild(cancel); form.appendChild(message);
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      message.className = "p-alert error";
+      if (fresh.value !== again.value) { message.textContent = t("passwordMismatch"); return; }
+      save.disabled = true;
+      request("/api/platform/auth/change-password", {method: "POST", body: JSON.stringify({current_password: current.value, new_password: fresh.value})}).then(function () {
+        current.value = fresh.value = again.value = "";
+        message.className = "p-alert success";
+        message.textContent = t("passwordChanged");
+      }).catch(function (error) { message.textContent = errorMessage(error); }).finally(function () { save.disabled = false; });
+    });
+    card.appendChild(form);
+    main.insertBefore(card, main.firstChild);
+    current.focus();
+  }
   function portalLabel(name) {
     return name === "teacher" ? t("teacherTitle") : name === "parent" ? t("parentTitle") : name === "accountant" ? t("accountantTitle") : name;
   }
@@ -276,6 +398,7 @@
         actions.appendChild(other);
       });
     }
+    if (token && profile && !isLogin) actions.appendChild(button(t("changePassword"), "outline", toggleChangePassword));
     if (token && isTeacherPortal) {
       var publishLink = element("a", "p-button sun", t("publishSite"));
       publishLink.href = "../admin/";
@@ -300,6 +423,7 @@
   }
   function loginScreen() {
     if (!isLogin) { window.location.replace("../login/"); return; }
+    if (expiredNotice) { loginAlert = t("sessionExpired"); expiredNotice = false; }
     var main = shell();
     main.classList.add("p-auth-main");
     var layout = element("div", "p-auth-layout");
@@ -348,6 +472,7 @@
         form.insertBefore(invite.parentNode.parentNode, username.parentNode.parentNode);
         username.parentNode.appendChild(element("small", "p-muted", t("usernameRule")));
         password.parentNode.appendChild(element("small", "p-muted", t("passwordRule")));
+        strengthMeter(password, function () { return username.value.trim().toLowerCase(); }, password.parentNode);
         confirm = field(t("confirmPassword"), "password", "new-password");
         confirm.required = true;
         confirm.minLength = 12;
@@ -421,6 +546,12 @@
     }
     function drawRequestForm() {
       var form = element("form");
+      var openedAt = Date.now();
+      var trap = element("input");  // humans never see or fill this field; bots do
+      trap.type = "text"; trap.name = "website"; trap.tabIndex = -1; trap.autocomplete = "off";
+      trap.setAttribute("aria-hidden", "true");
+      trap.style.cssText = "position:absolute;left:-9999px;width:1px;height:1px;opacity:0";
+      form.appendChild(trap);
       form.appendChild(element("h3", "", t("requestTitle")));
       form.appendChild(element("p", "p-muted", t("requestHint")));
       var inputs = {};
@@ -457,7 +588,7 @@
         event.preventDefault();
         submit.disabled = true;
         error.textContent = "";
-        var payload = {preferred_language: lang};
+        var payload = {preferred_language: lang, website: trap.value, form_age_ms: Date.now() - openedAt};
         Object.keys(requestForm).forEach(function (key) { payload[key] = requestForm[key].trim(); });
         request("/api/platform/registration-requests", {method: "POST", body: JSON.stringify(payload)}).then(function () {
           Object.keys(requestForm).forEach(function (key) { requestForm[key] = ""; });
@@ -505,6 +636,7 @@
       if (autocomplete) input.autocomplete = autocomplete;
       label.appendChild(input);
       wrap.appendChild(label);
+      if (type === "password") decoratePassword(label, input);
       return input;
     }
     drawForm();
@@ -964,5 +1096,16 @@
     }
   }
 
+  (function idleGuard() {
+    if (isLogin) return;
+    var limit = 30 * 60 * 1000, timer;
+    function expire() {
+      ["zm-teacher-session", "zm-parent-session", "zm-accountant-session", "zm-admin-session", "zm-portals"].forEach(function (key) { try { sessionStorage.removeItem(key); } catch (e) {} });
+      window.location.replace("../login/?expired=1");
+    }
+    function reset() { clearTimeout(timer); timer = setTimeout(expire, limit); }
+    ["click", "keydown", "mousemove", "touchstart", "scroll"].forEach(function (name) { window.addEventListener(name, reset, {passive: true}); });
+    reset();
+  }());
   render();
 }());

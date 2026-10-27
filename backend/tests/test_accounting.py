@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import uuid
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -86,7 +87,7 @@ class AccountingApiTests(unittest.TestCase):
             {
                 "SESSION_SECRET": "test-accounting-secret-long-enough",
                 "ADMIN_USERNAME": "legacy-admin",
-                "ADMIN_PASSWORD": "legacy-admin-password",
+                "ADMIN_PASSWORD": "Qx9edbcb5679ea-9",
             },
         )
         self.env.start()
@@ -108,20 +109,20 @@ class AccountingApiTests(unittest.TestCase):
             roles = {n: Role(name=n) for n in ("admin", "teacher", "parent", "accountant")}
             session.add_all(roles.values())
             for username, role in (("acc", "accountant"), ("teacher1", "teacher"), ("parent1", "parent")):
-                session.add(Account(username=username, password_hash=main.PASSWORD_HASHER.hash("password-123456"), roles=[roles[role]]))
+                session.add(Account(username=username, password_hash=main.PASSWORD_HASHER.hash("Qx5a6ba62b7e4b-9"), roles=[roles[role]]))
             session.add(Child(display_name="Amal", class_name="KG1"))
             session.commit()
 
         def token(name):
             return {"Authorization": "Bearer " + self.client.post(
-                "/api/platform/auth/login", json={"username": name, "password": "password-123456"}
+                "/api/platform/auth/login", json={"username": name, "password": "Qx5a6ba62b7e4b-9"}
             ).json()["access_token"]}
 
         self.acc = token("acc")
         self.teacher = token("teacher1")
         self.parent = token("parent1")
         self.legacy = {"Authorization": "Bearer " + self.client.post(
-            "/api/auth/login", json={"username": "legacy-admin", "password": "legacy-admin-password"}
+            "/api/auth/login", json={"username": "legacy-admin", "password": "Qx9edbcb5679ea-9"}
         ).json()["access_token"]}
 
     def tearDown(self):
@@ -301,6 +302,49 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self.client.delete(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc).status_code, 204)
         self.assertNotIn("Rima S.", self.client.get("/api/admin/accounting/names", headers=self.acc).json()["staff"])
         self.assertEqual(self.client.get("/api/admin/accounting/names", headers=self.teacher).status_code, 403)
+
+    def test_saved_names_depend_on_the_accounts(self):
+        admin = self.legacy
+        created = self.client.post("/api/admin/platform/teacher-accounts", headers=admin, json={
+            "role": "teacher", "username": "rima.s", "password": "Qx7f3a9c1d2e44-9", "full_name": "ريما صالح", "job_title": "معلمة"})
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual((created.json()["full_name"], created.json()["job_title"]), ("ريما صالح", "معلمة"))
+        staff = self.client.get("/api/admin/accounting/employees", headers=self.acc).json()
+        person = next(e for e in staff if e["name"] == "ريما صالح")
+        self.assertEqual(person["account_username"], "rima.s")
+        accounts = {a["username"]: a for a in self.client.get("/api/admin/platform/accounts", headers=admin).json()}
+        self.assertEqual(accounts["rima.s"]["full_name"], "ريما صالح")
+
+        # renaming through the account renames the same person (no duplicate)
+        account_id = created.json()["id"]
+        self.client.patch(f"/api/admin/platform/accounts/{account_id}", headers=admin, json={"full_name": "ريما أحمد"})
+        staff = self.client.get("/api/admin/accounting/employees", headers=self.acc).json()
+        self.assertEqual([e["name"] for e in staff if e["account_id"] == account_id], ["ريما أحمد"])
+        self.assertEqual(len(staff), 1)
+
+        # a salary row uses the person tied to the account
+        row = self.salary("ريما أحمد", "1000").json()
+        self.assertEqual(row["employee_id"], person["id"])
+
+        # tying a saved person to an account; an account has only one person
+        loose = self.client.post("/api/admin/accounting/employees", headers=self.acc, json={"name": "Dina Kareem", "job_title": "محاسبة"}).json()
+        options = {a["username"]: a for a in self.client.get("/api/admin/accounting/staff-accounts", headers=self.acc).json()}
+        self.assertEqual(options["rima.s"]["linked_to"], "ريما أحمد")
+        self.assertEqual(options["acc"]["linked_to"], "")
+        conflict = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+                                     json={"name": "Dina Kareem", "account_id": account_id})
+        self.assertEqual(conflict.status_code, 409)
+        linked = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+                                   json={"name": "Dina Kareem", "account_id": options["acc"]["id"]})
+        self.assertEqual(linked.json()["account_username"], "acc")
+        unlinked = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+                                     json={"name": "Dina Kareem", "account_id": None})
+        self.assertEqual(unlinked.json()["account_id"], "")
+        # parents' accounts cannot be tied to staff
+        parent_tie = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+                                       json={"name": "Dina Kareem", "account_id": str(uuid.uuid4())})
+        self.assertEqual(parent_tie.status_code, 404)
+        self.assertEqual(self.client.get("/api/admin/accounting/staff-accounts", headers=self.teacher).status_code, 403)
 
     def test_syrian_pound_is_the_main_currency(self):
         self.assertEqual(fees.CURRENCIES[0], "SYP")

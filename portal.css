@@ -133,3 +133,22 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 
 .p-portal-choice{display:block;text-align:center;margin-top:12px;min-height:50px;line-height:30px}
 .p-auth-card .p-portal-choice{display:block;width:100%;box-sizing:border-box}
+
+/* password helpers */
+.p-field label{position:relative}
+.p-eye{position:absolute;inset-inline-end:8px;top:30px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;padding:4px 8px;border-radius:8px}
+.p-eye:hover{background:#17408f14;color:var(--ink)}
+.p-field input[type=password],.p-field input[type=text]{padding-inline-end:70px}
+.p-caps{display:block;color:#b36b00;font-weight:700}
+.p-meter{margin-top:8px}
+.p-meter-bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.p-meter-bar span{display:block;height:100%;width:0;border-radius:99px;background:var(--red);transition:width .2s,background .2s}
+.p-meter.level-1 .p-meter-bar span{background:#e59a00}
+.p-meter.level-2 .p-meter-bar span{background:#7dc243}
+.p-meter.level-3 .p-meter-bar span{background:var(--green)}
+.p-meter-text{display:block;margin-top:4px;font-weight:700}
+.p-rules{list-style:none;margin:6px 0 0;padding:0;font-size:.88rem;color:var(--muted)}
+.p-rules li.ok{color:var(--green);font-weight:700}
+.p-change-password{border:2px solid var(--sun)}
+.p-caps[hidden]{display:none}
+.p-eye{top:-4px;inset-inline-end:0}

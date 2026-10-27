@@ -52,7 +52,7 @@ class ApiTests(unittest.TestCase):
             os.environ,
             {
                 "ADMIN_USERNAME": "admin",
-                "ADMIN_PASSWORD": "test-password",
+                "ADMIN_PASSWORD": "Qx789cbe040784-9",
                 "SESSION_SECRET": "test-session-secret-long-enough",
             },
         )
@@ -63,7 +63,7 @@ class ApiTests(unittest.TestCase):
         self.client = TestClient(main.app)
         response = self.client.post(
             "/api/auth/login",
-            json={"username": "admin", "password": "test-password"},
+            json={"username": "admin", "password": "Qx789cbe040784-9"},
         )
         self.assertEqual(response.status_code, 200)
         self.headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -81,14 +81,14 @@ class ApiTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "ADMIN_PASSWORD": "test-password",
+                "ADMIN_PASSWORD": "Qx789cbe040784-9",
                 "SESSION_SECRET": "test-session-secret-long-enough",
             },
             clear=True,
         ):
             login = self.client.post(
                 "/api/auth/login",
-                json={"username": "admin", "password": "test-password"},
+                json={"username": "admin", "password": "Qx789cbe040784-9"},
             )
             self.assertEqual(login.status_code, 200)
             content = self.client.get(
@@ -185,7 +185,7 @@ class PlatformApiTests(unittest.TestCase):
             {
                 "SESSION_SECRET": "test-platform-session-secret-long-enough",
                 "ADMIN_USERNAME": "legacy-admin",
-                "ADMIN_PASSWORD": "legacy-admin-password",
+                "ADMIN_PASSWORD": "Qx9edbcb5679ea-9",
             },
         )
         self.env.start()
@@ -215,14 +215,14 @@ class PlatformApiTests(unittest.TestCase):
             session.add(
                 Account(
                     username="platform-admin",
-                    password_hash=main.PASSWORD_HASHER.hash("admin-password-123"),
+                    password_hash=main.PASSWORD_HASHER.hash("Qx8f83978c4138-9"),
                     roles=[admin],
                 )
             )
             session.commit()
         login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "platform-admin", "password": "admin-password-123"},
+            json={"username": "platform-admin", "password": "Qx8f83978c4138-9"},
         )
         self.assertEqual(login.status_code, 200)
         self.admin_headers = {
@@ -230,7 +230,7 @@ class PlatformApiTests(unittest.TestCase):
         }
         legacy_login = self.client.post(
             "/api/auth/login",
-            json={"username": "legacy-admin", "password": "legacy-admin-password"},
+            json={"username": "legacy-admin", "password": "Qx9edbcb5679ea-9"},
         )
         self.assertEqual(legacy_login.status_code, 200)
         self.legacy_admin_headers = {
@@ -289,13 +289,13 @@ class PlatformApiTests(unittest.TestCase):
             json={
                 "invitation_code": code.lower().replace("-", " "),
                 "username": "mona",
-                "password": "mona-password-123",
+                "password": "Qxdaa9b450839c-9",
             },
         )
         self.assertEqual(signup.status_code, 202)
         login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "mona", "password": "mona-password-123"},
+            json={"username": "mona", "password": "Qxdaa9b450839c-9"},
         )
         self.assertEqual(login.status_code, 200)
         after = self.client.get(
@@ -310,7 +310,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(mona["child_name"], "Sam")
         reuse = self.client.post(
             "/api/platform/auth/redeem-invitation",
-            json={"invitation_code": code, "username": "mona2", "password": "mona-password-123"},
+            json={"invitation_code": code, "username": "mona2", "password": "Qxdaa9b450839c-9"},
         )
         self.assertEqual(reuse.status_code, 400)
 
@@ -321,17 +321,17 @@ class PlatformApiTests(unittest.TestCase):
         self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.legacy_admin_headers,
-            json={"username": "entry-teacher", "password": "entry-teacher-password-1"},
+            json={"username": "entry-teacher", "password": "Qx68cf697c6244-9"},
         )
         teacher = self.client.post(
             "/api/auth/entry",
-            json={"username": "entry-teacher", "password": "entry-teacher-password-1"},
+            json={"username": "entry-teacher", "password": "Qx68cf697c6244-9"},
         )
         self.assertEqual(teacher.status_code, 200)
         self.assertEqual(teacher.json()["role"], "teacher")
         admin = self.client.post(
             "/api/auth/entry",
-            json={"username": "legacy-admin", "password": "legacy-admin-password"},
+            json={"username": "legacy-admin", "password": "Qx9edbcb5679ea-9"},
         )
         self.assertEqual(admin.status_code, 200)
         self.assertEqual(admin.json()["role"], "admin")
@@ -347,11 +347,11 @@ class PlatformApiTests(unittest.TestCase):
         self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.legacy_admin_headers,
-            json={"username": "publisher", "password": "publisher-password-123"},
+            json={"username": "publisher", "password": "Qx876d5ef354db-9"},
         )
         login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "publisher", "password": "publisher-password-123"},
+            json={"username": "publisher", "password": "Qx876d5ef354db-9"},
         )
         headers = {"Authorization": "Bearer " + login.json()["access_token"]}
         original_store = main.store
@@ -382,12 +382,12 @@ class PlatformApiTests(unittest.TestCase):
         for _ in range(main.CODE_ATTEMPT_LIMIT):
             wrong = self.client.post(
                 "/api/platform/auth/redeem-invitation",
-                json={"invitation_code": "AAAA-AAAA", "username": "x-user", "password": "x-password-1234"},
+                json={"invitation_code": "AAAA-AAAA", "username": "x-user", "password": "Qx934b82a62c0f-9"},
             )
             self.assertEqual(wrong.status_code, 400)
         blocked = self.client.post(
             "/api/platform/auth/redeem-invitation",
-            json={"invitation_code": "AAAA-AAAA", "username": "x-user", "password": "x-password-1234"},
+            json={"invitation_code": "AAAA-AAAA", "username": "x-user", "password": "Qx934b82a62c0f-9"},
         )
         self.assertEqual(blocked.status_code, 429)
 
@@ -424,7 +424,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertNotEqual(first, new_code)
         old_try = self.client.post(
             "/api/platform/auth/redeem-invitation",
-            json={"invitation_code": first, "username": "edit-parent", "password": "edit-password-1234"},
+            json={"invitation_code": first, "username": "edit-parent", "password": "Qx90fbb488d489-9"},
         )
         self.assertEqual(old_try.status_code, 400)
         deleted = self.client.delete(
@@ -459,12 +459,12 @@ class PlatformApiTests(unittest.TestCase):
         ).json()["registration_code"]
         self.client.post(
             "/api/platform/auth/redeem-invitation",
-            json={"invitation_code": code, "username": "flow-parent", "password": "flow-parent-password-1"},
+            json={"invitation_code": code, "username": "flow-parent", "password": "Qxcd893cdb89f1-9"},
         )
         teacher = self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.legacy_admin_headers,
-            json={"username": "flow-teacher", "password": "flow-teacher-password-1"},
+            json={"username": "flow-teacher", "password": "Qxb2dee1d8a558-9"},
         ).json()
         children = self.client.get(
             "/api/admin/platform/children", headers=self.legacy_admin_headers
@@ -480,11 +480,11 @@ class PlatformApiTests(unittest.TestCase):
 
         teacher_token = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "flow-teacher", "password": "flow-teacher-password-1"},
+            json={"username": "flow-teacher", "password": "Qxb2dee1d8a558-9"},
         ).json()["access_token"]
         parent_token = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "flow-parent", "password": "flow-parent-password-1"},
+            json={"username": "flow-parent", "password": "Qxcd893cdb89f1-9"},
         ).json()["access_token"]
         report = self.client.post(
             "/api/platform/teacher/reports",
@@ -516,16 +516,16 @@ class PlatformApiTests(unittest.TestCase):
         created = self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.legacy_admin_headers,
-            json={"username": "old-name", "password": "old-password-1234"},
+            json={"username": "old-name", "password": "Qxcf40b2e53679-9"},
         ).json()
         other = self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.legacy_admin_headers,
-            json={"username": "taken-name", "password": "other-password-1234"},
+            json={"username": "taken-name", "password": "Qxd08ac0636475-9"},
         ).json()
         base = f"/api/admin/platform/accounts/{created['id']}"
         token = self.client.post(
-            "/api/platform/auth/login", json={"username": "old-name", "password": "old-password-1234"}
+            "/api/platform/auth/login", json={"username": "old-name", "password": "Qxcf40b2e53679-9"}
         ).json()["access_token"]
         self.assertEqual(
             self.client.patch(base, headers=self.legacy_admin_headers, json={"username": "taken-name"}).status_code, 409
@@ -545,13 +545,13 @@ class PlatformApiTests(unittest.TestCase):
             stored = session.scalar(select(Account.password_hash).where(Account.username == "new-name"))
             self.assertNotIn(reset["password"], stored)
         self.assertEqual(
-            self.client.post("/api/platform/auth/login", json={"username": "new-name", "password": "old-password-1234"}).status_code, 401
+            self.client.post("/api/platform/auth/login", json={"username": "new-name", "password": "Qxcf40b2e53679-9"}).status_code, 401
         )
         self.assertEqual(
             self.client.post("/api/platform/auth/login", json={"username": "new-name", "password": reset["password"]}).status_code, 200
         )
         # a password chosen by the admin; too short is refused; other roles cannot do this
-        chosen = self.client.post(f"{base}/reset-password", headers=self.legacy_admin_headers, json={"password": "chosen-password-99"})
+        chosen = self.client.post(f"{base}/reset-password", headers=self.legacy_admin_headers, json={"password": "Qx42a4e1000524-9"})
         self.assertFalse(chosen.json()["generated"])
         self.assertEqual(
             self.client.post(f"{base}/reset-password", headers=self.legacy_admin_headers, json={"password": "short"}).status_code, 422
@@ -566,11 +566,11 @@ class PlatformApiTests(unittest.TestCase):
         created = self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.legacy_admin_headers,
-            json={"username": "double-role", "password": "double-role-password-1"},
+            json={"username": "double-role", "password": "Qxaceda26a0992-9"},
         ).json()
         base = f"/api/admin/platform/accounts/{created['id']}"
         login = lambda: self.client.post(
-            "/api/auth/entry", json={"username": "double-role", "password": "double-role-password-1"}
+            "/api/auth/entry", json={"username": "double-role", "password": "Qxaceda26a0992-9"}
         ).json()
         self.assertEqual(login()["portals"], ["teacher"])
         both = self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["teacher", "accountant"]})
@@ -648,7 +648,7 @@ class PlatformApiTests(unittest.TestCase):
             json={
                 "invitation_code": code,
                 "username": "guardian-one",
-                "password": "guardian-password-123",
+                "password": "Qx53aa7cd18bad-9",
                 "preferred_language": "ar",
             },
         )
@@ -656,7 +656,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertNotIn("access_token", signup.json())
         pending_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "guardian-one", "password": "guardian-password-123"},
+            json={"username": "guardian-one", "password": "Qx53aa7cd18bad-9"},
         )
         self.assertEqual(pending_login.status_code, 403)
         self.assertIn("awaiting administrator approval", pending_login.json()["detail"])
@@ -676,7 +676,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(approved.status_code, 200)
         parent_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "guardian-one", "password": "guardian-password-123"},
+            json={"username": "guardian-one", "password": "Qx53aa7cd18bad-9"},
         )
         self.assertEqual(parent_login.status_code, 200)
         parent_headers = {
@@ -697,7 +697,7 @@ class PlatformApiTests(unittest.TestCase):
             json={
                 "invitation_code": code,
                 "username": "guardian-two",
-                "password": "guardian-password-456",
+                "password": "Qx780f21acdc18-9",
             },
         )
         self.assertEqual(reuse.status_code, 400)
@@ -711,7 +711,7 @@ class PlatformApiTests(unittest.TestCase):
             headers=self.legacy_admin_headers,
             json={
                 "username": "new-teacher",
-                "password": "new-teacher-password-123",
+                "password": "Qxb5031ed354c6-9",
                 "preferred_language": "ar",
             },
         )
@@ -723,7 +723,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertIn("new-teacher", [account["username"] for account in listed])
         login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "new-teacher", "password": "new-teacher-password-123"},
+            json={"username": "new-teacher", "password": "Qxb5031ed354c6-9"},
         )
         self.assertEqual(login.status_code, 200)
         teacher_headers = {"Authorization": "Bearer " + login.json()["access_token"]}
@@ -742,7 +742,7 @@ class PlatformApiTests(unittest.TestCase):
                 "/api/platform/auth/login",
                 json={
                     "username": "new-teacher",
-                    "password": "new-teacher-password-123",
+                    "password": "Qxb5031ed354c6-9",
                 },
             ).status_code,
             403,
@@ -773,14 +773,14 @@ class PlatformApiTests(unittest.TestCase):
             session.add(
                 Account(
                     username="parent-one",
-                    password_hash=main.PASSWORD_HASHER.hash("parent-password-123"),
+                    password_hash=main.PASSWORD_HASHER.hash("Qxa58f753c6368-9"),
                     roles=[parent_role],
                 )
             )
             session.commit()
         login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "parent-one", "password": "parent-password-123"},
+            json={"username": "parent-one", "password": "Qxa58f753c6368-9"},
         )
         parent_headers = {"Authorization": "Bearer " + login.json()["access_token"]}
         response = self.client.post(
@@ -800,12 +800,12 @@ class PlatformApiTests(unittest.TestCase):
         for _ in range(main.PORTAL_LOGIN_MAX_FAILURES):
             response = self.client.post(
                 "/api/platform/auth/login",
-                json={"username": "missing-user", "password": "wrong-password"},
+                json={"username": "missing-user", "password": "Qx6809ffccad03-9"},
             )
             self.assertEqual(response.status_code, 401)
         limited = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "missing-user", "password": "wrong-password"},
+            json={"username": "missing-user", "password": "Qx6809ffccad03-9"},
         )
         self.assertEqual(limited.status_code, 429)
 
@@ -843,14 +843,14 @@ class PlatformApiTests(unittest.TestCase):
                     Account(
                         username="teacher-one",
                         password_hash=main.PASSWORD_HASHER.hash(
-                            "teacher-password-123"
+                            "Qx1a115ff15e66-9"
                         ),
                         roles=[teacher_role],
                     ),
                     Account(
                         username="manager-one",
                         password_hash=main.PASSWORD_HASHER.hash(
-                            "manager-password-123"
+                            "Qxfb3e4c8f4b69-9"
                         ),
                         roles=[manager_role],
                     ),
@@ -870,7 +870,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(assignment.status_code, 201)
         teacher_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "teacher-one", "password": "teacher-password-123"},
+            json={"username": "teacher-one", "password": "Qx1a115ff15e66-9"},
         )
         teacher_headers = {
             "Authorization": "Bearer " + teacher_login.json()["access_token"]
@@ -915,13 +915,13 @@ class PlatformApiTests(unittest.TestCase):
             json={
                 "invitation_code": invitation.json()["invitation_code"],
                 "username": "linked-parent",
-                "password": "linked-parent-password",
+                "password": "Qx0065e03f1197-9",
             },
         )
         self.assertEqual(parent_signup.status_code, 202)
         parent_pending = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "linked-parent", "password": "linked-parent-password"},
+            json={"username": "linked-parent", "password": "Qx0065e03f1197-9"},
         )
         self.assertEqual(parent_pending.status_code, 403)
         account_list = self.client.get(
@@ -942,7 +942,7 @@ class PlatformApiTests(unittest.TestCase):
         )
         parent_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "linked-parent", "password": "linked-parent-password"},
+            json={"username": "linked-parent", "password": "Qx0065e03f1197-9"},
         )
         parent_headers = {
             "Authorization": "Bearer " + parent_login.json()["access_token"]
@@ -964,7 +964,7 @@ class PlatformApiTests(unittest.TestCase):
 
         manager_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "manager-one", "password": "manager-password-123"},
+            json={"username": "manager-one", "password": "Qxfb3e4c8f4b69-9"},
         )
         manager_headers = {
             "Authorization": "Bearer " + manager_login.json()["access_token"]
@@ -1012,17 +1012,17 @@ class PlatformApiTests(unittest.TestCase):
             assert parent_role is not None
             teacher = Account(
                 username="content-teacher",
-                password_hash=main.PASSWORD_HASHER.hash("teacher-password-123"),
+                password_hash=main.PASSWORD_HASHER.hash("Qx1a115ff15e66-9"),
                 roles=[teacher_role],
             )
             other_teacher = Account(
                 username="other-content-teacher",
-                password_hash=main.PASSWORD_HASHER.hash("other-teacher-password-123"),
+                password_hash=main.PASSWORD_HASHER.hash("Qx5d3d349c303c-9"),
                 roles=[teacher_role],
             )
             parent = Account(
                 username="content-parent",
-                password_hash=main.PASSWORD_HASHER.hash("parent-password-123"),
+                password_hash=main.PASSWORD_HASHER.hash("Qxa58f753c6368-9"),
                 roles=[parent_role],
             )
             session.add_all([teacher, other_teacher, parent])
@@ -1031,14 +1031,14 @@ class PlatformApiTests(unittest.TestCase):
 
         teacher_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "content-teacher", "password": "teacher-password-123"},
+            json={"username": "content-teacher", "password": "Qx1a115ff15e66-9"},
         )
         teacher_headers = {
             "Authorization": "Bearer " + teacher_login.json()["access_token"]
         }
         parent_login = self.client.post(
             "/api/platform/auth/login",
-            json={"username": "content-parent", "password": "parent-password-123"},
+            json={"username": "content-parent", "password": "Qxa58f753c6368-9"},
         )
         parent_headers = {
             "Authorization": "Bearer " + parent_login.json()["access_token"]
@@ -1047,7 +1047,7 @@ class PlatformApiTests(unittest.TestCase):
             "/api/platform/auth/login",
             json={
                 "username": "other-content-teacher",
-                "password": "other-teacher-password-123",
+                "password": "Qx5d3d349c303c-9",
             },
         )
         other_teacher_headers = {
