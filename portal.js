@@ -376,7 +376,7 @@
     if (profile) {
       var identity = element("div", "p-account-identity");
       actions.appendChild(element("span", "p-avatar", (profile.username || "?").charAt(0).toUpperCase()));
-      identity.appendChild(element("span", "p-account-label", t("accountLabel")));
+      identity.appendChild(element("span", "p-account-label", t("welcomeUser")));
       identity.appendChild(element("strong", "", profile.username));
       actions.appendChild(identity);
     }
