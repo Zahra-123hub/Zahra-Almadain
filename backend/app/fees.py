@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.database import get_session
 from app.models import Child, FeeAuditLog, FeeCharge, FeePayment
 
-CURRENCIES = ("USD", "SYP")
+CURRENCIES = ("SYP", "USD")  # the Syrian pound is the main currency and always comes first
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
 Money = Field(ge=0, max_digits=14, decimal_places=2)

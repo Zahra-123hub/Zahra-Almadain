@@ -217,6 +217,36 @@ class AccountingApiTests(unittest.TestCase):
         second = self.client.get(url + "2026-10-12", headers=self.acc).json()
         self.assertEqual(next(r for r in second["rows"] if r["key"] == "registration")["income"], "20.00")
 
+    def test_daily_sheet_uses_that_days_payments_and_salaries(self):
+        child_id = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["id"]
+        charge = self.client.post("/api/admin/fees/charges", headers=self.acc, json={
+            "child_id": child_id, "year": 2026, "month": 10, "amount": "1000", "currency": "SYP"}).json()
+        for day, amount in (("2026-10-05", "300"), ("2026-10-06", "200")):
+            self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc,
+                             json={"amount": amount, "paid_on": day})
+        self.salary("Rima", "5000", paid_on="2026-10-06")
+        url = "/api/admin/accounting/sheet?period_type=day&year=2026&currency=SYP&week_start="
+        first = self.client.get(url + "2026-10-05", headers=self.acc).json()
+        self.assertEqual((first["start"], first["end"]), ("2026-10-05", "2026-10-05"))
+        rows = {r["key"]: r for r in first["rows"]}
+        self.assertEqual((rows["registration"]["income"], rows["salaries"]["expense"]), ("300.00", "0.00"))
+        second = {r["key"]: r for r in self.client.get(url + "2026-10-06", headers=self.acc).json()["rows"]}
+        self.assertEqual((second["registration"]["income"], second["salaries"]["expense"]), ("200.00", "5000.00"))
+        # rows saved for one day do not leak into another day or into the week sheet
+        saved = self.client.put("/api/admin/accounting/entries", headers=self.acc, json={
+            "period_type": "day", "year": 2026, "week_start": "2026-10-05", "currency": "SYP",
+            "item_key": "operating", "expense": "75", "details": "x"}).json()
+        self.assertEqual(saved["totals"]["expense"], "75.00")
+        other = self.client.get(url + "2026-10-06", headers=self.acc).json()
+        self.assertEqual(other["totals"]["expense"], "5000.00")
+        week = self.client.get("/api/admin/accounting/sheet?period_type=week&year=2026&currency=SYP&week_start=2026-10-05", headers=self.acc).json()
+        self.assertEqual(next(r for r in week["rows"] if r["key"] == "operating")["expense"], "0.00")
+
+    def test_syrian_pound_is_the_main_currency(self):
+        self.assertEqual(fees.CURRENCIES[0], "SYP")
+        overview = self.client.get("/api/admin/accounting/overview?year=2026", headers=self.acc).json()
+        self.assertEqual([k for k in overview if k in ("SYP", "USD")], ["SYP", "USD"])
+
     def test_overview_per_class_and_chart_series(self):
         children = {c["display_name"]: c["id"] for c in self.client.get("/api/admin/fees/children", headers=self.acc).json()}
         new = self.client.post("/api/admin/fees/charges", headers=self.acc, json={

@@ -113,7 +113,7 @@ class SalaryUpdate(BaseModel):
 
 class EntryIn(BaseModel):
     id: uuid.UUID | None = None
-    period_type: str = Field(pattern="^(month|week)$")
+    period_type: str = Field(pattern="^(month|week|day)$")
     year: int = Field(ge=2000, le=2100)
     month: int = Field(default=0, ge=0, le=12)
     week_start: date | None = None
@@ -156,6 +156,10 @@ def salary_row(line: SalaryLine) -> dict[str, Any]:
 
 
 def sheet_range(period_type: str, year: int, month: int, week_start: date | None) -> tuple[date, date]:
+    if period_type == "day":
+        if week_start is None:
+            raise HTTPException(422, "حدّد اليوم.")
+        return week_start, week_start  # a daily sheet stores its date in week_start
     if period_type == "week":
         if week_start is None:
             raise HTTPException(422, "حدّد بداية الأسبوع.")
@@ -455,7 +459,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
-        if period_type not in ("month", "week") or currency not in CURRENCIES:
+        if period_type not in ("month", "week", "day") or currency not in CURRENCIES:
             raise HTTPException(422, "نوع الجدول أو العملة غير صالح.")
         start, end = sheet_range(period_type, year, month, week_start)
         data = build_sheet(session, period_type, year, month, week_start, currency)
@@ -494,7 +498,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             entry = AccountingEntry(
                 period_type=payload.period_type, year=payload.year,
                 month=payload.month if payload.period_type == "month" else 0,
-                week_start=start if payload.period_type == "week" else None,
+                week_start=start if payload.period_type != "month" else None,
                 currency=payload.currency, item_key=payload.item_key,
             )
             session.add(entry)
