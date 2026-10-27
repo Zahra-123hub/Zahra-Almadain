@@ -381,6 +381,7 @@ function tabAccounts(){
   var roleSelect = h("select", {id:"a-new-role", "aria-label":"نوع الحساب"});
   roleSelect.appendChild(new Option("معلمة", "teacher"));
   roleSelect.appendChild(new Option("محاسب", "accountant"));
+  roleSelect.appendChild(new Option("مدير (صلاحيات كاملة)", "admin"));
   var fullNameInput = h("input", {type:"text", id:"a-new-fullname", maxlength:"120", autocomplete:"off", placeholder:"مثال: ريما صالح"});
   var jobInput = h("input", {type:"text", id:"a-new-job", maxlength:"80", autocomplete:"off", placeholder:"معلمة، محاسب..."});
   var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء الحساب"});
@@ -578,7 +579,7 @@ function tabAccounts(){
     var result = h("div", {});
     var roleBoxes = {};
     var rolesRow = h("div", {class:"a-field", style:"grid-column:1 / -1"}, [h("span", {text:"الأدوار (يمكن اختيار أكثر من دور)"})]);
-    [["teacher", "معلمة"], ["accountant", "محاسب"], ["parent", "ولي أمر"]].forEach(function(r){
+    [["admin", "مدير"], ["teacher", "معلمة"], ["accountant", "محاسب"], ["parent", "ولي أمر"]].forEach(function(r){
       var box = h("input", {type:"checkbox"});
       box.checked = account.roles.indexOf(r[0]) !== -1;
       roleBoxes[r[0]] = box;

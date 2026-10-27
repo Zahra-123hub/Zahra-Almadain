@@ -509,6 +509,59 @@ class PlatformApiTests(unittest.TestCase):
         after = self.client.get(f"/api/platform/children/{child['id']}/reports", headers=parent_headers)
         self.assertEqual([r["title"] for r in after.json()], ["Today"])
 
+    def test_admin_can_create_another_admin_with_full_access(self):
+        created = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "second-admin", "role": "admin", "password": "Qx5a1b9c7d3e2f-9"},
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["roles"], ["admin"])
+        entry = self.client.post(
+            "/api/auth/entry", json={"username": "second-admin", "password": "Qx5a1b9c7d3e2f-9"}
+        )
+        self.assertEqual(entry.status_code, 200)
+        self.assertEqual(entry.json()["portals"], ["admin"])
+        headers = {"Authorization": "Bearer " + entry.json()["access_token"]}
+        # The new admin manages accounts like the server admin and can add further admins.
+        self.assertEqual(self.client.get("/api/admin/platform/accounts", headers=headers).status_code, 200)
+        third = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=headers,
+            json={"username": "third-admin", "role": "admin", "password": "Qx7c2d4e6f8a1-9"},
+        )
+        self.assertEqual(third.status_code, 201)
+        # Safety: an admin cannot strip their own admin role or disable their own account.
+        own = created.json()["id"]
+        self.assertEqual(
+            self.client.patch(f"/api/admin/platform/accounts/{own}", headers=headers, json={"roles": ["teacher"]}).status_code,
+            409,
+        )
+        self.assertEqual(
+            self.client.patch(f"/api/admin/platform/accounts/{own}/status", headers=headers, json={"status": "disabled"}).status_code,
+            409,
+        )
+
+    def test_non_admin_cannot_create_admin(self):
+        with Session(self.engine) as session:
+            session.add(Role(name="teacher"))
+            session.commit()
+        self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=self.legacy_admin_headers,
+            json={"username": "just-teacher", "password": "Qx3e5f7a9b1c-9"},
+        )
+        login = self.client.post(
+            "/api/platform/auth/login", json={"username": "just-teacher", "password": "Qx3e5f7a9b1c-9"}
+        )
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        denied = self.client.post(
+            "/api/admin/platform/teacher-accounts",
+            headers=headers,
+            json={"username": "sneaky", "role": "admin", "password": "Qx9b1c3d5e7f-9"},
+        )
+        self.assertEqual(denied.status_code, 401)
+
     def test_admin_edits_account_and_resets_password(self):
         with Session(self.engine) as session:
             session.add(Role(name="teacher"))
@@ -585,7 +638,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/admin/content", headers=headers).status_code, 503)  # passed the guard (no GitHub here)
         # roles can be reduced again, but never to nothing or to unknown roles
         self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": []}).status_code, 422)
-        self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["admin"]}).status_code, 422)
+        self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["manager"]}).status_code, 422)
         only = self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["teacher"]})
         self.assertEqual(only.json()["roles"], ["teacher"])
         self.assertEqual(self.client.get("/api/admin/fees", headers=headers).status_code, 403)
@@ -753,7 +806,7 @@ class PlatformApiTests(unittest.TestCase):
                 headers=self.admin_headers,
                 json={"status": "active"},
             ).status_code,
-            401,
+            200,  # a platform account with the admin role is an admin too
         )
 
     def test_parent_cannot_create_children_or_invitations(self):
