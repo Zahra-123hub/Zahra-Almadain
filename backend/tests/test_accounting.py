@@ -178,7 +178,9 @@ class AccountingApiTests(unittest.TestCase):
         rows = {r["key"]: r for r in self.client.get(url, headers=self.acc).json()["rows"]}
         self.assertEqual(rows["registration"]["income"], "600000.00")
         self.assertEqual(rows["salaries"]["expense"], "1050000.00")
-        self.assertEqual(len(rows) , 6)
+        self.assertEqual(len(rows), 8)  # six original items plus buffet and transport
+        self.assertIn("buffet", rows)
+        self.assertIn("transport", rows)
         sheet = self.client.get(url, headers=self.acc).json()
         self.assertEqual(sheet["totals"], {"income": "600000.00", "expense": "1050000.00", "net": "-450000.00"})
         # the other currency is untouched
@@ -241,6 +243,15 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(other["totals"]["expense"], "5000.00")
         week = self.client.get("/api/admin/accounting/sheet?period_type=week&year=2026&currency=SYP&week_start=2026-10-05", headers=self.acc).json()
         self.assertEqual(next(r for r in week["rows"] if r["key"] == "operating")["expense"], "0.00")
+
+    def test_buffet_and_transport_can_be_income_or_expense(self):
+        base = {"period_type": "month", "year": 2026, "month": 10, "currency": "SYP"}
+        self.client.put("/api/admin/accounting/entries", headers=self.acc, json={**base, "item_key": "buffet", "expense": "40000"})
+        sheet = self.client.put("/api/admin/accounting/entries", headers=self.acc, json={**base, "item_key": "transport", "income": "90000"}).json()
+        rows = {r["key"]: r for r in sheet["rows"]}
+        self.assertEqual((rows["buffet"]["kind"], rows["buffet"]["expense"], rows["buffet"]["choice"]), ("expense", "40000.00", True))
+        self.assertEqual((rows["transport"]["kind"], rows["transport"]["income"]), ("income", "90000.00"))
+        self.assertEqual(sheet["totals"], {"income": "90000.00", "expense": "40000.00", "net": "50000.00"})
 
     def test_syrian_pound_is_the_main_currency(self):
         self.assertEqual(fees.CURRENCIES[0], "SYP")

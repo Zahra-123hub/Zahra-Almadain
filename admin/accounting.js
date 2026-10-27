@@ -16,26 +16,43 @@ function accNumber(value, extra){ return h("input", Object.assign({type:"number"
 function accMonths(withAll){ return (withAll ? [["", "كل الأشهر"]] : []).concat(MONTHS_AR.map(function(n, i){ return [String(i + 1), n]; })); }
 function accCurrencyOptions(withAll){ return (withAll ? [["", "كل العملات"]] : []).concat([["SYP", "ليرة سورية (SYP)"], ["USD", "دولار أمريكي (USD)"]]); }
 
-/* Printable A4 landscape RTL page with the two signature fields. */
-function accPrint(title, subtitle, bodyHtml, msgEl){
-  var css = "@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Almarai,'Segoe UI',Tahoma,sans-serif;color:#111;margin:0;font-size:11pt}" +
-    "section{page-break-after:always}section:last-child{page-break-after:auto}header{text-align:center;margin-bottom:8px}h1{margin:0;font-size:17pt}h2{margin:2px 0;font-size:14pt}header p{margin:4px 0}" +
-    "table{width:100%;border-collapse:collapse}th,td{border:1px solid #444;padding:4px 6px;text-align:center}td.l{text-align:right}th{background:#e8eef9}tfoot td{font-weight:700;background:#f3f3f3}" +
-    ".due{color:#b00020;font-weight:700}.sign{display:flex;justify-content:space-between;gap:40px;margin-top:26px}.sign div{flex:1;text-align:center}.sign b{display:block;margin-bottom:34px}" +
-    ".sign span{display:block;border-top:1px solid #000;padding-top:4px;min-height:24px}.sign i{display:block;margin-top:8px;font-style:normal}footer{margin-top:10px;font-size:9pt;color:#555;text-align:left}.line{border-top:1px solid #000;min-width:90px;display:inline-block}";
+/* Printable A4 landscape RTL page: header with logo, even columns, tall rows to write in,
+   highlighted totals and the two signature fields. `parts` = [{html, cols?, ...}]. */
+function accPrint(title, subtitle, parts, msgEl){
+  var css = "@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
+    "body{font-family:Almarai,'Segoe UI',Tahoma,sans-serif;color:#111;margin:0;font-size:12pt;line-height:1.35}" +
+    "section{page-break-after:always;padding:2mm 0}section:last-child{page-break-after:auto}" +
+    ".top{display:flex;align-items:center;gap:14px;border-bottom:3px solid #17408f;padding-bottom:8px;margin-bottom:10px}" +
+    ".top img{width:62px;height:62px;object-fit:contain}.top .t{flex:1;text-align:center}.top h1{margin:0;font-size:19pt;color:#17408f}.top h2{margin:2px 0 0;font-size:15pt}" +
+    ".top .spacer{width:62px}.meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}" +
+    ".meta span{border:1.5px solid #17408f;border-radius:999px;padding:2px 14px;font-weight:700;font-size:11pt;background:#eef3fc}" +
+    "table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}" +
+    "th,td{border:1px solid #555;padding:5px 8px;text-align:center;vertical-align:middle;overflow-wrap:anywhere}" +
+    "th{background:#17408f;color:#fff;font-size:11.5pt;padding:7px 6px}td{height:10mm}tbody tr:nth-child(even) td{background:#f4f7fc}" +
+    "td.l{text-align:right}td.l:first-child{font-weight:700}" +
+    "tfoot td{background:#fde9a8;font-weight:800;border-top:3px double #17408f;height:11mm;font-size:12.5pt}" +
+    ".due{color:#b00020;font-weight:800}" +
+    ".sign{display:flex;gap:70px;margin-top:22px;page-break-inside:avoid}.sign>div{flex:1;text-align:center}.sign b{display:block;font-size:12.5pt;margin-bottom:34px}" +
+    ".sign span{display:block;border-top:1.5px solid #111;padding-top:4px;min-height:26px;font-weight:700}.sign i{display:block;margin-top:10px;font-style:normal}" +
+    "footer{margin-top:10px;font-size:9pt;color:#555;text-align:left}";
   var sign = "<div class='sign'><div><b>توقيع المحاسب</b><span>" + esc(ACC_VIEWER.role === "accountant" ? ACC_VIEWER.name : "") + "</span><i>التاريخ: ____ / ____ / ________</i></div>" +
     "<div><b>توقيع الإدارة</b><span></span><i>التاريخ: ____ / ____ / ________</i></div></div>";
   var today = new Date().toLocaleDateString("ar-SY");
+  var logo = new URL("../images/logo.png", window.location.href).href;
   var html = "<!doctype html><html lang='ar' dir='rtl'><head><meta charset='utf-8'><title>" + esc(title) + "</title>" +
-    "<link href='https://fonts.googleapis.com/css2?family=Almarai:wght@400;700&display=swap' rel='stylesheet'><style>" + css + "</style></head><body>" +
-    bodyHtml.map(function(part){
-      return "<section><header><h1>روضة زهرة المدائن</h1><h2>" + esc(title) + "</h2><p>" + subtitle(part) + "</p></header>" + part.html + sign + "<footer>طُبع بتاريخ " + esc(today) + "</footer></section>";
-    }).join("") + "</body></html>";
+    "<link href='https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&display=swap' rel='stylesheet'><style>" + css + "</style></head><body>" +
+    parts.map(function(part){
+      var table = part.html;
+      if(part.cols) table = table.replace("<table>", "<table><colgroup>" + part.cols.map(function(w){ return "<col style='width:" + w + "%'>"; }).join("") + "</colgroup>");
+      return "<section><div class='top'><img src='" + esc(logo) + "' alt=''><div class='t'><h1>روضة زهرة المدائن</h1><h2>" + esc(title) + "</h2></div><div class='spacer'></div></div>" +
+        "<div class='meta'>" + subtitle(part).split("|").map(function(chunk){ return "<span>" + chunk.replace(/&nbsp;/g, " ").trim() + "</span>"; }).join("") + "</div>" +
+        table + sign + "<footer>طُبع بتاريخ " + esc(today) + "</footer></section>";
+    }).join("") +
+    "<script>window.onload=function(){(document.fonts?document.fonts.ready:Promise.resolve()).then(function(){setTimeout(function(){window.print()},300)})}<\/script></body></html>";
   var w = window.open("", "_blank");
   if(!w){ if(msgEl) setMsg(msgEl, "اسمح بالنوافذ المنبثقة لتصدير PDF.", "err"); return; }
   w.document.write(html);
   w.document.close();
-  setTimeout(function(){ w.focus(); w.print(); }, 700);
 }
 function accTh(list){ return "<tr>" + list.map(function(t){ return "<th>" + t + "</th>"; }).join("") + "</tr>"; }
 
@@ -267,7 +284,7 @@ function tabSalaries(){
       var t = data.totals[code] || {base:"0", bonus:"0", advance:"0", deduction:"0", net:"0"};
       var body = rows.map(function(r, i){ return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.employee_name) + "</td><td>" + esc(r.job_title || "—") + "</td><td>" + money(r.base) + "</td><td>" + money(r.bonus) +
         "</td><td>" + money(r.advance) + "</td><td>" + money(r.deduction) + "</td><td><b>" + money(r.net) + "</b></td><td>" + esc(r.paid_on || "—") + "</td><td><span class='line'>&nbsp;</span></td></tr>"; }).join("");
-      return {code:code, html:"<table><thead>" + accTh(["الرقم","اسم الموظف / المدرسة","المسمى الوظيفي","الراتب الأساسي","المكافآت / الإضافي","السلف","الخصومات","الصافي المستحق","تاريخ الاستلام","توقيع المستلم"]) + "</thead><tbody>" +
+      return {code:code, cols:[4,18,11,11,11,8,9,12,9,7], html:"<table><thead>" + accTh(["الرقم","اسم الموظف / المدرسة","المسمى الوظيفي","الراتب الأساسي","المكافآت / الإضافي","السلف","الخصومات","الصافي المستحق","تاريخ الاستلام","توقيع المستلم"]) + "</thead><tbody>" +
         (body || "<tr><td colspan='10'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.base) + "</td><td>" + money(t.bonus) + "</td><td>" + money(t.advance) +
         "</td><td>" + money(t.deduction) + "</td><td>" + money(t.net) + "</td><td colspan='2'></td></tr></tfoot></table>"};
     });
@@ -318,7 +335,7 @@ function tabSheet(type){
       var note = h("input", {type:"text", maxlength:"500", value:row.note, "aria-label":"الملاحظات"});
       var income = accNumber(row.income, {"aria-label":"الوارد"}), expense = accNumber(row.expense, {"aria-label":"الصادر"});
       var amount = accNumber(Number(row.income) || Number(row.expense) || "", {"aria-label":"المبلغ"});
-      var kindSel = row.custom && !isWeek ? accSelect([["expense", "صادر"], ["income", "وارد"]], row.kind) : null;
+      var kindSel = (row.custom || row.choice) && !isWeek ? accSelect([["expense", "صادر"], ["income", "وارد"]], row.kind) : null;
       var amountCells = isWeek
         ? [h("td", {}, [income]), h("td", {}, [expense])]
         : [h("td", {}, [h("div", {class:"a-amount"}, [kindSel ? kindSel : h("span", {class:"a-tag", text:row.kind === "income" ? "وارد" : "صادر"}), amount])])];
@@ -384,15 +401,15 @@ function tabSheet(type){
     var parts = codes.filter(function(c){ return sheets[c]; }).map(function(code){
       var sheet = sheets[code], t = sheet.totals;
       var body = sheet.rows.map(function(r){
-        var amounts = isWeek ? "<td>" + (Number(r.income) ? money(r.income) : "") + "</td><td>" + (Number(r.expense) ? money(r.expense) : "") + "</td>" : "<td>" + money(Number(r.income) || Number(r.expense)) + "</td>";
+        var amounts = isWeek ? "<td>" + (Number(r.income) ? money(r.income) : "") + "</td><td>" + (Number(r.expense) ? money(r.expense) : "") + "</td>" : "<td>" + ((Number(r.income) || Number(r.expense)) ? money(Number(r.income) || Number(r.expense)) : "") + "</td>";
         return "<tr><td class='l'>" + esc(r.label) + "</td><td class='l'>" + esc(r.details) + "</td><td class='l'>" + esc(r.note) + "</td>" + amounts + "</tr>";
       }).join("");
       var foot = isWeek ? "<tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.income) + "</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='3'>الصافي</td><td colspan='2'>" + money(t.net) + "</td></tr>"
         : "<tr><td colspan='3'>إجمالي الواردات</td><td>" + money(t.income) + "</td></tr><tr><td colspan='3'>إجمالي المصروفات</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='3'>الإجمالي العام (الصافي)</td><td>" + money(t.net) + "</td></tr>";
-      return {code:code, sheet:sheet, html:"<table><thead>" + accTh(isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المبالغ الواردة","المبالغ الصادرة"] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المبلغ"]) + "</thead><tbody>" + body + "</tbody><tfoot>" + foot + "</tfoot></table>"};
+      return {code:code, sheet:sheet, cols:isWeek ? [24, 22, 26, 14, 14] : [28, 24, 28, 20], html:"<table><thead>" + accTh(isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المبالغ الواردة","المبالغ الصادرة"] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المبلغ"]) + "</thead><tbody>" + body + "</tbody><tfoot>" + foot + "</tfoot></table>"};
     });
     accPrint(SHEET_TITLE, function(part){
-      return (isDay ? "التاريخ: " + esc(part.sheet.start) : isWeek ? "من " + esc(part.sheet.start) + " إلى " + esc(part.sheet.end) : "الشهر: " + esc(MONTHS_AR[Number(filters.month) - 1]) + " " + esc(filters.year)) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
+      return (isDay ? "التاريخ: " + esc(part.sheet.start) + " (" + esc(new Date(part.sheet.start + "T00:00:00").toLocaleDateString("ar-SY", {weekday:"long"})) + ")" : isWeek ? "من " + esc(part.sheet.start) + " إلى " + esc(part.sheet.end) : "الشهر: " + esc(MONTHS_AR[Number(filters.month) - 1]) + " " + esc(filters.year)) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
   }
   var periodFields = isWeek ? [accField(isDay ? "اليوم" : "أي يوم من الأسبوع", fDay)] : [accField("السنة", fYear), accField("الشهر", fMonth)];
   if(isWeek) periodFields.unshift(accField("السنة", fYear));
