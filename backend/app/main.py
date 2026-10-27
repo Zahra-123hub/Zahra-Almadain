@@ -33,7 +33,12 @@ from app.models import (
     Account,
     Child,
     DailyReport,
+    AccountingEntry,
     Employee,
+    FeeAuditLog,
+    FeeCharge,
+    FeePayment,
+    SalaryLine,
     GuardianInvitation,
     LoginAttempt,
     PortalSession,
@@ -1287,6 +1292,35 @@ def platform_login(
     result = portal_session_result(account, session, secret)
     session.commit()
     return result
+
+
+class FinanceResetRequest(BaseModel):
+    confirm: str = Field(max_length=20)
+
+
+@app.post("/api/admin/accounting/reset")
+def reset_financial_data(
+    payload: FinanceResetRequest,
+    response: Response,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    """Admin only: wipes every fee, payment, payroll line and sheet row so all totals start at 0.
+    Children, staff names and accounts stay. Needs the confirmation word."""
+    response.headers["Cache-Control"] = "no-store"
+    if payload.confirm.strip() != "RESET":
+        raise HTTPException(422, "اكتب كلمة RESET للتأكيد.")
+    counts = {
+        "payments": session.execute(delete(FeePayment)).rowcount or 0,
+        "fees": session.execute(delete(FeeCharge)).rowcount or 0,
+        "salaries": session.execute(delete(SalaryLine)).rowcount or 0,
+        "sheet_rows": session.execute(delete(AccountingEntry)).rowcount or 0,
+    }
+    session.add(
+        FeeAuditLog(actor_name="admin", action="finance.reset", entity_id="all", details=str(counts)[:1000])
+    )
+    session.commit()
+    return counts
 
 
 @app.post("/api/auth/entry")

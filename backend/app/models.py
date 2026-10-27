@@ -293,6 +293,9 @@ class Employee(Base):
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, unique=True
     )
+    # Usual monthly salary, saved once and used to pre-fill / generate the monthly payroll.
+    salary: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    salary_currency: Mapped[str] = mapped_column(String(3), default="SYP", server_default="SYP")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
