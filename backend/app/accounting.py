@@ -101,6 +101,7 @@ class SalaryIn(BaseModel):
     advance: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     deduction: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     paid_on: date | None = None
+    paid_by: str = Field(default="", max_length=120)  # who handed the salary out
 
 
 class SalaryUpdate(BaseModel):
@@ -113,6 +114,7 @@ class SalaryUpdate(BaseModel):
     advance: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     deduction: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     paid_on: date | None = None
+    paid_by: str | None = Field(default=None, max_length=120)
 
 
 class EntryIn(BaseModel):
@@ -129,6 +131,7 @@ class EntryIn(BaseModel):
     income: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     expense: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     manual: bool = True
+    person: str = Field(default="", max_length=120)  # who spent / received the money
 
 
 # --- serialisation ------------------------------------------------------------
@@ -153,6 +156,8 @@ def salary_row(line: SalaryLine) -> dict[str, Any]:
         "deduction": _text(line.deduction),
         "net": _text(net_pay(line.base, line.bonus, line.advance, line.deduction)),
         "paid_on": line.paid_on.isoformat() if line.paid_on else None,
+        "paid_by": line.paid_by,
+        "recorded_by": line.recorded_by,
         "needs_review": line.needs_review,
         "raw_text": line.raw_text,
         "source": line.source,
@@ -257,6 +262,8 @@ def build_sheet(
                 "custom": False,
                 "details": entry.details if entry else "",
                 "note": entry.note if entry else "",
+                "person": entry.person if entry else "",
+                "entered_by": entry.entered_by if entry else "",
                 "income": str(income),
                 "expense": str(expense),
                 "auto": key in AUTO_ITEMS,
@@ -272,6 +279,7 @@ def build_sheet(
                     "id": str(entry.id), "key": "custom", "label": entry.item_label,
                     "kind": "expense" if money(entry.expense) > 0 or money(entry.income) == 0 else "income",
                     "custom": True, "details": entry.details, "note": entry.note,
+                    "person": entry.person, "entered_by": entry.entered_by,
                     "income": str(money(entry.income)), "expense": str(money(entry.expense)),
                     "auto": False, "auto_income": "0.00", "auto_expense": "0.00", "manual": True,
                 }
@@ -322,6 +330,68 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         log(session, actor, "employee.create", employee.id, "")
         session.commit()
         return {"id": str(employee.id), "name": employee.name, "job_title": employee.job_title}
+
+    @router.patch("/employees/{employee_id}")
+    def update_employee(
+        employee_id: uuid.UUID,
+        payload: EmployeeIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, str]:
+        employee = session.get(Employee, employee_id)
+        if employee is None or not employee.is_active:
+            raise HTTPException(404, "الموظف غير موجود.")
+        clash = session.scalar(
+            select(Employee.id).where(
+                func.lower(Employee.name) == payload.name.strip().lower(),
+                Employee.is_active.is_(True),
+                Employee.id != employee.id,
+            )
+        )
+        if clash is not None:
+            raise HTTPException(409, "يوجد موظف بهذا الاسم.")
+        employee.name = payload.name.strip()
+        employee.job_title = payload.job_title.strip()
+        log(session, actor, "employee.update", employee.id, "")
+        session.commit()
+        return {"id": str(employee.id), "name": employee.name, "job_title": employee.job_title}
+
+    @router.delete("/employees/{employee_id}", status_code=204)
+    def remove_employee(
+        employee_id: uuid.UUID,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        """Takes the person off the list of saved names; old salary rows keep the name."""
+        employee = session.get(Employee, employee_id)
+        if employee is None:
+            raise HTTPException(404, "الموظف غير موجود.")
+        employee.is_active = False
+        log(session, actor, "employee.remove", employee.id, "")
+        session.commit()
+        return Response(status_code=204)
+
+    @router.get("/names")
+    def saved_names(
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, list[str]]:
+        """Names typed before, offered as suggestions so nobody has to retype them."""
+        response.headers["Cache-Control"] = "no-store"
+
+        def distinct(column, *conditions) -> list[str]:
+            query = select(column).where(column != "", *conditions).distinct().order_by(column)
+            return [value for (value,) in session.execute(query) if value]
+
+        staff = distinct(Employee.name, Employee.is_active.is_(True))
+        persons = sorted(
+            set(staff)
+            | set(distinct(AccountingEntry.person))
+            | set(distinct(SalaryLine.paid_by))
+        )
+        payers = distinct(FeePayment.payer_name, FeePayment.deleted_at.is_(None))
+        return {"staff": staff, "persons": persons, "payers": payers}
 
     # ---- salaries -----------------------------------------------------------
 
@@ -387,6 +457,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             employee_id=employee.id, year=payload.year, month=payload.month, currency=payload.currency,
             base=money(payload.base), bonus=money(payload.bonus), advance=money(payload.advance),
             deduction=money(payload.deduction), paid_on=payload.paid_on,
+            paid_by=payload.paid_by.strip(), recorded_by=actor.name[:80],
         )
         session.add(line)
         try:
@@ -418,6 +489,9 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             value = getattr(payload, field)
             setattr(line, field, None if value is None else money(value))
         line.paid_on = payload.paid_on
+        if payload.paid_by is not None:
+            line.paid_by = payload.paid_by.strip()
+        line.recorded_by = actor.name[:80]
         if payload.job_title is not None:
             line.employee.job_title = payload.job_title.strip()
         if payload.employee_name is not None:
@@ -512,6 +586,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         entry.item_label = payload.item_label.strip()
         entry.details = payload.details.strip()
         entry.note = payload.note.strip()
+        entry.person = payload.person.strip()
+        entry.entered_by = actor.name[:80]
         entry.income, entry.expense = money(payload.income), money(payload.expense)
         entry.manual = payload.manual
         session.flush()

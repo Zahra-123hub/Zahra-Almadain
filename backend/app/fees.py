@@ -94,6 +94,7 @@ class PaymentIn(BaseModel):
     paid_on: date
     receipt_no: str | None = Field(default=None, max_length=40)
     note: str = Field(default="", max_length=500)
+    payer_name: str = Field(default="", max_length=120)  # who paid (e.g. the parent)
 
 
 class ChargeCreate(BaseModel):
@@ -155,6 +156,7 @@ def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
         "last_paid_on": next((p.paid_on.isoformat() for p in reversed(payments) if p.paid_on), None),
         "receipts": [p.receipt_no for p in payments if p.receipt_no],
         "notes": ([charge.note] if charge.note else []) + [p.note for p in payments if p.note],
+        "payers": list(dict.fromkeys(p.payer_name for p in payments if p.payer_name)),
         "payments": [
             {
                 "id": str(p.id),
@@ -162,6 +164,7 @@ def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
                 "paid_on": p.paid_on.isoformat() if p.paid_on else None,
                 "receipt_no": p.receipt_no or "",
                 "note": p.note,
+                "payer_name": p.payer_name,
                 "created_by": p.created_by_name,
             }
             for p in payments
@@ -351,6 +354,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                 paid_on=first.paid_on,
                 receipt_no=receipt,
                 note=first.note.strip(),
+                payer_name=first.payer_name.strip(),
                 created_by_id=actor.account_id,
                 created_by_name=actor.name[:80],
             )
@@ -465,6 +469,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             paid_on=payload.paid_on,
             receipt_no=receipt,
             note=payload.note.strip(),
+            payer_name=payload.payer_name.strip(),
             created_by_id=actor.account_id,
             created_by_name=actor.name[:80],
         )
@@ -509,6 +514,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         payment.paid_on = payload.paid_on
         payment.receipt_no = receipt
         payment.note = payload.note.strip()
+        payment.payer_name = payload.payer_name.strip()
         try:
             session.flush()
         except IntegrityError as exc:

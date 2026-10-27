@@ -54,11 +54,13 @@ FEE_HEADERS = {
     "الرسم/القسطالمطلوب": "required", "الرسمالمطلوب": "required", "القسطالمطلوب": "required", "المطلوب": "required",
     "المبلغالمدفوع": "paid", "المدفوع": "paid", "المتبقي": "open", "المتبقي(انوجد)": "open",
     "تاريخالدفع": "date", "رقمالايصال": "receipt", "ملاحظات": "note",
+    "الدافع": "payer", "اسمالدافع": "payer",
 }
 SALARY_HEADERS = {
     "م": "row", "اسمالموظف/المدرسه": "name", "اسمالموظف": "name", "الاسم": "name",
     "المسمىالوظيفي": "job", "الراتبالاساسي": "base", "المكافات/الاضافي": "bonus", "المكافات": "bonus",
     "السلف": "advance", "الخصومات": "deduction", "الصافيالمستحق": "net", "تاريخالاستلام": "date",
+    "صرفه": "paid_by", "منصرف": "paid_by", "الصارف": "paid_by",
 }
 COMMON_HEADERS = {"الشهر": "month", "السنه": "year", "العمله": "currency", "المصدر": "source"}
 
@@ -244,7 +246,8 @@ def import_fees(session: Session, rows: list[dict[str, str]], csv_name: str, def
             ) is not None:
                 receipt, review = None, True  # duplicate receipt number: not stored twice
             charge.payments.append(
-                FeePayment(amount=paid, paid_on=pay_date, receipt_no=receipt, created_by_name="import")
+                FeePayment(amount=paid, paid_on=pay_date, receipt_no=receipt, created_by_name="import",
+                           payer_name=clean(row.get("payer")))
             )
         charge.needs_review = review
         charge.raw_text = row["_raw"] if review else ""
@@ -317,7 +320,8 @@ def import_salaries(session: Session, rows: list[dict[str, str]], csv_name: str,
             continue
         session.add(SalaryLine(
             employee_id=employee.id, year=row_year, month=row_month, currency=currency, paid_on=received,
-            needs_review=review, raw_text=row["_raw"] if review else "", source=source, **values,
+            needs_review=review, raw_text=row["_raw"] if review else "", source=source,
+            paid_by=clean(row.get("paid_by")), recorded_by="import", **values,
         ))
         stats["imported"] += 1
 
