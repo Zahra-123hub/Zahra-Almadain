@@ -1010,8 +1010,7 @@ function tabFees(){
   function printReport(){
     var codes = filters.currency ? [filters.currency] : ["SYP", "USD"];
     var period = (filters.month ? MONTHS_AR[Number(filters.month) - 1] + " " : "") + (filters.year || "");
-    var today = new Date().toLocaleDateString("ar-SY");
-    var sections = codes.map(function(code){
+    var parts = codes.map(function(code){
       var rows = data.rows.filter(function(r){ return r.currency === code; });
       var t = data.totals[code] || {amount:"0", paid:"0", remaining:"0"};
       var body = rows.map(function(r, i){
@@ -1019,25 +1018,13 @@ function tabFees(){
           "</td><td>" + money(r.paid) + "</td><td class='" + (Number(r.remaining) > 0 ? "due" : "") + "'>" + money(r.remaining) + "</td><td>" + esc(r.last_paid_on || "—") +
           "</td><td>" + esc(r.receipts.join("، ") || "—") + "</td><td class='l'>" + esc(r.notes.join("؛ ") || "—") + "</td></tr>";
       }).join("");
-      return "<section><header><h1>روضة زهرة المدائن</h1><h2>كشف اشتراكات ورسوم الأطفال</h2><p>الفترة: " + esc(period) +
-        " &nbsp;|&nbsp; العملة: " + esc(CURRENCY_LABEL[code]) + (filters.class_name ? " &nbsp;|&nbsp; الصف: " + esc(filters.class_name) : "") + "</p></header>" +
-        "<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>ملاحظات</th></tr></thead><tbody>" +
+      return {code:code, cols:[4, 20, 8, 12, 12, 12, 10, 10, 12], html:"<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>ملاحظات</th></tr></thead><tbody>" +
         (body || "<tr><td colspan='9'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.amount) +
-        "</td><td>" + money(t.paid) + "</td><td>" + money(t.remaining) + "</td><td colspan='3'></td></tr></tfoot></table>" +
-        "<div class='sign'><div><b>توقيع المحاسب</b><span>" + esc(viewer.role === "accountant" ? viewer.name : "") + "</span><i>التاريخ: ____ / ____ / ________</i></div>" +
-        "<div><b>توقيع الإدارة</b><span></span><i>التاريخ: ____ / ____ / ________</i></div></div><footer>طُبع بتاريخ " + esc(today) + "</footer></section>";
-    }).join("");
-    var css = "@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Almarai,'Segoe UI',Tahoma,sans-serif;color:#111;margin:0;font-size:11pt}" +
-      "section{page-break-after:always}section:last-child{page-break-after:auto}header{text-align:center;margin-bottom:8px}h1{margin:0;font-size:17pt}h2{margin:2px 0;font-size:14pt}header p{margin:4px 0}" +
-      "table{width:100%;border-collapse:collapse}th,td{border:1px solid #444;padding:4px 6px;text-align:center}td.l{text-align:right}th{background:#e8eef9}tfoot td{font-weight:700;background:#f3f3f3}" +
-      ".due{color:#b00020;font-weight:700}.sign{display:flex;justify-content:space-between;gap:40px;margin-top:26px}.sign div{flex:1;text-align:center}.sign b{display:block;margin-bottom:34px}" +
-      ".sign span{display:block;border-top:1px solid #000;padding-top:4px;min-height:24px}.sign i{display:block;margin-top:8px;font-style:normal}footer{margin-top:10px;font-size:9pt;color:#555;text-align:left}";
-    var w = window.open("", "_blank");
-    if(!w){ setMsg(msg, "اسمح بالنوافذ المنبثقة لتصدير PDF.", "err"); return; }
-    w.document.write("<!doctype html><html lang='ar' dir='rtl'><head><meta charset='utf-8'><title>كشف الاشتراكات والرسوم</title>" +
-      "<link href='https://fonts.googleapis.com/css2?family=Almarai:wght@400;700&display=swap' rel='stylesheet'><style>" + css + "</style></head><body>" + sections + "</body></html>");
-    w.document.close();
-    setTimeout(function(){ w.focus(); w.print(); }, 700);
+        "</td><td>" + money(t.paid) + "</td><td>" + money(t.remaining) + "</td><td colspan='3'></td></tr></tfoot></table>"};
+    });
+    accPrint("كشف اشتراكات ورسوم الأطفال", function(part){
+      return "الفترة: " + esc(period) + " | العملة: " + esc(CURRENCY_LABEL[part.code]) + (filters.class_name ? " | الصف: " + esc(filters.class_name) : "");
+    }, parts, msg);
   }
 
   var toolbar = h("div", {class:"a-row"}, [

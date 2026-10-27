@@ -45,9 +45,13 @@ STANDARD_ITEMS = [
     ("salaries", "رواتب المدرسات والموظفين", "expense"),
     ("activities", "الأنشطة والفعاليات", "expense"),
     ("purchases", "المشتريات والوسائل التعليمية", "expense"),
+    ("buffet", "البوفيه", "expense"),
+    ("transport", "وسائل النقل (المواصلات)", "expense"),
     ("misc", "مصروفات نثرية / أخرى", "expense"),
 ]
 AUTO_ITEMS = {"registration", "salaries"}
+# Rows that can be income (e.g. buffet sales, bus fees) or expense: the user picks the type.
+CHOICE_ITEMS = {"buffet", "transport"}
 
 
 # --- calculations (pure, unit tested) ---------------------------------------
@@ -241,12 +245,15 @@ def build_sheet(
             income, expense = money(entry.income), money(entry.expense)
         else:
             income = expense = ZERO
+        if key in CHOICE_ITEMS and income > 0 and expense == 0:
+            kind = "income"
         rows.append(
             {
                 "id": str(entry.id) if entry else None,
                 "key": key,
                 "label": label,
                 "kind": kind,
+                "choice": key in CHOICE_ITEMS,
                 "custom": False,
                 "details": entry.details if entry else "",
                 "note": entry.note if entry else "",
