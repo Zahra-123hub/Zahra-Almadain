@@ -96,6 +96,14 @@
       teacherFiles: "ملفاتي التعليمية", teacherFilesHelp: "الملفات خاصة بك وبإدارة الروضة فقط. يمكنك رفع أي نوع ملف عدا البرامج وصفحات الويب. PDF حتى 20 ميغابايت، والصور حتى 10، والفيديو حتى 25، وغيرها حتى 50 ميغابايت. الحد الإجمالي 250 ميغابايت.",
       other: "أي ملف (وورد، إكسل، عرض تقديمي، مضغوط...)", uploadFile: "رفع ملف", uploadType: "نوع الملف", document: "مادة أو مستند PDF",
       image: "صورة", video: "فيديو", chooseFile: "اختاري ملفاً", fileUploaded: "تم رفع الملف بشكل خاص.",
+      postTitle: "العنوان", postBody: "النص (اختياري إذا أرفقتِ ملفاً)",
+      postsComposeTitle: "نشر للأهل",
+      postsComposeHelp: "اختاري نوع المنشور: عام يراه كل أولياء الأمور، أو خاص بطفل (علامات، ملاحظات) لا يراه إلا أهل هذا الطفل. يظهر المنشور للأهل فور نشره.",
+      scopeLabel: "نوع المنشور", scopeGeneral: "عام — يراه جميع أولياء الأمور", scopeChild: "خاص بطفل — يراه أهل هذا الطفل فقط",
+      scopeGeneralBadge: "عام", scopePrivateBadge: "خاص", postFiles: "مرفقات (حتى 5 ملفات)", publishPost: "نشر الآن",
+      postPublished: "تم النشر وهو ظاهر للأهل الآن.", myPosts: "منشوراتي", allPosts: "كل المنشورات", noPosts: "لا توجد منشورات بعد.",
+      postsForYou: "منشورات الروضة", noPostsParent: "لا توجد منشورات بعد.", deletePostConfirm: "حذف هذا المنشور نهائياً؟",
+      noAssignedChildren: "لا يوجد أطفال معيّنون لك بعد لإرسال منشور خاص.",
       noTeacherFiles: "لم ترفعي ملفات بعد.", deleteFile: "حذف", fileDeleted: "تم حذف الملف.",
       downloadFile: "تنزيل", reportAttachments: "مرفقات التقرير (خاصة بالمعلمة والإدارة)",
       reportAttachmentsHelp: "يمكن إرفاق حتى 5 ملفات PDF أو صور أو فيديوهات. لن تظهر هذه المرفقات للأهل.",
@@ -163,6 +171,14 @@
       teacherFiles: "My learning files", teacherFilesHelp: "Files are private to you and kindergarten admins. Any file type except programs and web pages. PDF up to 20 MB, images up to 10 MB, videos up to 25 MB, other files up to 50 MB. Total storage limit: 250 MB.",
       other: "Any file (Word, Excel, slides, zip...)", uploadFile: "Upload file", uploadType: "File type", document: "Learning material or PDF",
       image: "Image", video: "Video", chooseFile: "Choose a file", fileUploaded: "File uploaded privately.",
+      postTitle: "Title", postBody: "Message (optional if you attach a file)",
+      postsComposeTitle: "Post to parents",
+      postsComposeHelp: "Choose the post type: General is seen by all parents; Private to one child (grades, remarks) is seen only by that child's parents. Posts are visible to families as soon as you publish.",
+      scopeLabel: "Post type", scopeGeneral: "General — all parents can see it", scopeChild: "Private to one child — only that child's parents",
+      scopeGeneralBadge: "General", scopePrivateBadge: "Private", postFiles: "Attachments (up to 5 files)", publishPost: "Publish now",
+      postPublished: "Published. Families can see it now.", myPosts: "My posts", allPosts: "All posts", noPosts: "No posts yet.",
+      postsForYou: "Kindergarten posts", noPostsParent: "No posts yet.", deletePostConfirm: "Delete this post permanently?",
+      noAssignedChildren: "No children are assigned to you yet for private posts.",
       noTeacherFiles: "You have not uploaded any files yet.", deleteFile: "Delete", fileDeleted: "File deleted.",
       downloadFile: "Download", reportAttachments: "Report attachments (private to teacher and admins)",
       reportAttachmentsHelp: "Attach up to 5 PDFs, images or videos. Parents will not see these attachments.",
@@ -171,6 +187,11 @@
     }
   };
   var API_ERROR = {
+    "Child profile not found.": {ar: "لم يُعثر على ملف الطفل، أو ليس معيّناً لك.", en: "Child profile not found or not assigned to you."},
+    "A title is required.": {ar: "العنوان مطلوب.", en: "A title is required."},
+    "Write a message or attach a file.": {ar: "اكتبي رسالة أو أرفقي ملفاً.", en: "Write a message or attach a file."},
+    "Select the child this private post is for.": {ar: "اختاري الطفل الذي يخصه هذا المنشور.", en: "Select the child this private post is for."},
+    "A post can have up to five files.": {ar: "يمكن إرفاق 5 ملفات كحد أقصى.", en: "A post can have up to five files."},
     "Platform sessions are not configured on the server.": {
       ar: "بوابة الحسابات غير مهيأة بعد. يلزم إعداد قاعدة البيانات وترحيلها قبل تسجيل الدخول.",
       en: "The account portal is not configured yet. A database and migrations are required before sign-in."
@@ -684,8 +705,139 @@
       container.appendChild(card);
     });
   }
+  function fileSizeLabel(bytes) {
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.ceil(bytes / 1024)) + " KB";
+  }
+  function downloadByPath(path, filename) {
+    fetch(apiBase + path, {headers: {Authorization: "Bearer " + token}}).then(function (response) {
+      if (!response.ok) {
+        return response.json().catch(function () { return {}; }).then(function (body) { throw new Error(body.detail || t("genericError")); });
+      }
+      return response.blob();
+    }).then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var link = element("a");
+      link.href = url; link.download = filename || "download";
+      document.body.appendChild(link); link.click(); link.remove();
+      URL.revokeObjectURL(url);
+    }).catch(function (error) { window.alert(errorMessage(error)); });
+  }
+  /* A post card: scope badge, title, text, attachments. fileUrl(post, file) gives the download path; onDelete adds a delete button. */
+  function postCard(post, fileUrl, onDelete) {
+    var card = element("article", "p-post p-post-" + (post.scope === "child" ? "private" : "general"));
+    var meta = element("div", "p-report-meta");
+    var badge = element("span", "p-badge " + (post.scope === "child" ? "p-scope-private" : "p-scope-general"),
+      post.scope === "child" ? t("scopePrivateBadge") + (post.child_name ? " · " + post.child_name : "") : t("scopeGeneralBadge"));
+    meta.appendChild(badge);
+    var when = post.created_at ? post.created_at.slice(0, 10) : "";
+    var who = post.author || post.author_username || "";
+    var info = element("small", "p-muted p-post-info");
+    if (who) { var whoNode = element("span", "", who); whoNode.setAttribute("dir", "auto"); info.appendChild(whoNode); }
+    if (when) { var whenNode = element("span", "", when); whenNode.setAttribute("dir", "ltr"); info.appendChild(whenNode); }
+    meta.appendChild(info);
+    card.appendChild(meta);
+    var postTitle = element("h3", "", post.title); postTitle.setAttribute("dir", "auto"); card.appendChild(postTitle);
+    if (post.body) { var postBody = element("p", "p-post-body", post.body); postBody.setAttribute("dir", "auto"); card.appendChild(postBody); }
+    if (post.files && post.files.length) {
+      var files = element("div", "p-post-files");
+      post.files.forEach(function (file) {
+        var chip = element("button", "p-file-chip", file.filename + " · " + fileSizeLabel(file.size));
+        chip.type = "button";
+        chip.addEventListener("click", function () { downloadByPath(fileUrl(post, file), file.filename); });
+        files.appendChild(chip);
+      });
+      card.appendChild(files);
+    }
+    if (onDelete) card.appendChild(button(t("deleteFile"), "outline p-post-delete", function () {
+      if (window.confirm(t("deletePostConfirm"))) onDelete(post);
+    }));
+    return card;
+  }
+  function renderParentPosts(main) {
+    var card = element("section", "p-card");
+    card.appendChild(element("h2", "", t("postsForYou")));
+    var list = element("div", "p-post-list");
+    list.appendChild(element("p", "p-muted", t("loading")));
+    card.appendChild(list);
+    main.appendChild(card);
+    request("/api/platform/parent/posts").then(function (posts) {
+      list.innerHTML = "";
+      if (!posts.length) { list.appendChild(element("p", "p-muted", t("noPostsParent"))); return; }
+      posts.forEach(function (post) {
+        list.appendChild(postCard(post, function (p, f) { return "/api/platform/parent/posts/" + encodeURIComponent(p.id) + "/files/" + encodeURIComponent(f.id); }));
+      });
+    }).catch(function (error) { list.innerHTML = ""; showError(card, error); });
+  }
+  function renderTeacherPosts(main, adminMode) {
+    var card = element("section", "p-card");
+    card.appendChild(element("h2", "", adminMode ? t("allPosts") : t("postsComposeTitle")));
+    var list = element("div", "p-post-list");
+    function loadPosts() {
+      list.innerHTML = "";
+      list.appendChild(element("p", "p-muted", t("loading")));
+      request(adminMode ? "/api/platform/admin/posts" : "/api/platform/teacher/posts").then(function (posts) {
+        list.innerHTML = "";
+        if (!posts.length) { list.appendChild(element("p", "p-muted", t("noPosts"))); return; }
+        posts.forEach(function (post) {
+          list.appendChild(postCard(post, function (p, f) {
+            return adminMode ? "/api/platform/admin/teacher-content/" + encodeURIComponent(f.id) + "/download"
+              : "/api/platform/teacher/content/" + encodeURIComponent(f.id) + "/download";
+          }, function (p) {
+            request((adminMode ? "/api/platform/admin/posts/" : "/api/platform/teacher/posts/") + encodeURIComponent(p.id), {method: "DELETE"})
+              .then(loadPosts).catch(function (error) { showError(card, error); });
+          }));
+        });
+      }).catch(function (error) { list.innerHTML = ""; showError(card, error); });
+    }
+    if (!adminMode) {
+      card.appendChild(element("p", "p-muted", t("postsComposeHelp")));
+      var form = element("form", "p-compose");
+      var scope = element("select");
+      scope.appendChild(new Option(t("scopeGeneral"), "general"));
+      scope.appendChild(new Option(t("scopeChild"), "child"));
+      var scopeLabel = element("label", "p-field", t("scopeLabel")); scopeLabel.appendChild(scope); form.appendChild(scopeLabel);
+      var childSelect = element("select");
+      childSelect.appendChild(new Option(t("selectChild"), ""));
+      var childLabel = element("label", "p-field", t("child")); childLabel.appendChild(childSelect); childLabel.hidden = true; form.appendChild(childLabel);
+      request("/api/platform/teacher/children").then(function (children) {
+        children.forEach(function (child) { childSelect.appendChild(new Option(child.display_name, child.id)); });
+      }).catch(function () {});
+      scope.addEventListener("change", function () { childLabel.hidden = scope.value !== "child"; childSelect.required = scope.value === "child"; });
+      var title = element("input"); title.type = "text"; title.maxLength = 120; title.required = true;
+      var titleLabel = element("label", "p-field", t("postTitle")); titleLabel.appendChild(title); form.appendChild(titleLabel);
+      var body = element("textarea"); body.maxLength = 3000;
+      var bodyLabel = element("label", "p-field", t("postBody")); bodyLabel.appendChild(body); form.appendChild(bodyLabel);
+      var fileInput = element("input"); fileInput.type = "file"; fileInput.multiple = true;
+      var fileLabel = element("label", "p-field", t("postFiles")); fileLabel.appendChild(fileInput); form.appendChild(fileLabel);
+      var message = element("p", "p-alert"); message.setAttribute("role", "status");
+      var submit = element("button", "p-button sun", t("publishPost")); submit.type = "submit";
+      form.appendChild(submit); form.appendChild(message);
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        if (fileInput.files.length > 5) { message.className = "p-alert error"; message.textContent = t("postFiles"); return; }
+        var data = new FormData();
+        data.append("scope", scope.value); data.append("title", title.value.trim()); data.append("body", body.value);
+        if (scope.value === "child") data.append("child_id", childSelect.value);
+        Array.prototype.forEach.call(fileInput.files, function (file) { data.append("files", file); });
+        submit.disabled = true; message.className = "p-alert"; message.textContent = "";
+        request("/api/platform/teacher/posts", {method: "POST", body: data}).then(function () {
+          title.value = ""; body.value = ""; fileInput.value = "";
+          message.className = "p-alert success"; message.textContent = t("postPublished");
+          loadPosts();
+        }).catch(function (error) {
+          message.className = "p-alert error"; message.textContent = errorMessage(error);
+        }).finally(function () { submit.disabled = false; });
+      });
+      card.appendChild(form);
+      card.appendChild(element("h3", "p-subhead", t("myPosts")));
+    }
+    card.appendChild(list);
+    main.appendChild(card);
+    loadPosts();
+  }
   function renderParent(main) {
     renderDashboardWelcome(main);
+    renderParentPosts(main);
     var listCard = element("section", "p-card");
     listCard.appendChild(element("h2", "", t("children")));
     listCard.appendChild(element("p", "p-muted", t("loading")));
@@ -830,10 +982,11 @@
     renderDashboardWelcome(main);
     var canTeach = profile.roles.indexOf("teacher") !== -1;
     if (!canTeach) {
-      if (profile.roles.indexOf("admin") !== -1) renderTeacherContent(main, true);
+      if (profile.roles.indexOf("admin") !== -1) { renderTeacherPosts(main, true); renderTeacherContent(main, true); }
       loadReviewQueue(main);
       return;
     }
+    renderTeacherPosts(main, false);
     renderTeacherContent(main, false);
     var childrenCard = element("section", "p-card");
     childrenCard.appendChild(element("h2", "", t("children")));

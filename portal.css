@@ -225,3 +225,21 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 @media(max-width:560px){.p-avatar{width:34px;height:34px}.p-header{position:static}.p-dashboard-welcome h2{font-size:1.3rem}.p-content-item .p-button{flex:1 1 auto}}
 
 .p-alert:empty{min-height:0;margin:0}
+
+/* ===== Teacher posts (general / private) ===== */
+.p-post-list{display:grid;gap:14px;margin-top:12px}
+.p-post{position:relative;padding:16px 18px;border:1px solid var(--line);border-inline-start:5px solid var(--navy);border-radius:16px;background:var(--bg)}
+.p-post-private{border-inline-start-color:var(--sun)}
+.p-post h3{margin:8px 0 4px;font-size:1.1rem}
+.p-post-body{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.p-scope-general{background:#e1edfb;color:#17408f}
+.p-scope-private{background:#fdb91333;color:#8a6200}
+@media (prefers-color-scheme: dark){.p-scope-general{background:#1d3a72;color:#dce8ff}.p-scope-private{background:#fdb9132b;color:#ffd777}}
+.p-post-files{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.p-file-chip{border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);padding:6px 14px;font-size:.88rem;font-weight:700;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:border-color .15s,background .15s}
+.p-file-chip:hover{border-color:var(--sun);background:#fdb91312}
+.p-post-delete{margin-top:12px;padding:6px 14px;font-size:.85rem;color:var(--red)}
+.p-compose{margin-top:10px}
+.p-subhead{margin:26px 0 4px;padding-top:18px;border-top:1px solid var(--line)}
+.p-field[hidden]{display:none}
+.p-post-info{display:inline-flex;gap:10px;align-items:center}

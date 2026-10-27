@@ -45,6 +45,7 @@ from app.models import (
     RegistrationRequest,
     Role,
     TeacherContent,
+    TeacherPost,
     parent_child_links,
     teacher_child_links,
 )
@@ -2250,7 +2251,7 @@ def list_teacher_content(
             TeacherContent.byte_size,
             TeacherContent.created_at,
         )
-        .where(TeacherContent.owner_id == principal.account.id)
+        .where(TeacherContent.owner_id == principal.account.id, TeacherContent.post_id.is_(None))
         .order_by(TeacherContent.created_at.desc())
     ).all()
     return [
@@ -2286,6 +2287,7 @@ def list_all_teacher_content(
             Account.username,
         )
         .join(Account, Account.id == TeacherContent.owner_id)
+        .where(TeacherContent.post_id.is_(None))
         .order_by(TeacherContent.created_at.desc())
     ).all()
     return [
@@ -2579,6 +2581,239 @@ def update_report_status(
     session.refresh(report)
     response.headers["Cache-Control"] = "no-store"
     return report_data(report)
+
+
+# ----------------------------------------------------------------------------- teacher posts
+# Two kinds: "general" (every parent sees it) and "child" (only the parents of that one child:
+# grades, remarks...). Posts are visible to the families immediately; the author or an admin can delete them.
+MAX_POST_FILES = 5
+POST_SCOPES = ("general", "child")
+
+
+def post_attachments(session: Session, post_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    result: dict[uuid.UUID, list[dict[str, Any]]] = {post_id: [] for post_id in post_ids}
+    if not post_ids:
+        return result
+    rows = session.execute(
+        select(
+            TeacherContent.id, TeacherContent.post_id, TeacherContent.original_name,
+            TeacherContent.media_type, TeacherContent.byte_size,
+        )
+        .where(TeacherContent.post_id.in_(post_ids))
+        .order_by(TeacherContent.created_at.asc())
+    ).all()
+    for row in rows:
+        result[row.post_id].append(
+            {"id": str(row.id), "filename": row.original_name, "media_type": row.media_type, "size": row.byte_size}
+        )
+    return result
+
+
+def posts_payload(session: Session, posts: list[TeacherPost]) -> list[dict[str, Any]]:
+    files = post_attachments(session, [post.id for post in posts])
+    child_ids = {post.child_id for post in posts if post.child_id}
+    child_names = (
+        {row.id: row.display_name for row in session.execute(select(Child.id, Child.display_name).where(Child.id.in_(child_ids)))}
+        if child_ids else {}
+    )
+    author_ids = {post.author_id for post in posts}
+    author_names = (
+        {row.account_id: row.name for row in session.execute(select(Employee.account_id, Employee.name).where(Employee.account_id.in_(author_ids)))}
+        if author_ids else {}
+    )
+    usernames = (
+        {row.id: row.username for row in session.execute(select(Account.id, Account.username).where(Account.id.in_(author_ids)))}
+        if author_ids else {}
+    )
+    return [
+        {
+            "id": str(post.id),
+            "scope": post.scope,
+            "child_id": str(post.child_id) if post.child_id else None,
+            "child_name": child_names.get(post.child_id, ""),
+            "title": post.title,
+            "body": post.body,
+            "author": author_names.get(post.author_id) or "",
+            "author_username": usernames.get(post.author_id, ""),
+            "created_at": post.created_at.isoformat() if post.created_at else None,
+            "files": files.get(post.id, []),
+        }
+        for post in posts
+    ]
+
+
+@app.post("/api/platform/teacher/posts", status_code=201)
+async def create_teacher_post(
+    response: Response,
+    scope: str = Form(...),
+    title: str = Form(..., max_length=120),
+    body: str = Form(default="", max_length=3000),
+    child_id: uuid.UUID | None = Form(default=None),
+    files: list[UploadFile] = File(default=[]),
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    title = title.strip()
+    body = body.strip()
+    uploads = [item for item in files if item.filename]
+    if scope not in POST_SCOPES:
+        raise HTTPException(422, "Choose a general or a private post.")
+    if not title:
+        raise HTTPException(422, "A title is required.")
+    if not body and not uploads:
+        raise HTTPException(422, "Write a message or attach a file.")
+    if len(uploads) > MAX_POST_FILES:
+        raise HTTPException(409, "A post can have up to five files.")
+    if scope == "child":
+        if child_id is None:
+            raise HTTPException(422, "Select the child this private post is for.")
+        assigned = session.scalar(
+            select(Child.id)
+            .join(teacher_child_links, teacher_child_links.c.child_id == Child.id)
+            .where(
+                Child.id == child_id, Child.is_active.is_(True),
+                teacher_child_links.c.account_id == principal.account.id,
+            )
+        )
+        if assigned is None:
+            raise HTTPException(404, "Child profile not found.")
+    else:
+        child_id = None
+
+    prepared: list[tuple[str, str, bytes]] = []
+    for upload in uploads:
+        filename = (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+        if not filename or len(filename) > 180:
+            raise HTTPException(422, "A filename of up to 180 characters is required.")
+        extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        known = CONTENT_TYPES.get(extension)
+        if known is None:
+            _, max_size = private_content_media(filename, b"", "other")
+        else:
+            max_size = {"document": MAX_DOCUMENT_BYTES, "image": MAX_PRIVATE_IMAGE_BYTES, "video": MAX_PRIVATE_VIDEO_BYTES}[known[0]]
+        contents = await upload.read(max_size + 1)
+        await upload.close()
+        if not contents:
+            raise HTTPException(422, "The uploaded file is empty.")
+        if len(contents) > max_size:
+            raise HTTPException(413, "The file exceeds the size limit for its type.")
+        media_type, _ = private_content_media(filename, contents, "other")
+        prepared.append((filename, media_type, contents))
+
+    new_bytes = sum(len(item[2]) for item in prepared)
+    if new_bytes:
+        session.scalar(select(Account.id).where(Account.id == principal.account.id).with_for_update())
+        used_bytes = session.scalar(
+            select(func.coalesce(func.sum(TeacherContent.byte_size), 0)).where(
+                TeacherContent.owner_id == principal.account.id
+            )
+        )
+        if (used_bytes or 0) + new_bytes > MAX_TEACHER_CONTENT_BYTES:
+            raise HTTPException(413, "The teacher account has reached its 250 MB storage limit.")
+    post = TeacherPost(author_id=principal.account.id, scope=scope, child_id=child_id, title=title, body=body)
+    session.add(post)
+    session.flush()
+    for filename, media_type, contents in prepared:
+        session.add(TeacherContent(
+            owner_id=principal.account.id, post_id=post.id, category="post_attachment",
+            original_name=filename, media_type=media_type, byte_size=len(contents), contents=contents,
+        ))
+    session.commit()
+    session.refresh(post)
+    return posts_payload(session, [post])[0]
+
+
+@app.get("/api/platform/teacher/posts")
+def list_teacher_posts(
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    posts = session.scalars(
+        select(TeacherPost).where(TeacherPost.author_id == principal.account.id)
+        .order_by(TeacherPost.created_at.desc()).limit(100)
+    ).all()
+    return posts_payload(session, list(posts))
+
+
+@app.get("/api/platform/admin/posts")
+def list_all_posts(
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_platform_role("admin")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    posts = session.scalars(select(TeacherPost).order_by(TeacherPost.created_at.desc()).limit(200)).all()
+    return posts_payload(session, list(posts))
+
+
+@app.delete("/api/platform/teacher/posts/{post_id}", status_code=204)
+@app.delete("/api/platform/admin/posts/{post_id}", status_code=204)
+def delete_teacher_post(
+    post_id: uuid.UUID,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    post = session.get(TeacherPost, post_id)
+    roles = {role.name for role in principal.account.roles}
+    if post is None or (post.author_id != principal.account.id and "admin" not in roles):
+        raise HTTPException(404, "Post not found.")
+    session.execute(delete(TeacherContent).where(TeacherContent.post_id == post.id))
+    session.delete(post)
+    session.commit()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+def visible_post_for_parent(session: Session, account_id: uuid.UUID, post_id: uuid.UUID) -> TeacherPost:
+    post = session.get(TeacherPost, post_id)
+    if post is None:
+        raise HTTPException(404, "Post not found.")
+    if post.scope == "child":
+        linked = session.execute(
+            select(parent_child_links.c.child_id).where(
+                parent_child_links.c.account_id == account_id, parent_child_links.c.child_id == post.child_id
+            )
+        ).first()
+        if linked is None:
+            raise HTTPException(404, "Post not found.")
+    return post
+
+
+@app.get("/api/platform/parent/posts")
+def list_parent_posts(
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("parent")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """General posts for everyone, plus the private posts for this parent's own children only."""
+    response.headers["Cache-Control"] = "no-store"
+    own_children = select(parent_child_links.c.child_id).where(parent_child_links.c.account_id == principal.account.id)
+    posts = session.scalars(
+        select(TeacherPost)
+        .where((TeacherPost.scope == "general") | ((TeacherPost.scope == "child") & TeacherPost.child_id.in_(own_children)))
+        .order_by(TeacherPost.created_at.desc()).limit(100)
+    ).all()
+    data = posts_payload(session, list(posts))
+    for item in data:
+        item.pop("author_username", None)
+    return data
+
+
+@app.get("/api/platform/parent/posts/{post_id}/files/{content_id}")
+def download_parent_post_file(
+    post_id: uuid.UUID,
+    content_id: uuid.UUID,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("parent")),
+    session: Session = Depends(get_session),
+) -> Response:
+    post = visible_post_for_parent(session, principal.account.id, post_id)
+    content = session.get(TeacherContent, content_id)
+    if content is None or content.post_id != post.id:
+        raise HTTPException(404, "File not found.")
+    return private_content_response(content, response)
 
 
 @app.get("/api/platform/children/{child_id}/reports")

@@ -562,6 +562,103 @@ class PlatformApiTests(unittest.TestCase):
         )
         self.assertEqual(denied.status_code, 401)
 
+    def _post_setup(self):
+        """Two children, one teacher assigned to the first only, and two parents (one per child)."""
+        from datetime import datetime, timezone
+        from app.models import parent_child_links
+        with Session(self.engine) as session:
+            teacher_role = Role(name="teacher")
+            session.add(teacher_role)
+            parent_role = session.scalar(select(Role).where(Role.name == "parent"))
+            first = Child(display_name="Child One")
+            second = Child(display_name="Child Two")
+            teacher = Account(username="post-teacher", password_hash=main.PASSWORD_HASHER.hash("Qx2b4d6f8a0c-9"), roles=[teacher_role])
+            parent_one = Account(username="parent-one", password_hash=main.PASSWORD_HASHER.hash("Qx3c5e7a9b1d-9"), roles=[parent_role])
+            parent_two = Account(username="parent-two", password_hash=main.PASSWORD_HASHER.hash("Qx4d6f8b0c2e-9"), roles=[parent_role])
+            session.add_all([first, second, teacher, parent_one, parent_two])
+            session.flush()
+            from app.models import teacher_child_links
+            session.execute(teacher_child_links.insert().values(account_id=teacher.id, child_id=first.id, assigned_at=datetime.now(timezone.utc)))
+            session.execute(parent_child_links.insert().values(account_id=parent_one.id, child_id=first.id, confirmed_at=datetime.now(timezone.utc)))
+            session.execute(parent_child_links.insert().values(account_id=parent_two.id, child_id=second.id, confirmed_at=datetime.now(timezone.utc)))
+            session.commit()
+            ids = {"first": str(first.id), "second": str(second.id)}
+
+        def headers(name, password):
+            login = self.client.post("/api/platform/auth/login", json={"username": name, "password": password})
+            self.assertEqual(login.status_code, 200)
+            return {"Authorization": "Bearer " + login.json()["access_token"]}
+
+        return (
+            ids,
+            headers("post-teacher", "Qx2b4d6f8a0c-9"),
+            headers("parent-one", "Qx3c5e7a9b1d-9"),
+            headers("parent-two", "Qx4d6f8b0c2e-9"),
+        )
+
+    def test_teacher_posts_general_for_all_and_private_for_one_childs_parents(self):
+        ids, teacher, parent_one, parent_two = self._post_setup()
+        general = self.client.post(
+            "/api/platform/teacher/posts", headers=teacher,
+            data={"scope": "general", "title": "Trip on Friday", "body": "Bring a hat."},
+            files=[("files", ("plan.pdf", b"%PDF-1.4 plan", "application/pdf"))],
+        )
+        self.assertEqual(general.status_code, 201)
+        self.assertEqual(general.json()["scope"], "general")
+        self.assertEqual(len(general.json()["files"]), 1)
+        private = self.client.post(
+            "/api/platform/teacher/posts", headers=teacher,
+            data={"scope": "child", "child_id": ids["first"], "title": "Grade", "body": "Very good work."},
+            files=[("files", ("grade.pdf", b"%PDF-1.4 grade", "application/pdf"))],
+        )
+        self.assertEqual(private.status_code, 201)
+        self.assertEqual(private.json()["child_name"], "Child One")
+        # Every parent sees the general post, but only the first child's parent sees the private one.
+        one = self.client.get("/api/platform/parent/posts", headers=parent_one).json()
+        two = self.client.get("/api/platform/parent/posts", headers=parent_two).json()
+        self.assertEqual(sorted(post["title"] for post in one), ["Grade", "Trip on Friday"])
+        self.assertEqual([post["title"] for post in two], ["Trip on Friday"])
+        self.assertNotIn("author_username", one[0])
+        # File access follows the same rule.
+        private_file = private.json()["files"][0]["id"]
+        general_file = general.json()["files"][0]["id"]
+        url = lambda post, file: f"/api/platform/parent/posts/{post['id']}/files/{file}"
+        self.assertEqual(self.client.get(url(private.json(), private_file), headers=parent_one).status_code, 200)
+        self.assertEqual(self.client.get(url(private.json(), private_file), headers=parent_two).status_code, 404)
+        self.assertEqual(self.client.get(url(general.json(), general_file), headers=parent_two).status_code, 200)
+        self.assertEqual(self.client.get(url(general.json(), private_file), headers=parent_one).status_code, 404)
+        # The post attachments stay out of the teacher's personal file list.
+        self.assertEqual(self.client.get("/api/platform/teacher/content", headers=teacher).json(), [])
+
+    def test_private_post_needs_an_assigned_child_and_rejects_bad_input(self):
+        ids, teacher, parent_one, _parent_two = self._post_setup()
+        unassigned = self.client.post(
+            "/api/platform/teacher/posts", headers=teacher,
+            data={"scope": "child", "child_id": ids["second"], "title": "Nope", "body": "x"},
+        )
+        self.assertEqual(unassigned.status_code, 404)
+        self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "child", "title": "No child", "body": "x"}).status_code, 422)
+        self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "everyone", "title": "t", "body": "x"}).status_code, 422)
+        self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Empty", "body": ""}).status_code, 422)
+        bad_file = self.client.post(
+            "/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Bad", "body": "x"},
+            files=[("files", ("run.exe", b"MZ", "application/octet-stream"))],
+        )
+        self.assertEqual(bad_file.status_code, 415)
+        # Parents cannot post.
+        self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=parent_one, data={"scope": "general", "title": "t", "body": "x"}).status_code, 403)
+
+    def test_post_can_be_deleted_by_author_or_admin_only(self):
+        _ids, teacher, parent_one, _parent_two = self._post_setup()
+        post = self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Temp", "body": "x"}).json()
+        self.assertEqual(self.client.delete(f"/api/platform/teacher/posts/{post['id']}", headers=parent_one).status_code, 404)
+        listed = self.client.get("/api/platform/admin/posts", headers=self.admin_headers)
+        self.assertEqual([item["title"] for item in listed.json()], ["Temp"])
+        self.assertEqual(self.client.delete(f"/api/platform/admin/posts/{post['id']}", headers=self.admin_headers).status_code, 204)
+        self.assertEqual(self.client.get("/api/platform/parent/posts", headers=parent_one).json(), [])
+        mine = self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Mine", "body": "x"}).json()
+        self.assertEqual(self.client.delete(f"/api/platform/teacher/posts/{mine['id']}", headers=teacher).status_code, 204)
+
     def test_admin_edits_account_and_resets_password(self):
         with Session(self.engine) as session:
             session.add(Role(name="teacher"))

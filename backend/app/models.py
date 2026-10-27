@@ -151,6 +151,24 @@ class DailyReport(Base):
     published_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
+class TeacherPost(Base):
+    """A teacher's post: scope "general" is seen by every parent, scope "child" only by that child's parents."""
+
+    __tablename__ = "teacher_posts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    author_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    scope: Mapped[str] = mapped_column(String(10))
+    child_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(String(3000), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+
+
 class TeacherContent(Base):
     __tablename__ = "teacher_content"
 
@@ -162,6 +180,9 @@ class TeacherContent(Base):
     )
     report_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("daily_reports.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    post_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("teacher_posts.id", ondelete="CASCADE"), index=True, nullable=True
     )
     category: Mapped[str] = mapped_column(String(30))
     original_name: Mapped[str] = mapped_column(String(180))
