@@ -385,7 +385,7 @@
     var brand = element("a", "p-brand");
     brand.href = "/";
     var logo = element("img");
-    logo.src = "../images/logo.png";
+    logo.src = "../images/logo.png?v=2";
     logo.alt = "";
     brand.appendChild(logo);
     var brandText = element("div");
