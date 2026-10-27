@@ -408,5 +408,6 @@ html[lang=ar] .learn-prompt .learn-en{display:none}
 .fgrid .logo{background:#fff;border-radius:18px;padding:10px 18px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 4px 14px rgba(0,0,0,.2),inset 0 0 0 1px rgba(23,64,143,.1)}
 .fgrid .logo img{height:68px;width:auto;min-width:0;object-fit:contain}
 @media(max-width:520px){.brand img{height:40px}.brand .badge{padding:5px 10px}}
-.brand img{height:52px}
-@media(max-width:520px){.brand img{height:42px}}
+.brand .badge{padding:5px 10px;border-radius:13px}
+.brand img{height:36px}
+@media(max-width:520px){.brand img{height:32px}.brand .badge{padding:4px 8px}}
