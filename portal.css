@@ -266,3 +266,7 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 @media(max-width:560px){.p-brand img{height:42px;padding:4px 10px}}
 .p-brand img{height:42px;padding:5px 12px;border-radius:13px}
 @media(max-width:560px){.p-brand img{height:36px;padding:4px 9px}}
+
+/* ===== Final logo style: round, white, light ring ===== */
+.p-brand img{width:56px;height:56px;min-width:0;padding:5px;border-radius:50%;background:#fff;object-fit:contain;box-shadow:0 0 0 3px #ffffff47}
+@media(max-width:560px){.p-brand img{width:46px;height:46px;padding:4px}}

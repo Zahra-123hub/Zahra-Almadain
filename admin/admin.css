@@ -231,3 +231,7 @@ h2,h3{font-weight:800}
 @media(max-width:620px){.a-logo{height:38px;padding:4px 9px}.a-top h2{font-size:1.05rem}}
 .a-logo{height:40px;padding:5px 12px;border-radius:13px}
 @media(max-width:620px){.a-logo{height:34px;padding:4px 9px}}
+
+/* ===== Final logo style: round, white, light ring ===== */
+.a-logo{width:52px;height:52px;padding:5px;border-radius:50%;background:#fff;object-fit:contain;box-shadow:0 0 0 3px rgba(255,255,255,.28);flex:none}
+@media(max-width:620px){.a-logo{width:42px;height:42px;padding:4px}}

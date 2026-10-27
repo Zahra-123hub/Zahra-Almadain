@@ -411,3 +411,11 @@ html[lang=ar] .learn-prompt .learn-en{display:none}
 .brand .badge{padding:5px 10px;border-radius:13px}
 .brand img{height:36px}
 @media(max-width:520px){.brand img{height:32px}.brand .badge{padding:4px 8px}}
+
+/* ===== Final logo style: round, white, light ring (same everywhere) ===== */
+.brand .badge{width:54px;height:54px;padding:5px;border-radius:50%;background:#fff;display:grid;place-items:center;flex:none;box-shadow:0 0 0 3px rgba(255,255,255,.28);transition:transform .2s,box-shadow .2s}
+.brand:hover .badge{transform:none;box-shadow:0 0 0 4px rgba(255,255,255,.4)}
+.brand .badge img,.brand img{width:100%;height:100%;min-width:0;object-fit:contain;display:block}
+.fgrid .logo{width:92px;height:92px;padding:9px;border-radius:50%;background:#fff;display:grid;place-items:center;margin-bottom:12px;box-shadow:0 0 0 4px rgba(255,255,255,.22)}
+.fgrid .logo img{width:100%;height:100%;min-width:0;object-fit:contain}
+@media(max-width:520px){.brand .badge{width:46px;height:46px;padding:4px}}
