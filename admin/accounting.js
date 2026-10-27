@@ -1,7 +1,7 @@
 /* Buchhaltung (المحاسبة): overview, fees, payroll, monthly and weekly sheets.
    Loaded before admin.js; uses its helpers (h, request, setMsg, errText, twoStep, money, esc, MONTHS_AR). */
 
-var ACC_CURRENCIES = ["USD", "SYP"];
+var ACC_CURRENCIES = ["SYP", "USD"];  // the Syrian pound is the main currency
 var ACC_CURRENCY_NAME = {USD:"الدولار الأمريكي (USD)", SYP:"الليرة السورية (SYP)"};
 var ACC_VIEWER = {name:"", role:""};
 
@@ -14,7 +14,7 @@ function accSelect(options, value){
 }
 function accNumber(value, extra){ return h("input", Object.assign({type:"number", min:"0", step:"0.01", inputmode:"decimal", value:value === undefined || value === null ? "" : value}, extra || {})); }
 function accMonths(withAll){ return (withAll ? [["", "كل الأشهر"]] : []).concat(MONTHS_AR.map(function(n, i){ return [String(i + 1), n]; })); }
-function accCurrencyOptions(withAll){ return (withAll ? [["", "كل العملات"]] : []).concat([["USD", "دولار أمريكي (USD)"], ["SYP", "ليرة سورية (SYP)"]]); }
+function accCurrencyOptions(withAll){ return (withAll ? [["", "كل العملات"]] : []).concat([["SYP", "ليرة سورية (SYP)"], ["USD", "دولار أمريكي (USD)"]]); }
 
 /* Printable A4 landscape RTL page with the two signature fields. */
 function accPrint(title, subtitle, bodyHtml, msgEl){
@@ -44,14 +44,14 @@ function tabAccounting(){
   var sub = ACC_SUB || "overview";
   var panel = h("div", {});
   var nav = h("div", {class:"a-subnav", role:"tablist"});
-  var SUBS = [["overview","نظرة عامة"], ["fees","اشتراكات الأطفال"], ["salaries","الرواتب"], ["month","الجدول الشهري"], ["week","الجدول الأسبوعي"]];
+  var SUBS = [["overview","نظرة عامة"], ["fees","اشتراكات الأطفال"], ["salaries","الرواتب"], ["day","الجدول اليومي"], ["week","الجدول الأسبوعي"], ["month","الجدول الشهري"]];
   function draw(){
     nav.innerHTML = "";
     SUBS.forEach(function(entry){
       nav.appendChild(h("button", {type:"button", role:"tab", "aria-selected":String(sub === entry[0]), text:entry[1], onclick:function(){ sub = ACC_SUB = entry[0]; draw(); }}));
     });
     panel.innerHTML = "";
-    panel.appendChild(sub === "fees" ? tabFees() : sub === "salaries" ? tabSalaries() : sub === "month" ? tabSheet("month") : sub === "week" ? tabSheet("week") : tabOverview());
+    panel.appendChild(sub === "fees" ? tabFees() : sub === "salaries" ? tabSalaries() : sub === "month" ? tabSheet("month") : sub === "week" ? tabSheet("week") : sub === "day" ? tabSheet("day") : tabOverview());
   }
   request("/api/admin/fees/me").then(function(me){ ACC_VIEWER = me; }, function(){});
   draw();
@@ -134,7 +134,7 @@ function tabOverview(){
 /* -------------------------------------------------------------- payroll */
 function tabSalaries(){
   var now = new Date();
-  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), currency:"", needs_review:""};
+  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), currency:"SYP", needs_review:""};
   var data = {rows:[], totals:{}};
   var employees = [];
   var openId = "";
@@ -143,7 +143,7 @@ function tabSalaries(){
 
   var fYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var fMonth = accSelect(accMonths(true), filters.month);
-  var fCurrency = accSelect(accCurrencyOptions(true), "");
+  var fCurrency = accSelect(accCurrencyOptions(true), "SYP");
   var fReview = h("input", {type:"checkbox"});
   [fYear, fMonth, fCurrency, fReview].forEach(function(el){ el.addEventListener("change", function(){ filters.year = fYear.value; filters.month = fMonth.value; filters.currency = fCurrency.value; filters.needs_review = fReview.checked ? "true" : ""; load(); }); });
 
@@ -286,15 +286,17 @@ function tabSalaries(){
 /* ------------------------------------------------- monthly / weekly sheet */
 function tabSheet(type){
   var now = new Date();
-  var isWeek = type === "week";
-  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), day:new Date().toISOString().slice(0, 10), currency:""};
+  var isWeek = type !== "month";  // week and day sheets have separate income / expense columns
+  var isDay = type === "day";
+  var SHEET_TITLE = isDay ? "جدول المحاسبة اليومي" : isWeek ? "جدول المحاسبة الأسبوعي" : "جدول المحاسبة الشهري";
+  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), day:new Date().toISOString().slice(0, 10), currency:"SYP"};
   var sheets = {};
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var tables = h("div", {});
   var fYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var fMonth = accSelect(accMonths(false), filters.month);
   var fDay = h("input", {type:"date", value:filters.day});
-  var fCurrency = accSelect(accCurrencyOptions(true), "");
+  var fCurrency = accSelect(accCurrencyOptions(true), "SYP");
   [fYear, fMonth, fDay, fCurrency].forEach(function(el){ el.addEventListener("change", function(){ filters.year = fYear.value; filters.month = fMonth.value; filters.day = fDay.value; filters.currency = fCurrency.value; load(); }); });
 
   function query(code){
@@ -348,7 +350,7 @@ function tabSheet(type){
       h("tr", {class:"a-total"}, [h("td", {colspan:"3", text:"الإجمالي العام (الصافي)"}), h("td", {class:"num" + (Number(t.net) < 0 ? " due" : ""), text:money(t.net)}), h("td")])
     ]);
     var customForm = customRowForm(code);
-    return h("div", {class:"a-card"}, [h("h3", {text:(isWeek ? "الأسبوع " : "الشهر ") + "بـ" + ACC_CURRENCY_NAME[code]}),
+    return h("div", {class:"a-card"}, [h("h3", {text:(isDay ? "اليوم " : isWeek ? "الأسبوع " : "الشهر ") + "بـ" + ACC_CURRENCY_NAME[code]}),
       h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), tbody, foot])]), customForm]);
   }
   function customRowForm(code){
@@ -389,12 +391,12 @@ function tabSheet(type){
         : "<tr><td colspan='3'>إجمالي الواردات</td><td>" + money(t.income) + "</td></tr><tr><td colspan='3'>إجمالي المصروفات</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='3'>الإجمالي العام (الصافي)</td><td>" + money(t.net) + "</td></tr>";
       return {code:code, sheet:sheet, html:"<table><thead>" + accTh(isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المبالغ الواردة","المبالغ الصادرة"] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المبلغ"]) + "</thead><tbody>" + body + "</tbody><tfoot>" + foot + "</tfoot></table>"};
     });
-    accPrint(isWeek ? "جدول المحاسبة الأسبوعي" : "جدول المحاسبة الشهري", function(part){
-      return (isWeek ? "من " + esc(part.sheet.start) + " إلى " + esc(part.sheet.end) : "الشهر: " + esc(MONTHS_AR[Number(filters.month) - 1]) + " " + esc(filters.year)) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
+    accPrint(SHEET_TITLE, function(part){
+      return (isDay ? "التاريخ: " + esc(part.sheet.start) : isWeek ? "من " + esc(part.sheet.start) + " إلى " + esc(part.sheet.end) : "الشهر: " + esc(MONTHS_AR[Number(filters.month) - 1]) + " " + esc(filters.year)) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
   }
-  var periodFields = isWeek ? [accField("أي يوم من الأسبوع", fDay)] : [accField("السنة", fYear), accField("الشهر", fMonth)];
+  var periodFields = isWeek ? [accField(isDay ? "اليوم" : "أي يوم من الأسبوع", fDay)] : [accField("السنة", fYear), accField("الشهر", fMonth)];
   if(isWeek) periodFields.unshift(accField("السنة", fYear));
-  var head = h("div", {class:"a-card"}, [h("h3", {text:isWeek ? "جدول المحاسبة الأسبوعي" : "جدول المحاسبة الشهري"}),
+  var head = h("div", {class:"a-card"}, [h("h3", {text:SHEET_TITLE}),
     h("p", {class:"hint", text:"«رسوم التسجيل والاشتراكات» و«رواتب المدرسات والموظفين» تُعبَّآن تلقائياً من الاشتراكات المدفوعة ومن صافي الرواتب، ويمكن تعديلهما يدوياً."}),
     h("div", {class:"a-form-grid"}, periodFields.concat([accField("العملة", fCurrency)])),
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);

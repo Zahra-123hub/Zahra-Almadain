@@ -739,7 +739,7 @@ function esc(value){ return String(value == null ? "" : value).replace(/[&<>"']/
 
 function tabFees(){
   var now = new Date();
-  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), class_name:"", currency:"", status:"", needs_review:""};
+  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), class_name:"", currency:"SYP", status:"", needs_review:""};
   var data = {rows:[], totals:{}, classes:[]};
   var viewer = {name:"", role:""};
   var openId = "";
@@ -755,13 +755,13 @@ function tabFees(){
   }
   function numberInput(value, extra){ return h("input", Object.assign({type:"number", min:"0", step:"0.01", inputmode:"decimal", value:value || ""}, extra || {})); }
   function monthOptions(withAll){ return (withAll ? [["", "كل الأشهر"]] : []).concat(MONTHS_AR.map(function(name, i){ return [String(i + 1), name]; })); }
-  var CURRENCY_OPTIONS = [["USD","دولار أمريكي (USD)"], ["SYP","ليرة سورية (SYP)"]];
+  var CURRENCY_OPTIONS = [["SYP","ليرة سورية (SYP)"], ["USD","دولار أمريكي (USD)"]];  // main currency first
 
   // ----- filters -------------------------------------------------------
   var fYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var fMonth = select(monthOptions(true), filters.month);
   var fClass = select([["", "كل الصفوف"]], "");
-  var fCurrency = select([["", "كل العملات"]].concat(CURRENCY_OPTIONS), "");
+  var fCurrency = select([["", "كل العملات"]].concat(CURRENCY_OPTIONS), "SYP");
   var fStatus = select([["", "كل الحالات"], ["paid", "مدفوع"], ["partial", "مدفوع جزئياً"], ["open", "غير مدفوع"], ["review", "يحتاج مراجعة"]], "");
   var fReview = h("input", {type:"checkbox"});
   [fYear, fMonth, fClass, fCurrency, fStatus, fReview].forEach(function(el){ el.addEventListener("change", function(){ readFilters(); load(); }); });
@@ -787,7 +787,7 @@ function tabFees(){
   var addMonth = select(monthOptions(false), filters.month);
   var addYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var addAmount = numberInput("", {required:"required"});
-  var addCurrency = select(CURRENCY_OPTIONS, "USD");
+  var addCurrency = select(CURRENCY_OPTIONS, "SYP");
   var payAmount = numberInput("", {placeholder:"اتركه فارغاً إن لم يدفع بعد"});
   var payDate = h("input", {type:"date", value:new Date().toISOString().slice(0, 10)});
   var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
@@ -828,7 +828,7 @@ function tabFees(){
   var genMonth = select(monthOptions(false), filters.month);
   var genYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var genAmount = numberInput("", {required:"required"});
-  var genCurrency = select(CURRENCY_OPTIONS, "USD");
+  var genCurrency = select(CURRENCY_OPTIONS, "SYP");
   var genClass = h("input", {type:"text", maxlength:"60", placeholder:"اتركه فارغاً لكل الصفوف"});
   var genForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إنشاء رسوم الشهر لجميع الأطفال"}),
@@ -971,7 +971,7 @@ function tabFees(){
   }
   function render(){
     tables.innerHTML = "";
-    var shown = filters.currency ? [filters.currency] : ["USD", "SYP"];
+    var shown = filters.currency ? [filters.currency] : ["SYP", "USD"];
     shown.forEach(function(code){ tables.appendChild(currencyTable(code)); });
   }
 
@@ -1008,7 +1008,7 @@ function tabFees(){
 
   // ----- printable report (A4 landscape, RTL) -------------------------
   function printReport(){
-    var codes = filters.currency ? [filters.currency] : ["USD", "SYP"];
+    var codes = filters.currency ? [filters.currency] : ["SYP", "USD"];
     var period = (filters.month ? MONTHS_AR[Number(filters.month) - 1] + " " : "") + (filters.year || "");
     var today = new Date().toLocaleDateString("ar-SY");
     var sections = codes.map(function(code){
