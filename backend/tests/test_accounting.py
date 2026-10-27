@@ -179,7 +179,7 @@ class AccountingApiTests(unittest.TestCase):
         rows = {r["key"]: r for r in self.client.get(url, headers=self.acc).json()["rows"]}
         self.assertEqual(rows["registration"]["income"], "600000.00")
         self.assertEqual(rows["salaries"]["expense"], "1050000.00")
-        self.assertEqual(len(rows), 8)  # six original items plus buffet and transport
+        self.assertEqual(len(rows), 9)  # six original items plus buffet, transport and advertising
         self.assertIn("buffet", rows)
         self.assertIn("transport", rows)
         sheet = self.client.get(url, headers=self.acc).json()
@@ -345,6 +345,57 @@ class AccountingApiTests(unittest.TestCase):
                                        json={"name": "Dina Kareem", "account_id": str(uuid.uuid4())})
         self.assertEqual(parent_tie.status_code, 404)
         self.assertEqual(self.client.get("/api/admin/accounting/staff-accounts", headers=self.teacher).status_code, 403)
+
+    def test_advertising_has_its_own_line_for_income_and_expense(self):
+        base = {"period_type": "day", "year": 2026, "week_start": "2026-10-27", "currency": "SYP"}
+        self.client.put("/api/admin/accounting/entries", headers=self.acc, json={**base, "item_key": "advertising", "expense": "75000", "person": "مطبعة النور", "details": "لافتات"})
+        sheet = self.client.put("/api/admin/accounting/entries", headers=self.acc, json={**base, "item_key": "advertising", "income": "20000", "expense": "0"}).json()
+        row = next(r for r in sheet["rows"] if r["key"] == "advertising")
+        self.assertEqual((row["label"], row["choice"], row["kind"], row["income"]), ("الإعلانات والدعاية", True, "income", "20000.00"))
+
+    def test_saved_salary_prefills_payroll_and_generates_rows(self):
+        a = self.client.post("/api/admin/accounting/employees", headers=self.acc,
+                             json={"name": "Rima", "job_title": "معلمة", "salary": "1500000"}).json()
+        b = self.client.post("/api/admin/accounting/employees", headers=self.acc,
+                             json={"name": "Dina", "salary": "120", "salary_currency": "USD"}).json()
+        self.client.post("/api/admin/accounting/employees", headers=self.acc, json={"name": "NoSalary"})
+        self.assertEqual((a["salary"], a["salary_currency"]), ("1500000.00", "SYP"))
+        listing = {e["name"]: e for e in self.client.get("/api/admin/accounting/employees", headers=self.acc).json()}
+        self.assertEqual((listing["Dina"]["salary"], listing["Dina"]["salary_currency"]), ("120.00", "USD"))
+        self.assertIsNone(listing["NoSalary"]["salary"])
+        # one click creates the month's rows for everyone with a saved salary in that currency
+        first = self.client.post("/api/admin/accounting/salaries/generate", headers=self.acc, json={"year": 2026, "month": 10, "currency": "SYP"})
+        self.assertEqual(first.json(), {"created": 1, "skipped": 0})
+        again = self.client.post("/api/admin/accounting/salaries/generate", headers=self.acc, json={"year": 2026, "month": 10, "currency": "SYP"})
+        self.assertEqual(again.json(), {"created": 0, "skipped": 1})
+        rows = self.client.get("/api/admin/accounting/salaries?year=2026&month=10", headers=self.acc).json()["rows"]
+        self.assertEqual([(r["employee_name"], r["base"], r["net"]) for r in rows], [("Rima", "1500000.00", "1500000.00")])
+        # changing the saved salary does not touch rows that already exist; clearing it is possible
+        updated = self.client.patch(f"/api/admin/accounting/employees/{a['id']}", headers=self.acc,
+                                    json={"name": "Rima", "job_title": "معلمة", "salary": None})
+        self.assertIsNone(updated.json()["salary"])
+        self.assertEqual(len(self.client.get("/api/admin/accounting/salaries?year=2026&month=10", headers=self.acc).json()["rows"]), 1)
+        self.assertEqual(self.client.post("/api/admin/accounting/salaries/generate", headers=self.teacher, json={"year": 2026, "month": 10}).status_code, 403)
+        self.assertTrue(b["id"])
+
+    def test_admin_can_reset_all_financial_data_to_zero(self):
+        child_id = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["id"]
+        charge = self.client.post("/api/admin/fees/charges", headers=self.acc, json={
+            "child_id": child_id, "year": 2026, "month": 10, "amount": "1000", "currency": "SYP"}).json()
+        self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc, json={"amount": "400", "paid_on": "2026-10-05"})
+        self.salary("Rima", "5000")
+        self.client.put("/api/admin/accounting/entries", headers=self.acc, json={
+            "period_type": "month", "year": 2026, "month": 10, "currency": "SYP", "item_key": "operating", "expense": "75"})
+        url = "/api/admin/accounting/reset"
+        self.assertEqual(self.client.post(url, headers=self.acc, json={"confirm": "RESET"}).status_code, 401)  # accountants cannot
+        self.assertEqual(self.client.post(url, headers=self.legacy, json={"confirm": "yes"}).status_code, 422)  # needs the word
+        done = self.client.post(url, headers=self.legacy, json={"confirm": "RESET"}).json()
+        self.assertEqual(done, {"payments": 1, "fees": 1, "salaries": 1, "sheet_rows": 1})
+        overview = self.client.get("/api/admin/accounting/overview?year=2026", headers=self.acc).json()
+        self.assertEqual(overview["SYP"]["classes"], {})
+        self.assertTrue(all(m["income"] == "0.00" and m["expense"] == "0.00" for m in overview["SYP"]["series"]))
+        # names stay: the children and staff are still there
+        self.assertEqual(len(self.client.get("/api/admin/fees/children", headers=self.acc).json()), 1)
 
     def test_syrian_pound_is_the_main_currency(self):
         self.assertEqual(fees.CURRENCIES[0], "SYP")

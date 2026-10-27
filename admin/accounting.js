@@ -105,9 +105,11 @@ var ACC_SUB = "";
 function tabOverview(){
   var now = new Date();
   var year = h("input", {type:"number", min:"2000", max:"2100", value:String(now.getFullYear())});
+  var currencySel = accSelect(accCurrencyOptions(false), "SYP");  // the Syrian pound first; switch to see the other currency
   var body = h("div", {});
   var msg = h("div", {class:"a-msg", role:"status"});
   year.addEventListener("change", load);
+  currencySel.addEventListener("change", load);
 
   function chart(series){
     var max = Math.max.apply(null, series.map(function(s){ return Math.max(Number(s.income), Number(s.expense)); }).concat([1]));
@@ -136,7 +138,7 @@ function tabOverview(){
         body.appendChild(h("div", {class:"a-card a-review-note"}, [h("strong", {text:"يوجد " + review.fees + " سطر اشتراكات و" + review.salaries + " سطر رواتب يحتاج إلى مراجعة."}),
           h("p", {class:"hint", text:"الأسطر المميّزة بالأصفر مستوردة من الأوراق وفيها خانة غير واضحة. افتحها وصحّحها ثم اضغط «تمت المراجعة»."})]));
       }
-      ACC_CURRENCIES.forEach(function(code){
+      [currencySel.value].forEach(function(code){
         var info = data[code];
         var rows = [], tot = {required:0, paid:0, remaining:0};
         Object.keys(info.classes).forEach(function(cls){
@@ -169,7 +171,20 @@ function tabOverview(){
   function kpi(label, value, cls){ return h("div", {class:"a-kpi " + (cls || "")}, [h("span", {text:label}), h("strong", {text:value})]); }
   load();
   fill = null;
-  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"نظرة عامة على المحاسبة"}), h("div", {class:"a-form-grid"}, [accField("السنة", year)]), msg]), body]);
+  var isAdmin = typeof TEACHER_MODE !== "undefined" && !TEACHER_MODE && !ACCOUNTANT_MODE;
+  var resetRow = isAdmin ? h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn danger", text:"تصفير كل البيانات المالية", onclick:async function(){
+    if(!window.confirm("سيُحذف كل ما أُدخل من اشتراكات ودفعات ورواتب وأسطر جداول، لتبدأ الأرقام من الصفر. تبقى أسماء الأطفال والموظفين والحسابات. هل تريد المتابعة؟")) return;
+    var word = window.prompt("للتأكيد اكتب الكلمة RESET بالأحرف الكبيرة:");
+    if(word === null) return;
+    try{
+      var done = await request("/api/admin/accounting/reset", {method:"POST", body:JSON.stringify({confirm:word})});
+      setMsg(msg, "تم التصفير: " + done.fees + " رسم، " + done.payments + " دفعة، " + done.salaries + " سطر راتب، " + done.sheet_rows + " سطر جدول.", "ok");
+      await load();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  }}), h("span", {class:"hint", text:"للمدير فقط. لا يمكن التراجع."})]) : null;
+  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"نظرة عامة على المحاسبة"}),
+    h("p", {class:"hint", text:"الأرقام هنا تتحدّث تلقائياً من الإدخالات الجديدة فقط (الاشتراكات والدفعات والرواتب وجداول المحاسبة). بدون إدخالات تكون كلها صفراً."}),
+    h("div", {class:"a-form-grid"}, [accField("السنة", year), accField("العملة", currencySel)]), resetRow, msg]), body]);
 }
 
 /* -------------------------------------------------------------- payroll */
@@ -203,7 +218,11 @@ function tabSalaries(){
   function netOf(b, p, a, d){ return Number(b || 0) + Number(p || 0) - Number(a || 0) - Number(d || 0); }
   function updatePreview(){ preview.textContent = "الصافي المستحق: " + money(netOf(addBase.value, addBonus.value, addAdvance.value, addDeduction.value)); }
   [addBase, addBonus, addAdvance, addDeduction].forEach(function(el){ el.addEventListener("input", updatePreview); });
-  addEmp.addEventListener("change", syncNew);
+  addEmp.addEventListener("change", function(){
+    syncNew();
+    var chosen = employees.filter(function(e){ return e.id === addEmp.value; })[0];
+    if(chosen && chosen.salary !== null && chosen.salary !== undefined){ addBase.value = chosen.salary; addCurrency.value = chosen.salary_currency || "SYP"; updatePreview(); }
+  });
   var addForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إضافة سطر راتب"}), accField("الموظف", addEmp), nameField, jobField,
     accField("الشهر", addMonth), accField("السنة", addYear), accField("العملة", addCurrency),
@@ -322,6 +341,13 @@ function tabSalaries(){
     h("p", {class:"hint", text:"الصافي المستحق = الراتب الأساسي + المكافآت − السلف − الخصومات. يُحسب تلقائياً."}),
     h("div", {class:"a-form-grid"}, [accField("السنة", fYear), accField("الشهر", fMonth), accField("العملة", fCurrency), h("label", {class:"a-field a-check-field"}, [fReview, h("span", {text:"فقط ما يحتاج مراجعة"})])]),
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"＋ إضافة سطر راتب", onclick:function(){ addForm.hidden = !addForm.hidden; }}),
+      h("button", {type:"button", class:"a-btn ghost", text:"إنشاء رواتب الشهر لكل الموظفين (من الرواتب المحفوظة)", onclick:async function(){
+        var month = Number(fMonth.value) || (new Date().getMonth() + 1);
+        try{
+          var res = await request("/api/admin/accounting/salaries/generate", {method:"POST", body:JSON.stringify({year:Number(fYear.value), month:month, currency:fCurrency.value || "SYP"})});
+          setMsg(msg, "تم إنشاء " + res.created + " سطر راتب، وتخطّي " + res.skipped + " (موجود مسبقاً). الموظفون بلا راتب محفوظ لا يُنشأ لهم سطر.", "ok"); await load();
+        }catch(error){ setMsg(msg, errText(error), "err"); }
+      }}),
       h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);
   syncNew(); updatePreview(); loadEmployees(); load();
   fill = null;
@@ -462,7 +488,9 @@ function tabEmployees(){
   var name = h("input", {type:"text", maxlength:"120", placeholder:"الاسم الكامل", autocomplete:"off", required:"required"});
   var job = h("input", {type:"text", maxlength:"80", placeholder:"المسمى الوظيفي (معلمة، مساعدة، سائق...)"});
   var accountNew = h("select", {});
-  var form = h("form", {class:"a-form-grid", style:"margin-top:8px"}, [accField("الاسم", name), accField("المسمى الوظيفي", job), accField("حساب الدخول (اختياري)", accountNew),
+  var salaryNew = accNumber("", {placeholder:"الراتب الشهري المعتاد"});
+  var salaryCurNew = accSelect(accCurrencyOptions(false), "SYP");
+  var form = h("form", {class:"a-form-grid", style:"margin-top:8px"}, [accField("الاسم", name), accField("المسمى الوظيفي", job), accField("الراتب الشهري (يُحفظ ويُملأ تلقائياً)", salaryNew), accField("عملة الراتب", salaryCurNew), accField("حساب الدخول (اختياري)", accountNew),
     h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"＋ حفظ الموظف"})])]);
   function accountOptions(select, current){
     select.innerHTML = "";
@@ -479,8 +507,8 @@ function tabEmployees(){
   form.addEventListener("submit", async function(event){
     event.preventDefault();
     try{
-      await request("/api/admin/accounting/employees", {method:"POST", body:JSON.stringify({name:name.value.trim(), job_title:job.value.trim(), account_id:accountNew.value || null})});
-      name.value = ""; job.value = ""; setMsg(msg, "تم حفظ الموظف، وسيظهر اسمه كاقتراح في كل الجداول.", "ok"); await load();
+      await request("/api/admin/accounting/employees", {method:"POST", body:JSON.stringify({name:name.value.trim(), job_title:job.value.trim(), account_id:accountNew.value || null, salary:salaryNew.value === "" ? null : salaryNew.value, salary_currency:salaryCurNew.value})});
+      name.value = ""; job.value = ""; salaryNew.value = ""; setMsg(msg, "تم حفظ الموظف، وسيظهر اسمه كاقتراح في كل الجداول.", "ok"); await load();
     }catch(error){ setMsg(msg, errText(error), "err"); }
   });
   async function load(){
@@ -494,14 +522,16 @@ function tabEmployees(){
       list.forEach(function(employee){
         var nameInput = h("input", {type:"text", maxlength:"120", value:employee.name, "aria-label":"الاسم"});
         var jobInput = h("input", {type:"text", maxlength:"80", value:employee.job_title, "aria-label":"المسمى الوظيفي"});
+        var salaryInput = accNumber(employee.salary, {"aria-label":"الراتب الشهري"});
+        var salaryCur = accSelect(accCurrencyOptions(false), employee.salary_currency || "SYP");
         var accountSelect = h("select", {"aria-label":"حساب الدخول"});
         accountOptions(accountSelect, employee.account_id);
         body.appendChild(h("article", {class:"a-child"}, [
           h("div", {class:"a-child-head"}, [employee.account_username ? h("span", {class:"a-tag sun", text:"حساب: " + employee.account_username}) : h("span", {class:"a-tag", text:"بلا حساب دخول"})]),
-          h("div", {class:"a-form-grid"}, [accField("الاسم", nameInput), accField("المسمى الوظيفي", jobInput), accField("حساب الدخول", accountSelect),
+          h("div", {class:"a-form-grid"}, [accField("الاسم", nameInput), accField("المسمى الوظيفي", jobInput), accField("الراتب الشهري", salaryInput), accField("عملة الراتب", salaryCur), accField("حساب الدخول", accountSelect),
             h("div", {class:"a-row"}, [
               h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
-                try{ await request("/api/admin/accounting/employees/" + encodeURIComponent(employee.id), {method:"PATCH", body:JSON.stringify({name:nameInput.value.trim(), job_title:jobInput.value.trim(), account_id:accountSelect.value || null})}); setMsg(msg, "تم الحفظ.", "ok"); await load(); }
+                try{ await request("/api/admin/accounting/employees/" + encodeURIComponent(employee.id), {method:"PATCH", body:JSON.stringify({name:nameInput.value.trim(), job_title:jobInput.value.trim(), account_id:accountSelect.value || null, salary:salaryInput.value === "" ? null : salaryInput.value, salary_currency:salaryCur.value})}); setMsg(msg, "تم الحفظ.", "ok"); await load(); }
                 catch(error){ setMsg(msg, errText(error), "err"); }
               }}),
               twoStep("حذف من القائمة", async function(){

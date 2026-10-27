@@ -49,11 +49,12 @@ STANDARD_ITEMS = [
     ("purchases", "المشتريات والوسائل التعليمية", "expense"),
     ("buffet", "البوفيه", "expense"),
     ("transport", "وسائل النقل (المواصلات)", "expense"),
+    ("advertising", "الإعلانات والدعاية", "expense"),
     ("misc", "مصروفات نثرية / أخرى", "expense"),
 ]
 AUTO_ITEMS = {"registration", "salaries"}
 # Rows that can be income (e.g. buffet sales, bus fees) or expense: the user picks the type.
-CHOICE_ITEMS = {"buffet", "transport"}
+CHOICE_ITEMS = {"buffet", "transport", "advertising"}
 
 
 # --- calculations (pure, unit tested) ---------------------------------------
@@ -90,6 +91,8 @@ class EmployeeIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     job_title: str = Field(default="", max_length=80)
     account_id: uuid.UUID | None = None  # the person's platform account (teacher / accountant)
+    salary: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)  # usual monthly salary
+    salary_currency: str = Field(default="SYP", pattern="^(USD|SYP)$")
 
 
 class SalaryIn(BaseModel):
@@ -105,6 +108,12 @@ class SalaryIn(BaseModel):
     deduction: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     paid_on: date | None = None
     paid_by: str = Field(default="", max_length=120)  # who handed the salary out
+
+
+class SalaryGenerate(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+    currency: str = Field(default="SYP", pattern="^(USD|SYP)$")
 
 
 class SalaryUpdate(BaseModel):
@@ -307,6 +316,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     def employee_data(e: Employee, usernames: dict[uuid.UUID, str]) -> dict[str, Any]:
         return {
             "id": str(e.id), "name": e.name, "job_title": e.job_title,
+            "salary": None if e.salary is None else str(money(e.salary)),
+            "salary_currency": e.salary_currency,
             "account_id": str(e.account_id) if e.account_id else "",
             "account_username": usernames.get(e.account_id, "") if e.account_id else "",
         }
@@ -338,7 +349,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         response: Response,
         _actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
         rows = session.scalars(select(Employee).where(Employee.is_active.is_(True)).order_by(Employee.name)).all()
         usernames = {
@@ -379,7 +390,11 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         if employee_by_name(session, payload.name) is not None:
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
-        employee = Employee(name=payload.name.strip(), job_title=payload.job_title.strip())
+        employee = Employee(
+            name=payload.name.strip(), job_title=payload.job_title.strip(),
+            salary=None if payload.salary is None else money(payload.salary),
+            salary_currency=payload.salary_currency,
+        )
         session.add(employee)
         session.flush()
         link_account(session, employee, payload.account_id)
@@ -409,6 +424,9 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
         employee.name = payload.name.strip()
         employee.job_title = payload.job_title.strip()
+        if "salary" in payload.model_fields_set:  # only touched when the form sends it
+            employee.salary = None if payload.salary is None else money(payload.salary)
+            employee.salary_currency = payload.salary_currency
         if "account_id" in payload.model_fields_set:  # only touched when the form sends it
             link_account(session, employee, payload.account_id)
         log(session, actor, "employee.update", employee.id, "")
@@ -504,6 +522,41 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         net = net_pay(base, bonus, advance, deduction)
         if net is not None and net < 0:
             raise HTTPException(422, "الصافي المستحق سالب: السلف والخصومات أكبر من الراتب والمكافآت.")
+
+    @router.post("/salaries/generate")
+    def generate_salaries(
+        payload: SalaryGenerate,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, int]:
+        """One payroll row per employee with a saved salary (in that currency) that has none for the month."""
+        created = skipped = 0
+        employees = session.scalars(
+            select(Employee).where(
+                Employee.is_active.is_(True),
+                Employee.salary.is_not(None),
+                Employee.salary_currency == payload.currency,
+            )
+        ).all()
+        for employee in employees:
+            exists = session.scalar(
+                select(SalaryLine.id).where(
+                    SalaryLine.employee_id == employee.id, SalaryLine.year == payload.year,
+                    SalaryLine.month == payload.month, SalaryLine.currency == payload.currency,
+                )
+            )
+            if exists is not None:
+                skipped += 1
+                continue
+            session.add(SalaryLine(
+                employee_id=employee.id, year=payload.year, month=payload.month, currency=payload.currency,
+                base=money(employee.salary), bonus=ZERO, advance=ZERO, deduction=ZERO,
+                recorded_by=actor.name[:80],
+            ))
+            created += 1
+        log(session, actor, "salary.generate", f"{payload.month}/{payload.year}", f"{created} {payload.currency}")
+        session.commit()
+        return {"created": created, "skipped": skipped}
 
     @router.post("/salaries", status_code=201)
     def create_salary(
