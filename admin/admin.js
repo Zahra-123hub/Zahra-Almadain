@@ -164,7 +164,19 @@ function h(tag, a, kids){
   return e;
 }
 function fail(message){ return new Error(message); }
+var SERVER_AR = {
+  "Too many sign-in attempts. Try again later.":"محاولات دخول كثيرة. حاول مجدداً بعد 15 دقيقة.",
+  "Password is too short.":"كلمة المرور قصيرة (12 حرفاً على الأقل).",
+  "Password is too common or too easy to guess.":"كلمة المرور شائعة وسهلة التخمين. اختر كلمة أصعب.",
+  "Password must not contain the username.":"يجب ألا تحتوي كلمة المرور على اسم المستخدم.",
+  "Password must not be only digits.":"يجب ألا تكون كلمة المرور أرقاماً فقط.",
+  "Password needs at least 6 different characters.":"استخدم 6 محارف مختلفة على الأقل.",
+  "The current password is incorrect.":"كلمة المرور الحالية غير صحيحة.",
+  "Choose a new password that differs from the current one.":"اختر كلمة مرور جديدة تختلف عن الحالية.",
+  "ADMIN_PASSWORD is too weak. Set a password with at least 12 characters on the server.":"كلمة مرور المدير ضعيفة. عيّن كلمة مرور من 12 حرفاً على الأقل على الخادم (ADMIN_PASSWORD)."
+};
 function errText(e){
+  if(e.message && SERVER_AR[e.message]) return SERVER_AR[e.message];
   if(e.message && /[\u0600-\u06FF]/.test(e.message)) return uiText(e.message);
   var arabicMessage = Object.keys(EN_TEXT).find(function(key){ return EN_TEXT[key] === e.message; });
   if(arabicMessage) return uiText(arabicMessage);
@@ -369,10 +381,14 @@ function tabAccounts(){
   var roleSelect = h("select", {id:"a-new-role", "aria-label":"نوع الحساب"});
   roleSelect.appendChild(new Option("معلمة", "teacher"));
   roleSelect.appendChild(new Option("محاسب", "accountant"));
+  var fullNameInput = h("input", {type:"text", id:"a-new-fullname", maxlength:"120", autocomplete:"off", placeholder:"مثال: ريما صالح"});
+  var jobInput = h("input", {type:"text", id:"a-new-job", maxlength:"80", autocomplete:"off", placeholder:"معلمة، محاسب..."});
   var create = h("button", {type:"submit", class:"a-btn sun", text:"إنشاء الحساب"});
   var form = h("form", {class:"a-card"}, [
     h("h3", {text:"أنشئ حساب معلمة جديداً. يكون الحساب مفعّلاً فوراً."}),
     h("label", {for:"a-new-role", text:"نوع الحساب"}), roleSelect,
+    h("label", {for:"a-new-fullname", text:"الاسم الكامل (يُحفظ كموظف مرتبط بالحساب)"}), fullNameInput,
+    h("label", {for:"a-new-job", text:"المسمى الوظيفي"}), jobInput,
     h("label", {for:"a-teacher-username", text:"اسم المستخدم"}), username,
     h("label", {for:"a-teacher-password", text:"كلمة المرور الأولية (12 محرفاً على الأقل)"}), password,
     h("div", {class:"a-row"}, [create]), msg
@@ -520,6 +536,7 @@ function tabAccounts(){
           h("div", {}, [
             h("strong", {text:account.username}),
             h("span", {class:"a-account-meta", text:role + " · " + status}),
+            account.full_name ? h("span", {class:"a-account-date", dir:"auto", text:"الاسم: " + account.full_name + (account.job_title ? " · " + account.job_title : "")}) : null,
             account.guardian_name ? h("span", {class:"a-account-date", dir:"auto", text:"ولي الأمر: " + account.guardian_name + " · " + account.phone}) : null,
             account.guardian_name ? h("span", {class:"a-account-date", dir:"auto", text:"البريد: " + account.email + " · الطفل: " + account.child_name}) : null,
             account.created_at ? h("time", {class:"a-account-date", text:new Date(account.created_at).toLocaleDateString(ADMIN_LANG === "ar" ? "ar" : "en")}) : null
@@ -552,6 +569,8 @@ function tabAccounts(){
      stored as one-way hashes, so the admin sets or generates a new one, shown once. */
   function accountEditor(account, close){
     var username = h("input", {type:"text", maxlength:"80", value:account.username, dir:"ltr", autocomplete:"off", pattern:"[A-Za-z0-9_.\\-]{3,80}"});
+    var fullName = h("input", {type:"text", maxlength:"120", value:account.full_name || "", placeholder:"الاسم الكامل"});
+    var jobTitle = h("input", {type:"text", maxlength:"80", value:account.job_title || "", placeholder:"المسمى الوظيفي"});
     var language = h("select", {});
     [["ar", "العربية"], ["en", "English"]].forEach(function(o){ language.appendChild(new Option(o[1], o[0])); });
     language.value = account.preferred_language || "ar";
@@ -568,6 +587,8 @@ function tabAccounts(){
     var form = h("form", {class:"a-form-grid", style:"margin-top:10px"}, [
       h("label", {class:"a-field"}, [h("span", {text:"اسم المستخدم"}), username]),
       h("label", {class:"a-field"}, [h("span", {text:"اللغة"}), language]),
+      h("label", {class:"a-field"}, [h("span", {text:"الاسم الكامل (مرتبط بالحساب)"}), fullName]),
+      h("label", {class:"a-field"}, [h("span", {text:"المسمى الوظيفي"}), jobTitle]),
       rolesRow,
       h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ البيانات"}), h("button", {type:"button", class:"a-btn ghost", text:"إغلاق", onclick:close})]),
       h("p", {class:"hint", style:"grid-column:1 / -1", text:"لا يمكن عرض كلمات المرور الحالية: تُحفظ بصيغة مشفّرة لا يمكن عكسها. يمكنك تعيين كلمة مرور جديدة أو توليدها وإعطاؤها للمستخدم."}),
@@ -592,7 +613,7 @@ function tabAccounts(){
       var chosen = Object.keys(roleBoxes).filter(function(k){ return roleBoxes[k].checked; });
       if(!chosen.length){ setMsg(msg, "اختر دوراً واحداً على الأقل.", "err"); return; }
       try{
-        await request("/api/admin/platform/accounts/" + encodeURIComponent(account.id), {method:"PATCH", body:JSON.stringify({username:username.value.trim(), preferred_language:language.value, roles:chosen})});
+        await request("/api/admin/platform/accounts/" + encodeURIComponent(account.id), {method:"PATCH", body:JSON.stringify({username:username.value.trim(), preferred_language:language.value, roles:chosen, full_name:fullName.value.trim(), job_title:jobTitle.value.trim()})});
         setMsg(msg, "تم حفظ بيانات الحساب.", "ok");
         await reloadAccounts();
       }catch(error){ setMsg(msg, errText(error), "err"); }
@@ -619,13 +640,15 @@ function tabAccounts(){
         method:"POST",
         body:JSON.stringify({
           role:roleSelect.value,
+          full_name:fullNameInput.value.trim(),
+          job_title:jobInput.value.trim(),
           username:username.value.trim(),
           password:password.value,
           preferred_language:"ar"
         })
       });
-      username.value = ""; password.value = "";
-      setMsg(msg, "تم إنشاء حساب المعلمة وتفعيله. يمكنها تسجيل الدخول الآن.", "ok");
+      username.value = ""; password.value = ""; fullNameInput.value = ""; jobInput.value = "";
+      setMsg(msg, "تم إنشاء الحساب وتفعيله. يمكن تسجيل الدخول الآن.", "ok");
       await reloadAccounts();
     }catch(error){ setMsg(msg, errText(error), "err"); }
     create.disabled = false;
@@ -1062,6 +1085,7 @@ function draw(){
     if((TEACHER_MODE || ACCOUNTANT_MODE) && PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"a-btn ghost", href:p[1], style:"color:#fff;border-color:#fff;text-decoration:none", text:p[2]}));
   });
   var back = TEACHER_MODE && !PORTALS.length ? h("a", {class:"a-btn ghost", href:"../teachers/", style:"color:#fff;border-color:#fff;text-decoration:none", text:"العودة إلى بوابتي"}) : null;
+  var changePw = (TEACHER_MODE || ACCOUNTANT_MODE) ? h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"تغيير كلمة المرور", onclick:function(){ toggleChangePassword(); }}) : null;
   var tabs = h("div", {class:"a-tabs", role:"tablist"});
   TABS.forEach(function(t){
     var b = h("button", {type:"button", role:"tab", "aria-selected":String(tab === t[0]), text:t[1]});
@@ -1069,8 +1093,47 @@ function draw(){
   });
   var main = h("div", {class:"a-main"}); fill = null;
   main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, view, out]))]), tabs]), main);
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
 }
+/* A signed-in teacher/accountant changes their own password here (the admin password lives on the server). */
+function toggleChangePassword(){
+  var main = document.querySelector(".a-main");
+  if(!main) return;
+  var existing = main.querySelector(".a-change-password");
+  if(existing){ existing.remove(); return; }
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var current = h("input", {type:"password", autocomplete:"current-password", required:"required"});
+  var fresh = h("input", {type:"password", autocomplete:"new-password", required:"required", minlength:"12"});
+  var again = h("input", {type:"password", autocomplete:"new-password", required:"required", minlength:"12"});
+  var form = h("form", {class:"a-card a-change-password", style:"border:2px solid var(--sun)"}, [
+    h("h3", {text:"تغيير كلمة المرور"}),
+    h("label", {text:"كلمة المرور الحالية"}), current,
+    h("label", {text:"كلمة المرور الجديدة (12 حرفاً على الأقل، ليست شائعة، ولا تحتوي اسم المستخدم)"}), fresh,
+    h("label", {text:"أعد كتابة كلمة المرور الجديدة"}), again,
+    h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ"}), h("button", {type:"button", class:"a-btn ghost", text:"إلغاء", onclick:function(){ form.remove(); }})]),
+    msg
+  ]);
+  form.addEventListener("submit", async function(event){
+    event.preventDefault();
+    if(fresh.value !== again.value){ setMsg(msg, "كلمتا المرور غير متطابقتين.", "err"); return; }
+    try{
+      await request("/api/platform/auth/change-password", {method:"POST", body:JSON.stringify({current_password:current.value, new_password:fresh.value})});
+      current.value = fresh.value = again.value = "";
+      setMsg(msg, "تم تغيير كلمة المرور، وأُنهيت جلساتك الأخرى.", "ok");
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  });
+  main.insertBefore(form, main.firstChild);
+  current.focus();
+}
+/* Sign out after 30 minutes without activity. */
+(function idleGuard(){
+  if(!ADMIN_TOKEN) return;
+  var timer;
+  function expire(){ clearSessions(); window.location.replace("../login/?expired=1"); }
+  function reset(){ clearTimeout(timer); timer = setTimeout(expire, 30 * 60 * 1000); }
+  ["click", "keydown", "mousemove", "touchstart", "scroll"].forEach(function(name){ window.addEventListener(name, reset, {passive:true}); });
+  reset();
+})();
 function loginScreen(msg){
   var root = document.getElementById("app"); root.innerHTML = "";
   var err = h("div", {class:"a-msg err", role:"alert", text:msg || ""});

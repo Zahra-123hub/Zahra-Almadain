@@ -77,7 +77,7 @@ class FeeApiTests(unittest.TestCase):
             {
                 "SESSION_SECRET": "test-fees-session-secret-long-enough",
                 "ADMIN_USERNAME": "legacy-admin",
-                "ADMIN_PASSWORD": "legacy-admin-password",
+                "ADMIN_PASSWORD": "Qx9edbcb5679ea-9",
             },
         )
         self.env.start()
@@ -107,7 +107,7 @@ class FeeApiTests(unittest.TestCase):
                 session.add(
                     Account(
                         username=username,
-                        password_hash=main.PASSWORD_HASHER.hash("password-123456"),
+                        password_hash=main.PASSWORD_HASHER.hash("Qx5a6ba62b7e4b-9"),
                         roles=[roles[role]],
                     )
                 )
@@ -123,7 +123,7 @@ class FeeApiTests(unittest.TestCase):
                 "Authorization": "Bearer "
                 + self.client.post(
                     "/api/platform/auth/login",
-                    json={"username": name, "password": "password-123456"},
+                    json={"username": name, "password": "Qx5a6ba62b7e4b-9"},
                 ).json()["access_token"]
             }
             for name in ("accountant1", "teacher1", "parent1", "platform-admin")
@@ -132,7 +132,7 @@ class FeeApiTests(unittest.TestCase):
             "Authorization": "Bearer "
             + self.client.post(
                 "/api/auth/login",
-                json={"username": "legacy-admin", "password": "legacy-admin-password"},
+                json={"username": "legacy-admin", "password": "Qx9edbcb5679ea-9"},
             ).json()["access_token"]
         }
         self.acc = self.tokens["accountant1"]
@@ -204,13 +204,13 @@ class FeeApiTests(unittest.TestCase):
         created = self.client.post(
             "/api/admin/platform/teacher-accounts",
             headers=self.tokens["legacy"],
-            json={"role": "accountant", "username": "new-accountant", "password": "new-accountant-pass-1"},
+            json={"role": "accountant", "username": "new-accountant", "password": "Qx7f3a9c1d2e44-9"},
         )
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json()["roles"], ["accountant"])
         entry = self.client.post(
             "/api/auth/entry",
-            json={"username": "new-accountant", "password": "new-accountant-pass-1"},
+            json={"username": "new-accountant", "password": "Qx7f3a9c1d2e44-9"},
         )
         self.assertEqual(entry.json()["role"], "accountant")
 

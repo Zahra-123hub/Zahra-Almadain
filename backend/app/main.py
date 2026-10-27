@@ -27,12 +27,13 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, fees
+from app import accounting, fees, security
 from app.database import get_engine, get_session
 from app.models import (
     Account,
     Child,
     DailyReport,
+    Employee,
     GuardianInvitation,
     LoginAttempt,
     PortalSession,
@@ -97,6 +98,7 @@ def client_address(request: Request) -> str:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 REGISTRATION_REQUESTS_PER_HOUR = 30
+REGISTRATION_REQUESTS_PER_ADDRESS = 5
 LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
 
@@ -207,7 +209,29 @@ class GitHubStore:
 
 
 store = GitHubStore()
-app = FastAPI(title="Zahrat Al-Madayn API", version="1.0.0")
+# The public API documentation is switched off on the live server.
+_LIVE = bool(os.getenv("RENDER"))
+app = FastAPI(
+    title="Zahrat Al-Madayn API",
+    version="1.0.0",
+    docs_url=None if _LIVE else "/docs",
+    redoc_url=None if _LIVE else "/redoc",
+    openapi_url=None if _LIVE else "/openapi.json",
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Any, call_next: Any) -> Response:
+    """Headers that stop clickjacking, content sniffing and leaking of the address."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+    if request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 origins = [
     origin.strip()
     for origin in os.getenv(
@@ -269,6 +293,14 @@ class RegistrationRequestCreate(BaseModel):
     preferred_language: str = Field(
         default="ar", min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern
     )
+    # Bot traps: humans never fill the hidden field and need a few seconds to fill the form.
+    website: str = Field(default="", max_length=200)
+    form_age_ms: int | None = Field(default=None, ge=0, le=86_400_000)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=security.PASSWORD_MIN_LENGTH, max_length=256)
 
 
 class RegistrationDecision(BaseModel):
@@ -310,6 +342,9 @@ class PreferredLanguageRequest(BaseModel):
 
 class TeacherAccountCreateRequest(BaseModel):
     role: str = Field(default="teacher", pattern="^(teacher|accountant)$")
+    # Real name and job: saved as the staff member (employee) tied to this account.
+    full_name: str = Field(default="", max_length=120)
+    job_title: str = Field(default="", max_length=80)
     username: str = Field(min_length=3, max_length=80, pattern=USERNAME_RE.pattern)
     password: str = Field(min_length=12, max_length=256)
     preferred_language: str = Field(
@@ -326,6 +361,8 @@ MANAGED_ROLES = ("parent", "teacher", "accountant")
 
 class AccountEditRequest(BaseModel):
     username: str | None = Field(default=None, min_length=3, max_length=80)
+    full_name: str | None = Field(default=None, max_length=120)
+    job_title: str | None = Field(default=None, max_length=80)
     # An account may hold several of these roles at once; other roles (admin, manager) are untouched.
     roles: list[str] | None = Field(default=None, max_length=3)
     preferred_language: str | None = Field(
@@ -696,16 +733,33 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+ADMIN_LOGIN_LIMIT = 8
+ADMIN_THROTTLE = security.MemoryThrottle()
+
+
+def reject_weak_live_admin_password(password: str) -> None:
+    """On the live server (Render) a short ADMIN_PASSWORD is refused instead of silently accepted."""
+    if os.getenv("RENDER") and len(password) < security.PASSWORD_MIN_LENGTH:
+        raise HTTPException(
+            503, "ADMIN_PASSWORD is too weak. Set a password with at least 12 characters on the server."
+        )
+
+
 @app.post("/api/auth/login")
-async def login(payload: LoginRequest) -> dict[str, Any]:
+async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
     expected_username = os.getenv("ADMIN_USERNAME", "admin")
     expected_password = os.getenv("ADMIN_PASSWORD", "")
     session_secret = os.getenv("SESSION_SECRET", "")
     if not expected_password or not session_secret:
         raise HTTPException(503, "لم يتم إعداد بيانات دخول المسؤول على الخادم.")
+    reject_weak_live_admin_password(expected_password)
+    throttle_id = "admin-login:" + client_address(request)
+    if ADMIN_THROTTLE.blocked(throttle_id, ADMIN_LOGIN_LIMIT, PORTAL_LOGIN_WINDOW_SECONDS):
+        raise HTTPException(429, "Too many sign-in attempts. Try again later.")
     valid_username = secrets.compare_digest(payload.username, expected_username)
     valid_password = secrets.compare_digest(payload.password, expected_password)
     if not (valid_username and valid_password):
+        ADMIN_THROTTLE.record(throttle_id)
         raise HTTPException(401, "اسم المستخدم أو كلمة المرور غير صحيحة.")
     return {
         "access_token": create_session_token(payload.username, session_secret),
@@ -933,9 +987,17 @@ def list_platform_accounts(
             )
         )
     }
+    people = {
+        person.account_id: person
+        for person in session.scalars(
+            select(Employee).where(Employee.account_id.in_([account.id for account in accounts]))
+        )
+    }
     result = []
     for account in accounts:
         data = admin_account_data(account)
+        person = people.get(account.id)
+        data.update(full_name=person.name if person else "", job_title=person.job_title if person else "")
         request_item = details.get(account.id)
         if request_item is not None:
             data.update(
@@ -961,6 +1023,9 @@ def create_platform_teacher_account(
         raise HTTPException(422, "Username contains unsupported characters.")
     if session.scalar(select(Account.id).where(Account.username == username)) is not None:
         raise HTTPException(409, "That username is already in use.")
+    weak = security.password_problem(payload.password, username)
+    if weak:
+        raise HTTPException(422, weak)
     teacher_role = session.scalar(select(Role).where(Role.name == payload.role))
     if teacher_role is None:
         raise HTTPException(503, "Platform roles are not initialized. Run database migrations.")
@@ -974,12 +1039,17 @@ def create_platform_teacher_account(
     )
     session.add(account)
     try:
+        session.flush()
+        attach_person_to_account(session, account, payload.full_name, payload.job_title)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(409, "That username is already in use.") from exc
     session.refresh(account)
-    return admin_account_data(account)
+    data = admin_account_data(account)
+    person = employee_of_account(session, account.id)
+    data.update(full_name=person.name if person else "", job_title=person.job_title if person else "")
+    return data
 
 
 @app.patch("/api/admin/platform/accounts/{account_id}/status")
@@ -1018,6 +1088,43 @@ def update_platform_account_status(
 
 
 PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def employee_of_account(session: Session, account_id: uuid.UUID) -> Employee | None:
+    return session.scalar(select(Employee).where(Employee.account_id == account_id))
+
+
+def attach_person_to_account(
+    session: Session, account: Account, full_name: str, job_title: str | None
+) -> None:
+    """Saves the person's name as an employee tied to the account (one person, one account)."""
+    name = full_name.strip()
+    if not name:
+        return
+    employee = employee_of_account(session, account.id)
+    other = session.scalar(
+        select(Employee).where(
+            func.lower(Employee.name) == name.lower(),
+            Employee.is_active.is_(True),
+            Employee.id != (employee.id if employee else uuid.UUID(int=0)),
+        )
+    )
+    if other is not None:
+        if other.account_id is not None and other.account_id != account.id:
+            raise HTTPException(409, "يوجد موظف بهذا الاسم مرتبط بحساب آخر.")
+        if employee is None:
+            employee = other  # an unlinked person saved earlier: tie that one to the account
+            employee.account_id = account.id
+        else:
+            raise HTTPException(409, "يوجد موظف بهذا الاسم.")
+    if employee is None:
+        employee = Employee(name=name, job_title=(job_title or "").strip(), account_id=account.id)
+        session.add(employee)
+    else:
+        employee.name = name
+        employee.is_active = True
+    if job_title is not None:
+        employee.job_title = job_title.strip()
 
 
 def managed_account(session: Session, account_id: uuid.UUID) -> Account:
@@ -1067,6 +1174,12 @@ def edit_platform_account(
             revoke_sessions(session, account.id)  # the old name is no longer valid for open sessions
     if payload.preferred_language is not None:
         account.preferred_language = payload.preferred_language
+    if payload.full_name is not None and payload.full_name.strip():
+        attach_person_to_account(session, account, payload.full_name, payload.job_title)
+    elif payload.job_title is not None:
+        person = employee_of_account(session, account.id)
+        if person is not None:
+            person.job_title = payload.job_title.strip()
     if payload.roles is not None:
         wanted = set(payload.roles)
         if not wanted or not wanted <= set(MANAGED_ROLES):
@@ -1093,6 +1206,10 @@ def reset_platform_account_password(
     stored as one-way hashes. The new password is returned once and is not stored in clear."""
     response.headers["Cache-Control"] = "no-store"
     account = managed_account(session, account_id)
+    if payload.password:
+        weak = security.password_problem(payload.password, account.username)
+        if weak:
+            raise HTTPException(422, weak)
     password = payload.password or "".join(
         secrets.choice(PASSWORD_ALPHABET) for _ in range(14)
     )
@@ -1175,14 +1292,25 @@ def platform_login(
 @app.post("/api/auth/entry")
 def unified_login(
     payload: PlatformLoginRequest,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Single sign-in: the account's role decides which portal the user lands on."""
+    """Single sign-in: the account's role decides which portal the user lands on.
+
+    Wrong passwords are throttled per user name (in platform_login) and per address (here),
+    for platform accounts and for the admin alike."""
     response.headers["Cache-Control"] = "no-store"
     secret = os.getenv("SESSION_SECRET", "")
     admin_password = os.getenv("ADMIN_PASSWORD", "")
+    address_key = security.throttle_key(secret or "unset", "signin-ip", client_address(request))
+    if security.failures_since(session, address_key, PORTAL_LOGIN_WINDOW_SECONDS) >= PORTAL_LOGIN_MAX_FAILURES * 4:
+        raise HTTPException(429, "Too many sign-in attempts. Try again later.")
+    name_key = security.throttle_key(secret or "unset", "signin-name", payload.username.strip().lower())
+    if secret and admin_password and security.failures_since(session, name_key, PORTAL_LOGIN_WINDOW_SECONDS) >= PORTAL_LOGIN_MAX_FAILURES:
+        raise HTTPException(429, "Too many sign-in attempts. Try again later.")
     if secret and admin_password:
+        reject_weak_live_admin_password(admin_password)
         same_user = secrets.compare_digest(
             payload.username.strip(), os.getenv("ADMIN_USERNAME", "admin")
         )
@@ -1195,7 +1323,14 @@ def unified_login(
                 "token_type": "bearer",
                 "expires_in": SESSION_TTL_SECONDS,
             }
-    result = platform_login(payload, response, session)
+    try:
+        result = platform_login(payload, response, session)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            security.record_attempt(session, address_key)
+            security.record_attempt(session, name_key)
+            session.commit()
+        raise
     account = session.scalar(
         select(Account)
         .options(selectinload(Account.roles))
@@ -1231,6 +1366,9 @@ def redeem_guardian_invitation(
     username = payload.username.strip().lower()
     if not USERNAME_RE.fullmatch(username):
         raise HTTPException(422, "Username contains unsupported characters.")
+    weak = security.password_problem(payload.password, username)
+    if weak:
+        raise HTTPException(422, weak)
     code = normalize_invitation_code(payload.invitation_code)
     token_hash = hashlib.sha256(code.encode()).hexdigest()
     now = datetime.now(timezone.utc)
@@ -1365,10 +1503,20 @@ def send_registration_code_email(item: RegistrationRequest, code: str) -> bool:
 @app.post("/api/platform/registration-requests", status_code=202)
 def create_registration_request(
     payload: RegistrationRequestCreate,
+    request: Request,
     response: Response,
     session: Session = Depends(get_session),
 ) -> dict[str, str]:
     response.headers["Cache-Control"] = "no-store"
+    received = {"message": "Your request was received. The kindergarten will review it."}
+    # Bots fill hidden fields and submit within a moment: answer as if it worked, store nothing.
+    if payload.website.strip() or (payload.form_age_ms is not None and payload.form_age_ms < 2500):
+        return received
+    secret = os.getenv("SESSION_SECRET", "") or "unset"
+    address_key = security.throttle_key(secret, "registration-ip", client_address(request))
+    if security.failures_since(session, address_key, 3600) >= REGISTRATION_REQUESTS_PER_ADDRESS:
+        raise HTTPException(429, "Too many requests. Try again later.")
+    security.record_attempt(session, address_key)
     email = payload.email.strip().lower()
     recent = session.scalar(
         select(func.count())
@@ -1630,6 +1778,43 @@ def platform_me(
         "roles": roles,
         "permissions": permissions,
     }
+
+
+@app.post("/api/platform/auth/change-password")
+def change_own_password(
+    payload: PasswordChangeRequest,
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    """A signed-in user changes their own password; all their other sessions end."""
+    response.headers["Cache-Control"] = "no-store"
+    account = principal.account
+    secret = os.getenv("SESSION_SECRET", "") or "unset"
+    key = security.throttle_key(secret, "password-change", str(account.id))
+    if security.failures_since(session, key, PORTAL_LOGIN_WINDOW_SECONDS) >= PORTAL_LOGIN_MAX_FAILURES:
+        raise HTTPException(429, "Too many sign-in attempts. Try again later.")
+    if not PASSWORD_HASHER.verify(payload.current_password, account.password_hash):
+        security.record_attempt(session, key)
+        session.commit()
+        raise HTTPException(400, "The current password is incorrect.")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(422, "Choose a new password that differs from the current one.")
+    weak = security.password_problem(payload.new_password, account.username)
+    if weak:
+        raise HTTPException(422, weak)
+    account.password_hash = PASSWORD_HASHER.hash(payload.new_password)
+    session.execute(
+        update(PortalSession)
+        .where(
+            PortalSession.account_id == account.id,
+            PortalSession.revoked_at.is_(None),
+            PortalSession.id != principal.portal_session.id,
+        )
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+    session.commit()
+    return {"ok": True}
 
 
 @app.patch("/api/platform/auth/language")

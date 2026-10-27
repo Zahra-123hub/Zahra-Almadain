@@ -67,11 +67,15 @@ function accPrint(title, subtitle, parts, msgEl){
         "<div class='meta'>" + subtitle(part).split("|").map(function(chunk){ return "<span>" + chunk.replace(/&nbsp;/g, " ").trim() + "</span>"; }).join("") + "</div>" +
         table + sign + "<footer>طُبع بتاريخ " + esc(today) + "</footer></section>";
     }).join("") +
-    "<script>window.onload=function(){(document.fonts?document.fonts.ready:Promise.resolve()).then(function(){setTimeout(function(){window.print()},300)})}<\/script></body></html>";
+    "</body></html>";
   var w = window.open("", "_blank");
   if(!w){ if(msgEl) setMsg(msgEl, "اسمح بالنوافذ المنبثقة لتصدير PDF.", "err"); return; }
   w.document.write(html);
   w.document.close();
+  function printWhenReady(){
+    (w.document.fonts ? w.document.fonts.ready : Promise.resolve()).then(function(){ setTimeout(function(){ w.focus(); w.print(); }, 300); });
+  }
+  if(w.document.readyState === "complete") printWhenReady(); else w.addEventListener("load", printWhenReady);
 }
 function accTh(list){ return "<tr>" + list.map(function(t){ return "<th>" + t + "</th>"; }).join("") + "</tr>"; }
 
@@ -450,17 +454,32 @@ function tabSheet(type){
 }
 
 /* ----------------------------------------------------------- saved staff names */
+/* Each saved person can be tied to a platform account (teacher / accountant); the name then belongs to that account. */
 function tabEmployees(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var body = h("div", {});
+  var accounts = [];
   var name = h("input", {type:"text", maxlength:"120", placeholder:"الاسم الكامل", autocomplete:"off", required:"required"});
   var job = h("input", {type:"text", maxlength:"80", placeholder:"المسمى الوظيفي (معلمة، مساعدة، سائق...)"});
-  var form = h("form", {class:"a-form-grid", style:"margin-top:8px"}, [accField("الاسم", name), accField("المسمى الوظيفي", job),
+  var accountNew = h("select", {});
+  var form = h("form", {class:"a-form-grid", style:"margin-top:8px"}, [accField("الاسم", name), accField("المسمى الوظيفي", job), accField("حساب الدخول (اختياري)", accountNew),
     h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"＋ حفظ الموظف"})])]);
+  function accountOptions(select, current){
+    select.innerHTML = "";
+    select.appendChild(new Option("— بلا حساب دخول —", ""));
+    accounts.forEach(function(a){
+      var roleText = a.roles.map(function(r){ return r === "teacher" ? "معلمة" : "محاسب"; }).join(" + ");
+      var takenByOther = a.linked_to && a.id !== current;
+      var option = new Option(a.username + " (" + roleText + ")" + (takenByOther ? " — مرتبط بـ " + a.linked_to : ""), a.id);
+      option.disabled = !!takenByOther;
+      select.appendChild(option);
+    });
+    select.value = current || "";
+  }
   form.addEventListener("submit", async function(event){
     event.preventDefault();
     try{
-      await request("/api/admin/accounting/employees", {method:"POST", body:JSON.stringify({name:name.value.trim(), job_title:job.value.trim()})});
+      await request("/api/admin/accounting/employees", {method:"POST", body:JSON.stringify({name:name.value.trim(), job_title:job.value.trim(), account_id:accountNew.value || null})});
       name.value = ""; job.value = ""; setMsg(msg, "تم حفظ الموظف، وسيظهر اسمه كاقتراح في كل الجداول.", "ok"); await load();
     }catch(error){ setMsg(msg, errText(error), "err"); }
   });
@@ -468,16 +487,21 @@ function tabEmployees(){
     accLoadNames();
     body.innerHTML = "";
     try{
-      var list = await request("/api/admin/accounting/employees");
+      var results = await Promise.all([request("/api/admin/accounting/employees"), request("/api/admin/accounting/staff-accounts")]);
+      var list = results[0]; accounts = results[1];
+      accountOptions(accountNew, "");
       if(!list.length){ body.appendChild(h("div", {class:"a-empty", text:"لا يوجد موظفون محفوظون بعد."})); return; }
       list.forEach(function(employee){
         var nameInput = h("input", {type:"text", maxlength:"120", value:employee.name, "aria-label":"الاسم"});
         var jobInput = h("input", {type:"text", maxlength:"80", value:employee.job_title, "aria-label":"المسمى الوظيفي"});
+        var accountSelect = h("select", {"aria-label":"حساب الدخول"});
+        accountOptions(accountSelect, employee.account_id);
         body.appendChild(h("article", {class:"a-child"}, [
-          h("div", {class:"a-form-grid"}, [accField("الاسم", nameInput), accField("المسمى الوظيفي", jobInput),
+          h("div", {class:"a-child-head"}, [employee.account_username ? h("span", {class:"a-tag sun", text:"حساب: " + employee.account_username}) : h("span", {class:"a-tag", text:"بلا حساب دخول"})]),
+          h("div", {class:"a-form-grid"}, [accField("الاسم", nameInput), accField("المسمى الوظيفي", jobInput), accField("حساب الدخول", accountSelect),
             h("div", {class:"a-row"}, [
               h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
-                try{ await request("/api/admin/accounting/employees/" + encodeURIComponent(employee.id), {method:"PATCH", body:JSON.stringify({name:nameInput.value.trim(), job_title:jobInput.value.trim()})}); setMsg(msg, "تم الحفظ.", "ok"); await load(); }
+                try{ await request("/api/admin/accounting/employees/" + encodeURIComponent(employee.id), {method:"PATCH", body:JSON.stringify({name:nameInput.value.trim(), job_title:jobInput.value.trim(), account_id:accountSelect.value || null})}); setMsg(msg, "تم الحفظ.", "ok"); await load(); }
                 catch(error){ setMsg(msg, errText(error), "err"); }
               }}),
               twoStep("حذف من القائمة", async function(){
@@ -489,6 +513,6 @@ function tabEmployees(){
   load();
   fill = null;
   return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"الموظفون والأسماء المحفوظة"}),
-    h("p", {class:"hint", text:"أسماء الموظفين والمدرّسات تُحفظ هنا مرة واحدة، وتظهر كاقتراحات عند الكتابة في الرواتب والجداول (من صرف / من استلم). كل اسم تكتبه في الجداول يُحفظ أيضاً كاقتراح للمرات القادمة."}),
+    h("p", {class:"hint", text:"احفظ اسم كل موظف أو مدرّسة مرة واحدة واربطه بحساب دخوله إن وُجد، فيرتبط الاسم بالحساب (ويُعدَّل معه من «حسابات المنصة»). تظهر الأسماء كاقتراحات في الرواتب والجداول."}),
     form, msg]), h("div", {class:"a-card"}, [h("h3", {text:"القائمة"}), body])]);
 }

@@ -289,6 +289,10 @@ class Employee(Base):
     name: Mapped[str] = mapped_column(String(120), index=True)
     job_title: Mapped[str] = mapped_column(String(80), default="", server_default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # The platform account of this person (teacher / accountant), if they have one.
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

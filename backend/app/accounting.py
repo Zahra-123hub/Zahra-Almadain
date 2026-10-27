@@ -30,11 +30,13 @@ from app.fees import (
     remaining_amount,
 )
 from app.models import (
+    Account,
     AccountingEntry,
     Child,
     Employee,
     FeeCharge,
     FeePayment,
+    Role,
     SalaryLine,
 )
 
@@ -87,6 +89,7 @@ def week_monday(day: date) -> date:
 class EmployeeIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     job_title: str = Field(default="", max_length=80)
+    account_id: uuid.UUID | None = None  # the person's platform account (teacher / accountant)
 
 
 class SalaryIn(BaseModel):
@@ -301,6 +304,30 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
 
     # ---- employees ----------------------------------------------------------
 
+    def employee_data(e: Employee, usernames: dict[uuid.UUID, str]) -> dict[str, Any]:
+        return {
+            "id": str(e.id), "name": e.name, "job_title": e.job_title,
+            "account_id": str(e.account_id) if e.account_id else "",
+            "account_username": usernames.get(e.account_id, "") if e.account_id else "",
+        }
+
+    def link_account(session: Session, employee: Employee, account_id: uuid.UUID | None) -> None:
+        """Ties the person to a teacher/accountant account, or unties them (None)."""
+        if account_id is None:
+            employee.account_id = None
+            return
+        account = session.scalar(
+            select(Account).join(Account.roles).where(Account.id == account_id, Role.name.in_(("teacher", "accountant")))
+        )
+        if account is None:
+            raise HTTPException(404, "الحساب غير موجود أو ليس حساب معلمة/محاسب.")
+        taken = session.scalar(
+            select(Employee.id).where(Employee.account_id == account_id, Employee.id != employee.id)
+        )
+        if taken is not None:
+            raise HTTPException(409, "هذا الحساب مرتبط بموظف آخر.")
+        employee.account_id = account_id
+
     def employee_by_name(session: Session, name: str) -> Employee | None:
         return session.scalar(
             select(Employee).where(func.lower(Employee.name) == name.strip().lower(), Employee.is_active.is_(True))
@@ -314,22 +341,52 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> list[dict[str, str]]:
         response.headers["Cache-Control"] = "no-store"
         rows = session.scalars(select(Employee).where(Employee.is_active.is_(True)).order_by(Employee.name)).all()
-        return [{"id": str(e.id), "name": e.name, "job_title": e.job_title} for e in rows]
+        usernames = {
+            a.id: a.username
+            for a in session.scalars(select(Account).where(Account.id.in_([e.account_id for e in rows if e.account_id])))
+        }
+        return [employee_data(e, usernames) for e in rows]
+
+    @router.get("/staff-accounts")
+    def staff_accounts(
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, Any]]:
+        """Teacher and accountant accounts a saved person can be tied to (names only, no personal data)."""
+        response.headers["Cache-Control"] = "no-store"
+        accounts = session.scalars(
+            select(Account)
+            .join(Account.roles)
+            .where(Role.name.in_(("teacher", "accountant")), Account.is_active.is_(True))
+            .order_by(Account.username)
+        ).unique().all()
+        taken = {
+            e.account_id: e.name
+            for e in session.scalars(select(Employee).where(Employee.account_id.is_not(None), Employee.is_active.is_(True)))
+        }
+        return [
+            {"id": str(a.id), "username": a.username, "roles": sorted(r.name for r in a.roles if r.name in ("teacher", "accountant")),
+             "linked_to": taken.get(a.id, "")}
+            for a in accounts
+        ]
 
     @router.post("/employees", status_code=201)
     def create_employee(
         payload: EmployeeIn,
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         if employee_by_name(session, payload.name) is not None:
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
         employee = Employee(name=payload.name.strip(), job_title=payload.job_title.strip())
         session.add(employee)
         session.flush()
+        link_account(session, employee, payload.account_id)
         log(session, actor, "employee.create", employee.id, "")
         session.commit()
-        return {"id": str(employee.id), "name": employee.name, "job_title": employee.job_title}
+        account = session.get(Account, employee.account_id) if employee.account_id else None
+        return employee_data(employee, {account.id: account.username} if account else {})
 
     @router.patch("/employees/{employee_id}")
     def update_employee(
@@ -337,7 +394,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         payload: EmployeeIn,
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         employee = session.get(Employee, employee_id)
         if employee is None or not employee.is_active:
             raise HTTPException(404, "الموظف غير موجود.")
@@ -352,9 +409,12 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
         employee.name = payload.name.strip()
         employee.job_title = payload.job_title.strip()
+        if "account_id" in payload.model_fields_set:  # only touched when the form sends it
+            link_account(session, employee, payload.account_id)
         log(session, actor, "employee.update", employee.id, "")
         session.commit()
-        return {"id": str(employee.id), "name": employee.name, "job_title": employee.job_title}
+        account = session.get(Account, employee.account_id) if employee.account_id else None
+        return employee_data(employee, {account.id: account.username} if account else {})
 
     @router.delete("/employees/{employee_id}", status_code=204)
     def remove_employee(
