@@ -375,6 +375,7 @@
     var actions = element("div", "p-actions");
     if (profile) {
       var identity = element("div", "p-account-identity");
+      actions.appendChild(element("span", "p-avatar", (profile.username || "?").charAt(0).toUpperCase()));
       identity.appendChild(element("span", "p-account-label", t("accountLabel")));
       identity.appendChild(element("strong", "", profile.username));
       actions.appendChild(identity);
@@ -666,8 +667,11 @@
     }
     reports.forEach(function (report) {
       var card = element("article", "p-report");
+      var meta = element("div", "p-report-meta");
+      meta.appendChild(element("span", "p-badge", statusLabel(report.status)));
+      if (report.created_at) meta.appendChild(element("small", "p-muted", new Date(report.created_at).toLocaleDateString(lang === "ar" ? "ar" : "en")));
+      card.appendChild(meta);
       card.appendChild(element("h3", "", report.title));
-      card.appendChild(element("span", "p-badge", statusLabel(report.status)));
       if (report.language && report.language.split("-")[0] !== lang) {
         card.appendChild(element("p", "p-muted", t("originalLanguage")));
       }
@@ -677,9 +681,6 @@
         body.dir = report.language.split("-")[0] === "ar" ? "rtl" : "ltr";
       }
       card.appendChild(body);
-      if (report.created_at) {
-        card.appendChild(element("small", "p-muted", new Date(report.created_at).toLocaleDateString(lang === "ar" ? "ar" : "en")));
-      }
       container.appendChild(card);
     });
   }
@@ -699,8 +700,10 @@
       var grid = element("div", "p-grid");
       children.forEach(function (child) {
         var card = element("article", "p-card p-child");
-        card.appendChild(element("h3", "", child.display_name));
-        card.appendChild(element("p", "p-muted", t("reports")));
+        var childHead = element("div", "p-child-head");
+        childHead.appendChild(element("span", "p-avatar sun", (child.display_name || "?").charAt(0)));
+        childHead.appendChild(element("h3", "", child.display_name));
+        card.appendChild(childHead);
         card.appendChild(element("p", "p-muted", t("loading")));
         grid.appendChild(card);
         request("/api/platform/children/" + encodeURIComponent(child.id) + "/reports").then(function (reports) {
@@ -747,7 +750,8 @@
       }
       contents.forEach(function (content) {
         var item = element("article", "p-content-item");
-        var description = element("div");
+        item.appendChild(element("span", "p-file-icon p-file-" + content.category, {document:"DOC", image:"IMG", video:"VID"}[content.category] || "FILE"));
+        var description = element("div", "p-content-text");
         description.appendChild(element("strong", "", content.filename));
         if (adminMode && content.owner_username) {
           description.appendChild(element("small", "p-muted", content.owner_username));

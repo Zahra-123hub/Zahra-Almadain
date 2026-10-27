@@ -177,3 +177,51 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-header{box-shadow:0 2px 14px #10295626}
 .p-actions .p-button{padding:8px 16px;font-size:.92rem}
 @media(max-width:560px){.p-card{padding:16px}.p-actions{width:100%}.p-actions .p-button{flex:1 1 auto;text-align:center}}
+
+
+/* ===== Parent and teacher portals: professional look ===== */
+.p-header{position:sticky;top:0;z-index:20;background:linear-gradient(120deg,#12327a,#1d4ea0);backdrop-filter:blur(6px)}
+.p-brand img{box-shadow:0 0 0 3px #ffffff33}
+.p-avatar{flex:none;display:inline-grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#ffffff26;color:#fff;font-weight:800;font-size:1.05rem;border:1px solid #ffffff55}
+.p-avatar.sun{background:var(--sun);color:#1b2a55;border:0;width:44px;height:44px;box-shadow:0 4px 12px #fdb9134d}
+.p-actions .p-button.outline{border-color:#ffffff88;color:#fff;transition:background .15s}
+.p-actions .p-button.outline:hover{background:#ffffff1f;transform:none}
+.p-actions .p-button.sun{color:#1b2a55}
+.p-main{width:min(100% - 32px,1040px)}
+.p-dashboard-welcome{position:relative;overflow:hidden;border:0;color:#fff;background:linear-gradient(125deg,#17408f,#2a67c5);box-shadow:0 16px 40px #17408f40}
+.p-dashboard-welcome::before,.p-dashboard-welcome::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
+.p-dashboard-welcome::before{width:220px;height:220px;inset-inline-end:-90px;top:-130px;background:#fdb91322}
+.p-dashboard-welcome::after{width:180px;height:180px;inset-inline-start:-60px;bottom:-110px;background:#ffffff14}
+.p-dashboard-welcome>*{position:relative;z-index:1}
+.p-dashboard-welcome h2,.p-dashboard-welcome p{color:#fff}
+.p-dashboard-welcome p{color:#e2edff}
+.p-dashboard-welcome .p-auth-kicker{color:#ffe291}
+.p-status-active{background:#e6f3e2;color:#32620f;box-shadow:0 2px 8px #0000001f}
+.p-child{display:block;margin:0;border-inline-start:0;border-top:4px solid var(--sun);transition:transform .18s,box-shadow .18s}
+.p-child:hover{transform:translateY(-2px);box-shadow:0 14px 34px #1029562b}
+.p-child-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.p-child-head h3{margin:0;font-size:1.2rem}
+.p-grid{gap:18px}
+.p-report{position:relative;margin-top:14px;padding:14px 16px;border:1px solid var(--line);border-inline-start:4px solid var(--navy);border-radius:14px;background:var(--bg)}
+.p-report h3{margin:6px 0 4px;font-size:1.05rem}
+.p-report p{margin:6px 0 0}
+.p-report-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.p-badge{background:#e1edfb}
+@media (prefers-color-scheme: dark){.p-badge{background:#1d3a72;color:#dce8ff}.p-report{background:#0e2146}.p-actions .p-button.sun{color:#1b2a55}}
+.p-content-list>p.p-muted{padding:16px;border:1px dashed var(--line);border-radius:12px;text-align:center}
+.p-alert.error:not(:empty){padding:10px 14px;border-radius:12px;background:#e0403d1a;border:1px solid #e0403d55}
+.p-alert.success:not(:empty){padding:10px 14px;border-radius:12px;background:#4c8c1c1f;border:1px solid #4c8c1c55}
+.p-content-item{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--bg);justify-content:flex-start;transition:border-color .15s}
+.p-content-item:hover{border-color:var(--navy)}
+.p-content-text{flex:1 1 180px;min-width:0}
+.p-content-item .p-button{padding:7px 14px;font-size:.88rem;color:var(--ink)}
+.p-file-icon{flex:none;display:inline-grid;place-items:center;width:46px;height:46px;border-radius:12px;background:#17408f1f;color:var(--navy);font-weight:800;font-size:.78rem;letter-spacing:.03em}
+.p-file-image{background:#4c8c1c26;color:var(--green)}
+.p-file-video{background:#e0403d1f;color:var(--red)}
+.p-file-document{background:#fdb91333;color:#8a6200}
+@media (prefers-color-scheme: dark){.p-file-icon{color:#cfe0ff}.p-file-document{color:#ffd777}.p-file-image{color:#a6df7e}.p-file-video{color:#ff9a97}}
+.p-card form .p-row{margin-top:10px}
+.p-card textarea{line-height:1.7}
+@media(max-width:560px){.p-avatar{width:34px;height:34px}.p-header{position:static}.p-dashboard-welcome h2{font-size:1.3rem}.p-content-item .p-button{flex:1 1 auto}}
+
+.p-alert:empty{min-height:0;margin:0}

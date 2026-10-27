@@ -1941,13 +1941,13 @@ def list_platform_children(
 ) -> list[dict[str, str]]:
     response.headers["Cache-Control"] = "no-store"
     role_names = {role.name for role in principal.account.roles}
-    if "admin" in role_names:
+    if "parent" not in role_names and "admin" in role_names:
         children = session.scalars(
             select(Child)
             .where(Child.is_active.is_(True))
             .order_by(Child.display_name)
         ).all()
-    elif "parent" in role_names:
+    elif "parent" in role_names:  # a parent who is also admin sees only their own children here
         children = session.scalars(
             select(Child)
             .join(parent_child_links, parent_child_links.c.child_id == Child.id)
