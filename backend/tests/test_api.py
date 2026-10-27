@@ -659,6 +659,35 @@ class PlatformApiTests(unittest.TestCase):
         mine = self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Mine", "body": "x"}).json()
         self.assertEqual(self.client.delete(f"/api/platform/teacher/posts/{mine['id']}", headers=teacher).status_code, 204)
 
+    def test_admin_creates_parent_account_and_links_children(self):
+        child = self.client.post("/api/platform/children", headers=self.admin_headers, json={"display_name": "Linked child"}).json()
+        other = self.client.post("/api/platform/children", headers=self.admin_headers, json={"display_name": "Other child"}).json()
+        created = self.client.post(
+            "/api/admin/platform/teacher-accounts", headers=self.legacy_admin_headers,
+            json={"username": "made-parent", "role": "parent", "child_id": child["id"], "password": "Qx6a8c0e2g4i-9"},
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["roles"], ["parent"])
+        login = self.client.post("/api/auth/entry", json={"username": "made-parent", "password": "Qx6a8c0e2g4i-9"})
+        self.assertEqual(login.json()["portals"], ["parent"])
+        headers = {"Authorization": "Bearer " + login.json()["access_token"]}
+        self.assertEqual([c["display_name"] for c in self.client.get("/api/platform/children", headers=headers).json()], ["Linked child"])
+        # An unknown child is refused; a second child can be linked and unlinked later.
+        bad = self.client.post(
+            "/api/admin/platform/teacher-accounts", headers=self.legacy_admin_headers,
+            json={"username": "bad-parent", "role": "parent", "child_id": "00000000-0000-0000-0000-000000000000", "password": "Qx7b9d1f3h5j-9"},
+        )
+        self.assertEqual(bad.status_code, 404)
+        base = f"/api/admin/platform/children/{other['id']}/parents"
+        self.assertEqual(self.client.post(base, headers=self.legacy_admin_headers, json={"parent_id": created.json()["id"]}).status_code, 201)
+        self.assertEqual(self.client.post(base, headers=self.legacy_admin_headers, json={"parent_id": created.json()["id"]}).status_code, 409)
+        names = sorted(c["display_name"] for c in self.client.get("/api/platform/children", headers=headers).json())
+        self.assertEqual(names, ["Linked child", "Other child"])
+        listed = self.client.get("/api/admin/platform/children", headers=self.legacy_admin_headers).json()
+        self.assertEqual([p["username"] for p in next(c for c in listed if c["id"] == other["id"])["parent_accounts"]], ["made-parent"])
+        self.assertEqual(self.client.delete(f"{base}/{created.json()['id']}", headers=self.legacy_admin_headers).status_code, 204)
+        self.assertEqual([c["display_name"] for c in self.client.get("/api/platform/children", headers=headers).json()], ["Linked child"])
+
     def test_admin_edits_account_and_resets_password(self):
         with Session(self.engine) as session:
             session.add(Role(name="teacher"))

@@ -404,8 +404,9 @@
     var langGroup = element("div", "p-lang");
     langGroup.setAttribute("role", "group");
     langGroup.setAttribute("aria-label", t("language"));
-    [["ar", "ع"], ["en", "EN"]].forEach(function (choice) {
+    [["ar", "العربية"], ["en", "English"]].forEach(function (choice) {
       var languageButton = element("button", "", choice[1]);
+      languageButton.lang = choice[0];
       languageButton.type = "button";
       languageButton.setAttribute("aria-pressed", String(lang === choice[0]));
       languageButton.addEventListener("click", function () { setLanguage(choice[0]); });

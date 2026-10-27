@@ -347,7 +347,9 @@ class PreferredLanguageRequest(BaseModel):
 
 
 class TeacherAccountCreateRequest(BaseModel):
-    role: str = Field(default="teacher", pattern="^(teacher|accountant|admin)$")
+    role: str = Field(default="teacher", pattern="^(teacher|accountant|admin|parent)$")
+    # Parents only: the child this parent account belongs to (more can be linked later in the children tab).
+    child_id: uuid.UUID | None = None
     # Real name and job: saved as the staff member (employee) tied to this account.
     full_name: str = Field(default="", max_length=120)
     job_title: str = Field(default="", max_length=80)
@@ -1056,6 +1058,11 @@ def create_platform_teacher_account(
     teacher_role = session.scalar(select(Role).where(Role.name == payload.role))
     if teacher_role is None:
         raise HTTPException(503, "Platform roles are not initialized. Run database migrations.")
+    linked_child = None
+    if payload.role == "parent" and payload.child_id is not None:
+        linked_child = session.scalar(select(Child).where(Child.id == payload.child_id, Child.is_active.is_(True)))
+        if linked_child is None:
+            raise HTTPException(404, "Child profile not found.")
     account = Account(
         username=username,
         password_hash=PASSWORD_HASHER.hash(payload.password),
@@ -1067,7 +1074,14 @@ def create_platform_teacher_account(
     session.add(account)
     try:
         session.flush()
-        attach_person_to_account(session, account, payload.full_name, payload.job_title)
+        if payload.role != "parent":  # staff names are saved as employees; parents are not staff
+            attach_person_to_account(session, account, payload.full_name, payload.job_title)
+        if linked_child is not None:
+            session.execute(
+                parent_child_links.insert().values(
+                    account_id=account.id, child_id=linked_child.id, confirmed_at=datetime.now(timezone.utc)
+                )
+            )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -2100,7 +2114,7 @@ def admin_list_children(
         )
     ).all()
     parent_rows = session.execute(
-        select(parent_child_links.c.child_id, Account.username).join(
+        select(parent_child_links.c.child_id, Account.username, Account.id).join(
             Account, Account.id == parent_child_links.c.account_id
         )
     ).all()
@@ -2116,6 +2130,7 @@ def admin_list_children(
                     if row[0] == child.id
                 ],
                 "parents": [row[1] for row in parent_rows if row[0] == child.id],
+                "parent_accounts": [{"id": str(row[2]), "username": row[1]} for row in parent_rows if row[0] == child.id],
             }
         )
     return result
@@ -2165,6 +2180,57 @@ def admin_unassign_teacher(
         delete(teacher_child_links).where(
             teacher_child_links.c.account_id == teacher_id,
             teacher_child_links.c.child_id == child_id,
+        )
+    )
+    session.commit()
+    return Response(status_code=204)
+
+
+class ParentAssignmentRequest(BaseModel):
+    parent_id: uuid.UUID
+
+
+@app.post("/api/admin/platform/children/{child_id}/parents", status_code=201)
+def admin_link_parent(
+    child_id: uuid.UUID,
+    payload: ParentAssignmentRequest,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    """Link an existing parent account to a child so the parent sees that child's reports and private posts."""
+    child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
+    parent = session.scalar(
+        select(Account)
+        .join(Account.roles)
+        .where(Account.id == payload.parent_id, Account.is_active.is_(True), Role.name == "parent")
+    )
+    if child is None or parent is None:
+        raise HTTPException(404, "Active child or parent account not found.")
+    if session.execute(
+        select(parent_child_links.c.account_id).where(
+            parent_child_links.c.account_id == parent.id, parent_child_links.c.child_id == child.id
+        )
+    ).first():
+        raise HTTPException(409, "Parent is already linked to this child.")
+    session.execute(
+        parent_child_links.insert().values(
+            account_id=parent.id, child_id=child.id, confirmed_at=datetime.now(timezone.utc)
+        )
+    )
+    session.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/admin/platform/children/{child_id}/parents/{parent_id}", status_code=204)
+def admin_unlink_parent(
+    child_id: uuid.UUID,
+    parent_id: uuid.UUID,
+    _username: str = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> Response:
+    session.execute(
+        delete(parent_child_links).where(
+            parent_child_links.c.account_id == parent_id, parent_child_links.c.child_id == child_id
         )
     )
     session.commit()

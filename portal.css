@@ -243,3 +243,19 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-subhead{margin:26px 0 4px;padding-top:18px;border-top:1px solid var(--line)}
 .p-field[hidden]{display:none}
 .p-post-info{display:inline-flex;gap:10px;align-items:center}
+
+/* Language switch: segmented control */
+.p-lang{display:inline-flex;gap:0;padding:3px;border:1px solid #ffffff59;border-radius:999px;background:#ffffff1a}
+.p-lang button{min-width:76px;height:32px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:#ffffffd9;font:inherit;font-size:.86rem;font-weight:700;line-height:1;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
+.p-lang button:hover{background:#ffffff1f;color:#fff}
+.p-lang button[aria-pressed=true],.p-lang button[aria-pressed=true]:hover{background:var(--sun);color:#1b2a55;box-shadow:0 2px 8px #00000047}
+.p-lang button[lang=en]{font-family:system-ui,"Segoe UI",sans-serif}
+@media(max-width:560px){.p-lang button{min-width:58px;padding:0 10px}}
+
+/* ===== Uniform labels and controls ===== */
+.p-field{display:grid;gap:6px;margin:14px 0}
+.p-field label{display:grid;gap:6px;font-size:.95rem;font-weight:700;line-height:1.35}
+.p-field input:not([type=file]):not([type=checkbox]),.p-field select{height:48px;min-height:48px;padding:0 14px;font-size:1rem}
+.p-field textarea{min-height:120px;padding:12px 14px}
+.p-field input[type=file]{min-height:52px;padding:8px 10px}
+.p-field select{padding-inline-end:10px}

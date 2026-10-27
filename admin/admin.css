@@ -192,3 +192,35 @@ h2,h3{font-weight:800}
 
 .a-hello{margin-inline-start:14px;padding:5px 14px;border-radius:999px;background:rgba(253,185,19,.16);border:1px solid rgba(253,185,19,.5);color:var(--sun);font-weight:800;white-space:nowrap}
 .a-hello[hidden]{display:none}
+
+/* Language switch: segmented control */
+.a-lang{position:relative;display:inline-flex;gap:0;padding:3px;border:1px solid rgba(255,255,255,.35);border-radius:999px;background:rgba(255,255,255,.1);color:#fff}
+.a-lang button{min-width:76px;height:32px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.85);font:inherit;font-size:.86rem;font-weight:700;line-height:1;letter-spacing:.01em;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
+.a-lang button:hover{color:#fff;background:rgba(255,255,255,.12)}
+.a-lang button[aria-pressed=true]{background:var(--sun);color:var(--on-sun);box-shadow:0 2px 8px rgba(0,0,0,.28)}
+.a-lang button[lang=en]{font-family:system-ui,"Segoe UI",sans-serif}
+@media(max-width:620px){.a-lang button{min-width:58px;padding:0 10px}}
+
+/* ===== Uniform labels and controls (same height, same spacing everywhere) ===== */
+.a-form-grid{align-items:end;gap:14px 16px}
+.a-field{display:grid;gap:6px;margin:0;align-content:end;min-width:0}
+.a-field>span,.a-card>label,.a-card form>label{font-family:var(--display);font-weight:700;font-size:.95rem;line-height:1.35;color:var(--head)}
+.a-field input:not([type=checkbox]):not([type=radio]):not([type=file]),.a-field select,
+.a-card>input:not([type=checkbox]):not([type=file]),.a-card>select,form.a-card>input:not([type=checkbox]):not([type=file]),form.a-card>select,
+.a-assign select,.a-assign input{height:48px;min-height:48px;padding:0 14px;box-sizing:border-box;border:2px solid var(--line);border-radius:12px;background:var(--bg2);color:var(--ink);font:inherit;font-size:1rem;line-height:normal;width:100%;min-width:0;flex:1 1 auto}
+.a-field select,.a-card>select,form.a-card>select,.a-assign select{padding-inline-end:10px}
+.a-field textarea,.a-card>textarea{box-sizing:border-box;width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:12px;background:var(--bg2);color:var(--ink);font:inherit;min-height:100px}
+.a-card>label,.a-card form>label{display:block;margin:14px 0 6px}
+.a-field input::placeholder,.a-card input::placeholder{color:var(--muted,#8fa3cc);opacity:.75}
+.a-check-field{display:flex;align-items:center;gap:10px;min-height:48px;margin:0}
+.a-check-field input{width:20px;height:20px;min-height:0;flex:none}
+/* stacked forms (label, input, label, input...) use the same controls */
+.a-main form>input:not([type=checkbox]):not([type=radio]):not([type=file]),.a-main form>select{height:48px;min-height:48px;padding:0 14px;box-sizing:border-box;border:2px solid var(--line);border-radius:12px;background:var(--bg2);color:var(--ink);font:inherit;font-size:1rem;line-height:normal;width:100%;min-width:0;flex:none}
+.a-main form>textarea{box-sizing:border-box;width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:12px;background:var(--bg2);color:var(--ink);font:inherit;min-height:100px}
+.a-main form>label{display:block;margin:14px 0 6px;font-family:var(--display);font-weight:700;font-size:.95rem;line-height:1.35;color:var(--head)}
+.a-main form>input[type=date]{color-scheme:dark light}
+.a-main input[type=date]{height:48px;box-sizing:border-box}
+/* role checkboxes in one tidy row */
+.a-field:has(>.a-check-field){display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
+.a-field:has(>.a-check-field)>span{flex-basis:100%}
+.a-field>.a-check-field{min-height:40px}
