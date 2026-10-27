@@ -263,6 +263,7 @@ class FeePayment(Base):
         Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
     )
     created_by_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    payer_name: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the money over
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
     charge: Mapped[FeeCharge] = relationship(back_populates="payments")
@@ -316,6 +317,8 @@ class SalaryLine(Base):
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     raw_text: Mapped[str] = mapped_column(String(300), default="", server_default="")
     source: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    paid_by: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the salary out
+    recorded_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     employee: Mapped[Employee] = relationship(lazy="joined")
 
@@ -343,6 +346,8 @@ class AccountingEntry(Base):
     income: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     expense: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    person: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who spent / received the money
+    entered_by: Mapped[str] = mapped_column(String(80), default="", server_default="")  # who typed the row in
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

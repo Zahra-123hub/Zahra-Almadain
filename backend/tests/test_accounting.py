@@ -253,6 +253,55 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual((rows["transport"]["kind"], rows["transport"]["income"]), ("income", "90000.00"))
         self.assertEqual(sheet["totals"], {"income": "90000.00", "expense": "40000.00", "net": "50000.00"})
 
+    def test_it_is_recorded_who_paid_who_spent_and_who_entered_it(self):
+        child_id = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["id"]
+        charge = self.client.post("/api/admin/fees/charges", headers=self.acc, json={
+            "child_id": child_id, "year": 2026, "month": 10, "amount": "1000", "currency": "SYP"}).json()
+        paid = self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc,
+                                json={"amount": "400", "paid_on": "2026-10-05", "payer_name": "الأب أحمد"}).json()
+        self.assertEqual(paid["payers"], ["الأب أحمد"])
+        self.assertEqual((paid["payments"][0]["payer_name"], paid["payments"][0]["created_by"]), ("الأب أحمد", "acc"))
+        edited = self.client.patch(f"/api/admin/fees/payments/{paid['payments'][0]['id']}", headers=self.acc,
+                                   json={"amount": "400", "paid_on": "2026-10-05", "payer_name": "الأم سلمى"}).json()
+        self.assertEqual(edited["payers"], ["الأم سلمى"])
+
+        sheet = self.client.put("/api/admin/accounting/entries", headers=self.acc, json={
+            "period_type": "month", "year": 2026, "month": 10, "currency": "SYP", "item_key": "buffet",
+            "expense": "5000", "person": "أم محمد"}).json()
+        buffet = next(r for r in sheet["rows"] if r["key"] == "buffet")
+        self.assertEqual((buffet["person"], buffet["entered_by"]), ("أم محمد", "acc"))
+
+        line = self.salary("Rima", "1000", paid_by="الأستاذ كريم").json()
+        self.assertEqual((line["paid_by"], line["recorded_by"]), ("الأستاذ كريم", "acc"))
+
+    def test_saved_names_are_offered_again_and_staff_can_be_managed(self):
+        created = self.client.post("/api/admin/accounting/employees", headers=self.acc,
+                                   json={"name": "Rima Saleh", "job_title": "معلمة"}).json()
+        self.client.put("/api/admin/accounting/entries", headers=self.acc, json={
+            "period_type": "month", "year": 2026, "month": 10, "currency": "SYP", "item_key": "buffet",
+            "expense": "10", "person": "أم محمد"})
+        self.salary("Lana", "100", paid_by="الأستاذ كريم")
+        child_id = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["id"]
+        charge = self.client.post("/api/admin/fees/charges", headers=self.acc, json={
+            "child_id": child_id, "year": 2026, "month": 10, "amount": "100", "currency": "SYP"}).json()
+        self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc,
+                         json={"amount": "10", "paid_on": "2026-10-05", "payer_name": "الأب أحمد"})
+        names = self.client.get("/api/admin/accounting/names", headers=self.acc).json()
+        self.assertEqual(sorted(names["staff"]), ["Lana", "Rima Saleh"])
+        self.assertIn("أم محمد", names["persons"])
+        self.assertIn("الأستاذ كريم", names["persons"])
+        self.assertIn("Rima Saleh", names["persons"])
+        self.assertEqual(names["payers"], ["الأب أحمد"])
+        # rename / remove a saved person; old salary rows keep the name
+        renamed = self.client.patch(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc,
+                                    json={"name": "Rima S.", "job_title": "مديرة"})
+        self.assertEqual(renamed.json()["name"], "Rima S.")
+        self.assertEqual(self.client.patch(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc,
+                                           json={"name": "lana", "job_title": ""}).status_code, 409)
+        self.assertEqual(self.client.delete(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc).status_code, 204)
+        self.assertNotIn("Rima S.", self.client.get("/api/admin/accounting/names", headers=self.acc).json()["staff"])
+        self.assertEqual(self.client.get("/api/admin/accounting/names", headers=self.teacher).status_code, 403)
+
     def test_syrian_pound_is_the_main_currency(self):
         self.assertEqual(fees.CURRENCIES[0], "SYP")
         overview = self.client.get("/api/admin/accounting/overview?year=2026", headers=self.acc).json()

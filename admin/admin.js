@@ -792,6 +792,7 @@ function tabFees(){
   var payDate = h("input", {type:"date", value:new Date().toISOString().slice(0, 10)});
   var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
   var payNote = h("input", {type:"text", maxlength:"500"});
+  var payPayer = h("input", {type:"text", maxlength:"120", placeholder:"من دفع؟", autocomplete:"off", list:"acc-payers"});
   var nameField = field("اسم الطفل", addName), classField = field("الصف / الشعبة", addClass);
   function syncNewChild(){
     var isNew = addChild.value === NEW_CHILD;
@@ -804,7 +805,7 @@ function tabFees(){
     field("الشهر", addMonth), field("السنة", addYear),
     field("الرسم المطلوب", addAmount), field("العملة", addCurrency),
     h("strong", {text:"دفعة أولى (اختياري)"}),
-    field("المبلغ المدفوع", payAmount), field("تاريخ الدفع", payDate), field("رقم الإيصال", payReceipt), field("ملاحظات", payNote),
+    field("المبلغ المدفوع", payAmount), field("تاريخ الدفع", payDate), field("رقم الإيصال", payReceipt), field("اسم الدافع", payPayer), field("ملاحظات", payNote),
     classList,
     h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"إضافة الصف"})])
   ]);
@@ -816,12 +817,12 @@ function tabFees(){
       body.child_name = addName.value.trim(); body.class_name = addClass.value.trim();
     } else body.child_id = addChild.value;
     if(payAmount.value && Number(payAmount.value) > 0){
-      body.payment = {amount:payAmount.value, paid_on:payDate.value, receipt_no:payReceipt.value.trim() || null, note:payNote.value.trim()};
+      body.payment = {amount:payAmount.value, paid_on:payDate.value, receipt_no:payReceipt.value.trim() || null, note:payNote.value.trim(), payer_name:payPayer.value.trim()};
     }
     try{
       await request("/api/admin/fees/charges", {method:"POST", body:JSON.stringify(body)});
       setMsg(msg, "تمت إضافة الصف إلى الجدول.", "ok");
-      addName.value = ""; addAmount.value = ""; payAmount.value = ""; payReceipt.value = ""; payNote.value = "";
+      addName.value = ""; addAmount.value = ""; payAmount.value = ""; payReceipt.value = ""; payNote.value = ""; payPayer.value = "";
       await reloadChildren(); await load();
     }catch(error){ setMsg(msg, errText(error), "err"); }
   });
@@ -891,6 +892,7 @@ function tabFees(){
         h("span", {class:"a-tag", dir:"ltr", text:p.paid_on}),
         h("strong", {text:money(p.amount) + " " + row.currency}),
         p.receipt_no ? h("span", {class:"a-tag", text:"إيصال " + p.receipt_no}) : "",
+        p.payer_name ? h("span", {class:"a-tag sun", text:"دفعها: " + p.payer_name}) : h("span", {class:"hint", text:"الدافع غير مذكور"}),
         p.note ? h("span", {class:"hint", dir:"auto", text:p.note}) : "",
         p.created_by ? h("span", {class:"hint", text:"سجّلها: " + p.created_by}) : "",
         h("button", {type:"button", class:"a-btn ghost", text:"تعديل", onclick:function(){ line.innerHTML = ""; line.appendChild(paymentForm(row, p, show)); }}),
@@ -907,16 +909,17 @@ function tabFees(){
     var date = h("input", {type:"date", required:"required", value:existing ? existing.paid_on : new Date().toISOString().slice(0, 10)});
     var receipt = h("input", {type:"text", maxlength:"40", value:existing ? existing.receipt_no : "", dir:"ltr"});
     var note = h("input", {type:"text", maxlength:"500", value:existing ? existing.note : ""});
+    var payer = h("input", {type:"text", maxlength:"120", value:existing ? existing.payer_name : "", placeholder:"مثال: الأب أحمد", autocomplete:"off", list:"acc-payers"});
     var buttons = [h("button", {type:"submit", class:"a-btn sun", text:existing ? "حفظ التعديل" : "تسجيل الدفعة"})];
     if(existing) buttons.push(h("button", {type:"button", class:"a-btn ghost", text:"إلغاء", onclick:cancel}));
     var form = h("form", {class:"a-form-grid a-pay-form"}, [
       h("strong", {text:existing ? "تعديل الدفعة" : "إضافة دفعة"}),
-      field("المبلغ (" + row.currency + ")", amount), field("تاريخ الدفع", date), field("رقم الإيصال", receipt), field("ملاحظات", note),
+      field("المبلغ (" + row.currency + ")", amount), field("تاريخ الدفع", date), field("رقم الإيصال", receipt), field("اسم الدافع", payer), field("ملاحظات", note),
       h("div", {class:"a-row"}, buttons)
     ]);
     form.addEventListener("submit", async function(event){
       event.preventDefault();
-      var body = JSON.stringify({amount:amount.value, paid_on:date.value, receipt_no:receipt.value.trim() || null, note:note.value.trim()});
+      var body = JSON.stringify({amount:amount.value, paid_on:date.value, receipt_no:receipt.value.trim() || null, note:note.value.trim(), payer_name:payer.value.trim()});
       try{
         await request(existing ? "/api/admin/fees/payments/" + encodeURIComponent(existing.id) : "/api/admin/fees/charges/" + encodeURIComponent(row.id) + "/payments",
           {method:existing ? "PATCH" : "POST", body:body});
@@ -943,7 +946,7 @@ function tabFees(){
   function currencyTable(code){
     var rows = data.rows.filter(function(r){ return r.currency === code; });
     var totals = data.totals[code] || {amount:"0", paid:"0", remaining:"0"};
-    var headers = ["الرقم","اسم الطفل","الصف","الرسم المطلوب","المدفوع","المتبقي","تاريخ الدفع","رقم الإيصال","ملاحظات",""];
+    var headers = ["الرقم","اسم الطفل","الصف","الرسم المطلوب","المدفوع","المتبقي","تاريخ الدفع","رقم الإيصال","الدافع","ملاحظات",""];
     var thead = h("thead", {}, [h("tr", {}, headers.map(function(t){ return h("th", {text:t}); }))]);
     var tbody = h("tbody", {});
     rows.forEach(function(r, i){
@@ -954,7 +957,7 @@ function tabFees(){
         edit ? h("td", {}, [edit.cls]) : cell(r.class_name || "—"),
         edit ? h("td", {class:"num"}, [edit.amount]) : cell(money(r.amount), "num"), cell(money(r.paid), "num"),
         h("td", {class:"num"}, [h("div", {class:"a-remaining", text:money(r.remaining)}), badge(r.status)]),
-        cell(r.last_paid_on || "—", "num"), cell(r.receipts.join("، ") || "—", "num"), cell(r.notes.join("؛ ") || "—"),
+        cell(r.last_paid_on || "—", "num"), cell(r.receipts.join("، ") || "—", "num"), cell(r.payers.join("، ") || "—"), cell(r.notes.join("؛ ") || "—"),
         h("td", {}, [edit ? edit.save : "", h("button", {type:"button", class:"a-btn " + (openId === r.id ? "ghost" : "sun"), text:openId === r.id ? "إغلاق" : "دفعة / تعديل", onclick:function(){ openId = openId === r.id ? "" : r.id; render(); }})])
       ]);
       tbody.appendChild(tr);
@@ -963,10 +966,10 @@ function tabFees(){
     if(!rows.length) tbody.appendChild(h("tr", {}, [h("td", {colspan:String(headers.length), class:"a-empty", text:"لا توجد رسوم بهذه العملة."})]));
     var tfoot = h("tfoot", {}, [h("tr", {class:"a-total"}, [
       h("td", {colspan:"3", text:"الإجمالي العام (" + code + ")"}), cell(money(totals.amount), "num"), cell(money(totals.paid), "num"),
-      cell(money(totals.remaining), "num"), h("td", {colspan:"4"})])]);
+      cell(money(totals.remaining), "num"), h("td", {colspan:"5"})])]);
     return h("div", {class:"a-card"}, [
       h("h3", {text:"الرسوم بـ" + CURRENCY_LABEL[code]}),
-      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table"}, [thead, tbody, tfoot])])
+      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table compact"}, [thead, tbody, tfoot])])
     ]);
   }
   function render(){
@@ -977,6 +980,7 @@ function tabFees(){
 
   // ----- data loading --------------------------------------------------
   async function load(){
+    if(window.accLoadNames) accLoadNames();
     var q = [];
     ["year","month","class_name","currency","status","needs_review"].forEach(function(k){ if(filters[k]) q.push(k + "=" + encodeURIComponent(filters[k])); });
     try{
@@ -1016,11 +1020,11 @@ function tabFees(){
       var body = rows.map(function(r, i){
         return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.child_name) + "</td><td>" + esc(r.class_name || "—") + "</td><td>" + money(r.amount) +
           "</td><td>" + money(r.paid) + "</td><td class='" + (Number(r.remaining) > 0 ? "due" : "") + "'>" + money(r.remaining) + "</td><td>" + esc(r.last_paid_on || "—") +
-          "</td><td>" + esc(r.receipts.join("، ") || "—") + "</td><td class='l'>" + esc(r.notes.join("؛ ") || "—") + "</td></tr>";
+          "</td><td>" + esc(r.receipts.join("، ") || "—") + "</td><td class='l'>" + esc(r.payers.join("، ") || "—") + "</td><td class='l'>" + esc(r.notes.join("؛ ") || "—") + "</td></tr>";
       }).join("");
-      return {code:code, cols:[4, 20, 8, 12, 12, 12, 10, 10, 12], html:"<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>ملاحظات</th></tr></thead><tbody>" +
-        (body || "<tr><td colspan='9'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.amount) +
-        "</td><td>" + money(t.paid) + "</td><td>" + money(t.remaining) + "</td><td colspan='3'></td></tr></tfoot></table>"};
+      return {code:code, cols:[4, 17, 7, 11, 11, 11, 9, 9, 13, 8], html:"<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>الدافع</th><th>ملاحظات</th></tr></thead><tbody>" +
+        (body || "<tr><td colspan='10'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.amount) +
+        "</td><td>" + money(t.paid) + "</td><td>" + money(t.remaining) + "</td><td colspan='4'></td></tr></tfoot></table>"};
     });
     accPrint("كشف اشتراكات ورسوم الأطفال", function(part){
       return "الفترة: " + esc(period) + " | العملة: " + esc(CURRENCY_LABEL[part.code]) + (filters.class_name ? " | الصف: " + esc(filters.class_name) : "");
