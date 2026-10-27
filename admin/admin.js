@@ -1077,6 +1077,14 @@ var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأ�
     return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && t[0] === "fees");
   });
 if(TABS.length && !TABS.some(function(t){ return t[0] === tab; })) tab = TABS[0][0];
+/* "Hello <username>" in the top bar: the server admin's name is inside the session token, other accounts are looked up. */
+function adminName(){
+  try{
+    var sub = JSON.parse(atob(ADMIN_TOKEN.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"))).sub || "";
+    if(sub && !/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(sub)) return Promise.resolve(sub);
+  }catch(e){}
+  return request("/api/platform/auth/me").then(function(me){ return me.username || ""; }).catch(function(){ return ""; });
+}
 function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
   var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ clearSessions(); start(); }});
@@ -1094,7 +1102,11 @@ function draw(){
   });
   var main = h("div", {class:"a-main"}); fill = null;
   main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
+  adminName().then(function(name){
+    var hello = document.getElementById("a-hello");
+    if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }
+  });
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("h2", {text:"لوحة تحكم روضة زهرة المدائن"}), h("span", {class:"a-hello", id:"a-hello", hidden:"hidden"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
 }
 /* A signed-in teacher/accountant changes their own password here (the admin password lives on the server). */
 function toggleChangePassword(){

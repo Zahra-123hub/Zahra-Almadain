@@ -189,3 +189,6 @@ h2,h3{font-weight:800}
 .a-empty{border-radius:14px;padding:18px}
 .a-msg{margin-top:12px;font-weight:700}
 @media(max-width:620px){.a-card{padding:14px}.a-bar .a-top{gap:8px}.a-row{gap:8px}.a-form-grid{grid-template-columns:1fr}}
+
+.a-hello{margin-inline-start:14px;padding:5px 14px;border-radius:999px;background:rgba(253,185,19,.16);border:1px solid rgba(253,185,19,.5);color:var(--sun);font-weight:800;white-space:nowrap}
+.a-hello[hidden]{display:none}
