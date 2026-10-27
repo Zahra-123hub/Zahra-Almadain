@@ -419,3 +419,21 @@ html[lang=ar] .learn-prompt .learn-en{display:none}
 .fgrid .logo{width:92px;height:92px;padding:9px;border-radius:50%;background:#fff;display:grid;place-items:center;margin-bottom:12px;box-shadow:0 0 0 4px rgba(255,255,255,.22)}
 .fgrid .logo img{width:100%;height:100%;min-width:0;object-fit:contain}
 @media(max-width:520px){.brand .badge{width:46px;height:46px;padding:4px}}
+
+/* ===== "What does your child learn?" — balanced layout ===== */
+.learn{align-items:stretch;column-gap:clamp(24px,3.5vw,44px);row-gap:26px}
+.learn>div:first-child{align-self:stretch;display:flex;flex-direction:column;justify-content:center;padding:clamp(20px,3vw,32px) clamp(16px,2.4vw,26px) clamp(18px,2.4vw,26px);border:2px solid var(--line);border-radius:26px;background:radial-gradient(circle at 50% 26%,rgba(253,185,19,.13),transparent 64%),var(--surface);box-shadow:0 14px 34px rgba(0,0,0,.16)}
+.flower{max-width:340px;filter:drop-shadow(0 8px 14px rgba(0,0,0,.22))}
+.area-buttons{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:none;margin:20px auto 0}
+.area-button,.area-button:last-child:nth-child(odd){position:relative;flex-direction:row;gap:9px;min-height:42px;width:auto;padding:7px 18px 7px 14px;border:2px solid var(--line);border-radius:999px;grid-column:auto;justify-self:auto;transition:background .18s,border-color .18s,box-shadow .18s,transform .18s}
+.area-button::before{content:"";flex:none;width:11px;height:11px;border-radius:50%;background:var(--area-color);box-shadow:0 0 0 3px rgba(255,255,255,.12)}
+.area-button:hover{transform:translateY(-1px)}
+.area-button[aria-pressed=true]{border-color:var(--area-color);background:color-mix(in srgb,var(--area-color) 24%,var(--surface));box-shadow:0 0 0 3px color-mix(in srgb,var(--area-color) 32%,transparent)}
+.petal-info{align-self:stretch;display:flex;flex-direction:column;justify-content:center;padding:clamp(22px,3vw,34px);border:2px solid var(--line);border-inline-start:6px solid var(--sun);border-radius:26px;box-shadow:0 14px 34px rgba(0,0,0,.16);font-size:1.06rem}
+.petal-info.is-intro{display:flex;align-items:center;text-align:center;gap:10px;min-height:0}
+.petal-info.is-intro::before{content:"✿";font-size:3rem;line-height:1;color:var(--sun)}
+.petal-info .petal-intro{font-size:clamp(1.2rem,2vw,1.5rem);line-height:1.6}
+.petal-info.is-detail b{font-size:1.45rem}
+@media(max-width:860px){.learn>div:first-child{align-self:auto}.petal-info{align-self:auto}}
+.petal-info.is-detail{align-self:stretch}
+@media(max-width:860px){.petal-info.is-detail{align-self:auto}}
