@@ -77,6 +77,17 @@ function accPrint(title, subtitle, parts, msgEl){
   }
   if(w.document.readyState === "complete") printWhenReady(); else w.addEventListener("load", printWhenReady);
 }
+/* Before a payroll or monthly sheet is exported, every employee with a saved salary gets this month's row automatically. */
+async function accFillSavedSalaries(year, month, codes, msgEl){
+  if(!month) return 0;
+  var created = 0;
+  for(var i = 0; i < codes.length; i++){
+    var res = await request("/api/admin/accounting/salaries/generate", {method:"POST", body:JSON.stringify({year:Number(year), month:Number(month), currency:codes[i]})});
+    created += res.created;
+  }
+  if(created && msgEl) setMsg(msgEl, "أُضيفت تلقائياً رواتب " + created + " موظف من الرواتب المحفوظة.", "ok");
+  return created;
+}
 function accTh(list){ return "<tr>" + list.map(function(t){ return "<th>" + t + "</th>"; }).join("") + "</tr>"; }
 
 /* ---------------------------------------------------------------- shell */
@@ -323,15 +334,17 @@ function tabSalaries(){
       addEmp.value = employees.some(function(e){ return e.id === keep; }) ? keep : NEW; syncNew();
     }catch(error){ setMsg(msg, errText(error), "err"); }
   }
-  function print(){
+  async function print(){
     var codes = filters.currency ? [filters.currency] : ACC_CURRENCIES;
+    try{ if(await accFillSavedSalaries(filters.year, filters.month, codes, msg)) await load(); }
+    catch(error){ setMsg(msg, errText(error), "err"); return; }
     var period = (filters.month ? MONTHS_AR[Number(filters.month) - 1] + " " : "") + (filters.year || "");
     var parts = codes.map(function(code){
       var rows = data.rows.filter(function(r){ return r.currency === code; });
       var t = data.totals[code] || {base:"0", bonus:"0", advance:"0", deduction:"0", net:"0"};
       var body = rows.map(function(r, i){ return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.employee_name) + "</td><td>" + esc(r.job_title || "—") + "</td><td>" + money(r.base) + "</td><td>" + money(r.bonus) +
         "</td><td>" + money(r.advance) + "</td><td>" + money(r.deduction) + "</td><td><b>" + money(r.net) + "</b></td><td>" + esc(r.paid_on || "—") + "</td><td>" + esc(r.paid_by || "") + "</td><td><span class='line'>&nbsp;</span></td></tr>"; }).join("");
-      return {code:code, cols:[4,15,10,10,10,8,8,11,8,9,7], html:"<table><thead>" + accTh(["الرقم","اسم الموظف / المدرسة","المسمى الوظيفي","الراتب الأساسي","المكافآت / الإضافي","السلف","الخصومات","الصافي المستحق","تاريخ الاستلام","صرفه","توقيع المستلم"]) + "</thead><tbody>" +
+      return {code:code, cols:[5,13,9,13,10,8,8,13,8,7,6], html:"<table><thead>" + accTh(["الرقم","اسم الموظف / المدرسة","المسمى الوظيفي","الراتب الأساسي","المكافآت / الإضافي","السلف","الخصومات","الصافي المستحق","تاريخ الاستلام","صرفه","توقيع المستلم"]) + "</thead><tbody>" +
         (body || "<tr><td colspan='11'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.base) + "</td><td>" + money(t.bonus) + "</td><td>" + money(t.advance) +
         "</td><td>" + money(t.deduction) + "</td><td>" + money(t.net) + "</td><td colspan='3'></td></tr></tfoot></table>"};
     });
@@ -393,7 +406,7 @@ function tabSheet(type){
       var kindSel = (row.custom || row.choice) && !isWeek ? accSelect([["expense", "صادر"], ["income", "وارد"]], row.kind) : null;
       var amountCells = isWeek
         ? [h("td", {}, [income]), h("td", {}, [expense])]
-        : [h("td", {}, [h("div", {class:"a-amount"}, [kindSel ? kindSel : h("span", {class:"a-tag", text:row.kind === "income" ? "وارد" : "صادر"}), amount])])];
+        : [h("td", {}, [h("div", {class:"a-amount"}, [kindSel ? kindSel : h("span", {class:"a-tag kind-" + row.kind, text:row.kind === "income" ? "وارد" : "صادر"}), amount])])];
       var actions = [h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
         var inc = income.value, exp = expense.value;
         if(!isWeek){
@@ -423,7 +436,8 @@ function tabSheet(type){
     ]);
     var customForm = customRowForm(code);
     return h("div", {class:"a-card"}, [h("h3", {text:(isDay ? "اليوم " : isWeek ? "الأسبوع " : "الشهر ") + "بـ" + ACC_CURRENCY_NAME[code]}),
-      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), tbody, foot])]), customForm]);
+      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("colgroup", {}, (isWeek ? [19, 14, 15, 14, 13, 13, 12] : [22, 17, 18, 15, 16, 12]).map(function(w){ return h("col", {style:"width:" + w + "%"}); })),
+        h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), tbody, foot])]), customForm]);
   }
   function customRowForm(code){
     var label = h("input", {type:"text", maxlength:"120", placeholder:"اسم البند"});
@@ -453,8 +467,12 @@ function tabSheet(type){
       render();
     }catch(error){ tables.innerHTML = ""; tables.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
   }
-  function print(){
+  async function print(){
     var codes = filters.currency ? [filters.currency] : ACC_CURRENCIES;
+    if(!isWeek){  // monthly sheet: the "salaries" line comes from the payroll, so fill it from the saved salaries first
+      try{ if(await accFillSavedSalaries(filters.year, filters.month, codes, msg)) await load(); }
+      catch(error){ setMsg(msg, errText(error), "err"); return; }
+    }
     var parts = codes.filter(function(c){ return sheets[c]; }).map(function(code){
       var sheet = sheets[code], t = sheet.totals;
       var body = sheet.rows.map(function(r){
