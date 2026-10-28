@@ -514,8 +514,9 @@ function tabSheet(type){
     var details = h("input", {type:"text", maxlength:"500", value:line.details, "aria-label":"التفاصيل"});
     var note = h("input", {type:"text", maxlength:"500", value:line.note, "aria-label":"الملاحظات"});
     var person = h("input", {type:"text", maxlength:"120", value:line.person || "", placeholder:"الاسم", "aria-label":"المسؤول", list:"acc-persons", title:line.entered_by ? "أدخله: " + line.entered_by : ""});
-    var income = accNumber(line.income, {"aria-label":"الوارد"}), expense = accNumber(line.expense, {"aria-label":"الصادر"});
-    var amount = accNumber(nonZero(line.income) ? line.income : nonZero(line.expense) ? line.expense : "", {"aria-label":"المبلغ"});
+    var income = accNumber(nonZero(line.income) ? line.income : "", {"aria-label":"الوارد", placeholder:"0.00", class:"amt in"});
+    var expense = accNumber(nonZero(line.expense) ? line.expense : "", {"aria-label":"الصادر", placeholder:"0.00", class:"amt out"});
+    var amount = accNumber(nonZero(line.income) ? line.income : nonZero(line.expense) ? line.expense : "", {"aria-label":"المبلغ", placeholder:"0.00", class:"amt " + (line.kind === "income" ? "in" : "out")});
     var kindSel = (item.custom || item.choice) && !isWeek ? accSelect([["expense", "صادر"], ["income", "وارد"]], line.kind) : null;
     var currencyCell, currencySel = null;
     if(item.auto){  // an automatic row belongs to the currency its payments came in
@@ -528,7 +529,7 @@ function tabSheet(type){
     var amountCells = isWeek
       ? [h("td", {}, [income]), h("td", {}, [expense])]
       : [h("td", {}, [h("div", {class:"a-amount"}, [kindSel ? kindSel : h("span", {class:"a-tag kind-" + line.kind, text:line.kind === "income" ? "وارد" : "صادر"}), amount])])];
-    var actions = [h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
+    var actions = [h("button", {type:"button", class:"a-btn sun save", text:"حفظ", disabled:"disabled", onclick:async function(){
       var inc = income.value, exp = expense.value;
       if(!isWeek){
         var kind = kindSel ? kindSel.value : line.kind;
@@ -544,15 +545,21 @@ function tabSheet(type){
         setMsg(msg, currency !== line.currency ? "تم نقل السطر إلى " + currency + " وحفظه." : "تم الحفظ.", "ok"); await load();
       }catch(error){ setMsg(msg, errText(error), "err"); }
     }})];
-    if(line.id && (item.custom || line.manual)) actions.push(twoStep(item.custom ? "حذف" : "إعادة للتلقائي", async function(){
-      await request("/api/admin/accounting/entries/" + encodeURIComponent(line.id), {method:"DELETE"}); setMsg(msg, item.custom ? "تم حذف البند." : "عاد البند إلى القيمة التلقائية.", "ok"); await load(); }));
+    var removes = item.custom || !item.auto;  // a row without an automatic value is simply deleted; an automatic one goes back to it
+    if(line.id && (item.custom || line.manual)) actions.push(twoStep(removes ? "حذف" : "إعادة للتلقائي", async function(){
+      await request("/api/admin/accounting/entries/" + encodeURIComponent(line.id), {method:"DELETE"}); setMsg(msg, item.custom ? "تم حذف البند." : removes ? "تم حذف السطر." : "عاد البند إلى القيمة التلقائية.", "ok"); await load(); }));
     label = first
       ? h("td", {class:"name"}, [item.label, item.auto ? h("span", {class:"a-badge " + (line.manual ? "partial" : "paid"), text:line.manual ? "يدوي" : "تلقائي"}) : "",
           line.rolled ? h("span", {class:"a-badge partial", text:"مجمّع تلقائياً", title:"مجموع ما كُتب في الجداول الأدق (الأسبوعي واليومي)"}) : ""])
       : h("td", {class:"name"}, [h("small", {class:"hint", text:"↳ " + item.label})]);
     if(first && item.auto && line.manual) label.appendChild(h("small", {class:"hint", text:"القيمة التلقائية: " + money(item.key === "registration" ? line.auto_income : line.auto_expense)}));
-    var row = h("tr", {}, [label, h("td", {}, [details]), h("td", {}, [note]), h("td", {}, [person])].concat(amountCells).concat([currencyCell, h("td", {}, [h("div", {class:"a-row", style:"margin:0"}, actions)])]));
+    var hasData = !!line.id || nonZero(line.income) || nonZero(line.expense);
+    var row = h("tr", {class:(item.auto ? "is-auto " : "") + (item.custom ? "is-custom " : "") + (hasData ? "has-data" : "idle")}, [label, h("td", {}, [details]), h("td", {}, [note]), h("td", {}, [person])].concat(amountCells).concat([currencyCell, h("td", {}, [h("div", {class:"a-row", style:"margin:0"}, actions)])]));
     Array.prototype.forEach.call(row.children, function(cellNode, i){ if(i > 0 && HEADS[i]) cellNode.setAttribute("data-label", HEADS[i]); });  // shown as captions on a phone
+    // a row that was changed lights up and can be saved; nothing to save, nothing to press
+    var saveButton = actions[0];
+    function markChanged(){ saveButton.disabled = false; row.classList.add("dirty"); }
+    [details, note, person, income, expense, amount, kindSel, currencySel].forEach(function(el){ if(el){ el.addEventListener("input", markChanged); el.addEventListener("change", markChanged); } });
     return row;
   }
   function sheetCard(){
