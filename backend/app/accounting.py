@@ -511,17 +511,27 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         )
         if account is None:
             raise HTTPException(404, "الحساب غير موجود أو ليس حساب معلمة/محاسب.")
-        taken = session.scalar(
-            select(Employee.id).where(Employee.account_id == account_id, Employee.id != employee.id)
+        holder = session.scalar(
+            select(Employee).where(Employee.account_id == account_id, Employee.id != employee.id)
         )
-        if taken is not None:
-            raise HTTPException(409, "هذا الحساب مرتبط بموظف آخر.")
+        if holder is not None:
+            if holder.is_active:
+                raise HTTPException(409, "هذا الحساب مرتبط بموظف آخر.")
+            holder.account_id = None  # a person who was taken off the list gives the account back
+            session.flush()
         employee.account_id = account_id
 
-    def employee_by_name(session: Session, name: str) -> Employee | None:
-        return session.scalar(
-            select(Employee).where(func.lower(Employee.name) == name.strip().lower(), Employee.is_active.is_(True))
-        )
+    def employee_by_name(session: Session, name: str, include_removed: bool = False) -> Employee | None:
+        """The active person with that name. With include_removed, a person taken off the list earlier is found too,
+        so saving the same name again brings the old record back (history, saved salary and account stay linked)."""
+        rows = session.scalars(
+            select(Employee).where(func.lower(Employee.name) == name.strip().lower())
+            .order_by(Employee.is_active.desc(), Employee.created_at)
+        ).all()
+        active = next((e for e in rows if e.is_active), None)
+        if active is not None or not include_removed:
+            return active
+        return rows[0] if rows else None
 
     @router.get("/employees")
     def list_employees(
@@ -567,8 +577,22 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
-        if employee_by_name(session, payload.name) is not None:
+        existing = employee_by_name(session, payload.name, include_removed=True)
+        if existing is not None and existing.is_active:
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
+        if existing is not None:  # the same person again: the old record (and everything tied to it) comes back
+            employee = existing
+            employee.is_active = True
+            employee.job_title = payload.job_title.strip() or employee.job_title
+            if payload.salary is not None:
+                employee.salary = money(payload.salary)
+                employee.salary_currency = payload.salary_currency
+            if "account_id" in payload.model_fields_set:
+                link_account(session, employee, payload.account_id)
+            log(session, actor, "employee.reactivate", employee.id, "")
+            session.commit()
+            account = session.get(Account, employee.account_id) if employee.account_id else None
+            return employee_data(employee, {account.id: account.username} if account else {})
         employee = Employee(
             name=payload.name.strip(), job_title=payload.job_title.strip(),
             salary=None if payload.salary is None else money(payload.salary),
@@ -603,15 +627,31 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
         employee.name = payload.name.strip()
         employee.job_title = payload.job_title.strip()
+        followed = 0
         if "salary" in payload.model_fields_set:  # only touched when the form sends it
+            old_salary, old_currency = employee.salary, employee.salary_currency
             employee.salary = None if payload.salary is None else money(payload.salary)
             employee.salary_currency = payload.salary_currency
+            if old_salary is not None and employee.salary is not None and old_currency == employee.salary_currency \
+                    and money(old_salary) != employee.salary:
+                # payroll rows that still carry the old saved salary and are not paid out yet follow the new one;
+                # rows that were corrected by hand or already paid keep their own amount
+                for line in session.scalars(
+                    select(SalaryLine).where(
+                        SalaryLine.employee_id == employee.id, SalaryLine.currency == old_currency,
+                        SalaryLine.paid_on.is_(None), SalaryLine.base == money(old_salary),
+                    )
+                ):
+                    line.base = employee.salary
+                    followed += 1
         if "account_id" in payload.model_fields_set:  # only touched when the form sends it
             link_account(session, employee, payload.account_id)
         log(session, actor, "employee.update", employee.id, "")
         session.commit()
         account = session.get(Account, employee.account_id) if employee.account_id else None
-        return employee_data(employee, {account.id: account.username} if account else {})
+        data = employee_data(employee, {account.id: account.username} if account else {})
+        data["updated_salary_rows"] = followed
+        return data
 
     @router.delete("/employees/{employee_id}", status_code=204)
     def remove_employee(
@@ -687,14 +727,18 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         name = payload.employee_name.strip()
         if len(name) < 2:
             raise HTTPException(422, "اكتب اسم الموظف أو اختره من القائمة.")
-        employee = employee_by_name(session, name)
+        employee = employee_by_name(session, name, include_removed=True)
         if employee is None:
             employee = Employee(name=name, job_title=payload.job_title.strip())
             session.add(employee)
             session.flush()
             log(session, actor, "employee.create", employee.id, "")
-        elif payload.job_title.strip():
-            employee.job_title = payload.job_title.strip()
+        else:
+            if not employee.is_active:  # the same person again: bring the old record back
+                employee.is_active = True
+                log(session, actor, "employee.reactivate", employee.id, "")
+            if payload.job_title.strip():
+                employee.job_title = payload.job_title.strip()
         return employee
 
     def check_net(base: Decimal | None, bonus: Decimal | None, advance: Decimal | None, deduction: Decimal | None) -> None:
@@ -745,6 +789,9 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         check_net(payload.base, payload.bonus, payload.advance, payload.deduction)
         employee = resolve_employee(session, actor, payload)
+        if employee.salary is None and money(payload.base) > 0:
+            # the first salary typed for a person is remembered with them, so next month it can be filled in by itself
+            employee.salary, employee.salary_currency = money(payload.base), payload.currency
         line = SalaryLine(
             employee_id=employee.id, year=payload.year, month=payload.month, currency=payload.currency,
             base=money(payload.base), bonus=money(payload.bonus), advance=money(payload.advance),
