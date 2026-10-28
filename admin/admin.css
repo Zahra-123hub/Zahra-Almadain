@@ -284,3 +284,39 @@ h2,h3{font-weight:800}
 .a-cash .a-kpis .a-kpi:first-child{grid-column:1 / -1;text-align:center;padding:18px}
 .a-cash .a-kpis .a-kpi:first-child strong{font-size:clamp(1.8rem,5vw,2.6rem)}
 .a-rolled td{opacity:.9;font-style:normal}
+
+/* ===== Accounting sheet: calm, professional table ===== */
+.a-sheet{border-collapse:separate;border-spacing:0;font-size:.96rem}
+.a-sheet thead th{background:linear-gradient(180deg,rgba(23,64,143,.55),rgba(23,64,143,.25));color:var(--head);font-weight:800;font-size:.86rem;letter-spacing:.01em;padding:12px 8px;border-bottom:2px solid var(--sun)}
+.a-sheet tbody td{padding:7px 8px;border-bottom:1px solid rgba(160,184,230,.14)}
+.a-sheet tbody tr:nth-child(even){background:transparent}
+.a-sheet tbody tr:hover{background:rgba(253,185,19,.06)}
+.a-sheet td.name{font-weight:800;color:var(--head);line-height:1.4}
+.a-sheet tbody tr.is-auto td:first-child{box-shadow:inset -4px 0 0 #7DC243}
+.a-sheet tbody tr.is-custom td:first-child{box-shadow:inset -4px 0 0 var(--sky,#2F8FCB)}
+.a-sheet tbody tr.dirty td:first-child{box-shadow:inset -4px 0 0 var(--sun)}
+.a-sheet tbody tr.dirty{background:rgba(253,185,19,.08)}
+/* inputs look like cells of a sheet: quiet until you point at them */
+.a-card .a-sheet td input,.a-card .a-sheet td select{background:transparent;border:1px solid transparent;border-bottom-color:rgba(160,184,230,.28);border-radius:8px;min-height:38px;padding:4px 8px;transition:background .15s,border-color .15s,box-shadow .15s}
+.a-card .a-sheet td input:hover,.a-card .a-sheet td select:hover{background:var(--bg2);border-color:var(--line)}
+.a-card .a-sheet td input:focus,.a-card .a-sheet td select:focus{background:var(--bg2);border-color:var(--sun);box-shadow:0 0 0 3px rgba(253,185,19,.2);outline:none}
+.a-card .a-sheet td input::placeholder{color:rgba(160,184,230,.38)}
+.a-sheet tbody tr.idle td input:not(:focus):not(:hover),.a-sheet tbody tr.idle td select:not(:focus):not(:hover){opacity:.7}
+.a-card .a-sheet input[type=number]{-moz-appearance:textfield;appearance:textfield;text-align:end;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.a-card .a-sheet input[type=number]::-webkit-outer-spin-button,.a-card .a-sheet input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;display:none}
+.a-card .a-sheet input.amt.in:not(:placeholder-shown){color:#7DC243}
+.a-card .a-sheet input.amt.out:not(:placeholder-shown){color:#ff8a86}
+.a-card .a-sheet td select{min-width:0;font-weight:800;text-align:center;cursor:pointer}
+.a-sheet .a-amount{gap:4px}
+.a-sheet .a-tag.kind-income{color:#7DC243;background:rgba(125,194,67,.14);border-color:transparent}
+.a-sheet .a-tag.kind-expense{color:#ff8a86;background:rgba(224,64,61,.14);border-color:transparent}
+.a-sheet td .a-tag{border-radius:999px;font-weight:800}
+.a-sheet .a-btn.sun.save{padding:6px 16px;font-size:.85rem;border-radius:999px;box-shadow:none;transition:opacity .15s,transform .15s}
+.a-sheet .a-btn.sun.save:disabled{background:transparent;color:var(--muted);border:1px solid var(--line);opacity:.55;cursor:default;transform:none}
+.a-sheet tr.dirty .a-btn.sun.save{box-shadow:0 4px 12px rgba(253,185,19,.3)}
+.a-card .a-sheet .a-btn.danger{padding:4px 14px;font-size:.8rem;border-radius:999px;min-height:0;line-height:1.5;box-shadow:none}
+@media(max-width:700px){
+  .a-sheet tbody tr{border-radius:16px}
+  .a-card .a-sheet tbody td input,.a-card .a-sheet tbody td select{border-color:var(--line);background:var(--bg2)}
+  .a-sheet .a-btn.sun.save{width:100%}
+}
