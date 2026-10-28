@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import re
 import sys
@@ -98,35 +99,57 @@ def parse_date(text: str, default_year: int | None) -> tuple[date | None, bool]:
         return None, False
 
 
+def read_text(path: Path) -> str:
+    """Excel saves CSV as UTF-8 (with BOM), as "Unicode text" (UTF-16) or in the Windows code page.
+    The last one loses Arabic letters, so it is refused with a clear message instead of guessed."""
+    raw = path.read_bytes()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{path.name}: die Datei ist nicht UTF-8. In Excel: Speichern unter -> CSV UTF-8 (durch Trennzeichen getrennt)."
+        ) from exc
+
+
+def detect_delimiter(text: str) -> str:
+    """Excel in a German or Arabic region writes ";" (or tabs) instead of commas: use whichever the header line has most."""
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    counts = {delimiter: first.count(delimiter) for delimiter in (",", ";", "\t")}
+    best = max(counts, key=lambda d: counts[d])
+    return best if counts[best] else ","
+
+
 def read_csv(path: Path, headers: dict[str, str]) -> tuple[list[dict[str, str]], list[str]]:
     """Returns (rows as {field: text, _line: n, _raw: json}, ignored header names)."""
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        reader = csv.reader(handle)
-        try:
-            header = next(reader)
-        except StopIteration:
-            return [], []
-        fields: list[str | None] = []
-        ignored: list[str] = []
-        table = {**{header_key(k): v for k, v in headers.items()}, **{header_key(k): v for k, v in COMMON_HEADERS.items()}}
-        for name in header:
-            field = table.get(header_key(name))
-            fields.append(field)
-            if field is None and clean(name):
-                ignored.append(clean(name))
-        rows = []
-        for number, cells in enumerate(reader, start=2):
-            if not any(clean(c) for c in cells):
-                continue  # blank line
-            row = {"_line": str(number)}
-            raw = {}
-            for index, cell in enumerate(cells):
-                label = clean(header[index]) if index < len(header) else f"col{index}"
-                raw[label] = clean(cell)
-                if index < len(fields) and fields[index]:
-                    row[fields[index]] = clean(cell)
-            row["_raw"] = json.dumps(raw, ensure_ascii=False)[:300]
-            rows.append(row)
+    text = read_text(path)
+    reader = csv.reader(io.StringIO(text, newline=""), delimiter=detect_delimiter(text))
+    try:
+        header = next(reader)
+    except StopIteration:
+        return [], []
+    fields: list[str | None] = []
+    ignored: list[str] = []
+    table = {**{header_key(k): v for k, v in headers.items()}, **{header_key(k): v for k, v in COMMON_HEADERS.items()}}
+    for name in header:
+        field = table.get(header_key(name))
+        fields.append(field)
+        if field is None and clean(name):
+            ignored.append(clean(name))
+    rows = []
+    for number, cells in enumerate(reader, start=2):
+        if not any(clean(c) for c in cells):
+            continue  # blank line
+        row = {"_line": str(number)}
+        raw = {}
+        for index, cell in enumerate(cells):
+            label = clean(header[index]) if index < len(header) else f"col{index}"
+            raw[label] = clean(cell)
+            if index < len(fields) and fields[index]:
+                row[fields[index]] = clean(cell)
+        row["_raw"] = json.dumps(raw, ensure_ascii=False)[:300]
+        rows.append(row)
     return rows, ignored
 
 
@@ -418,8 +441,13 @@ def main() -> int:
     from app.database import get_engine
 
     with Session(get_engine()) as session:
-        _, text = run_import(session, wanted.get("fees"), wanted.get("salaries"),
-                             currency=args.currency, year=args.year, month=args.month)
+        try:
+            _, text = run_import(session, wanted.get("fees"), wanted.get("salaries"),
+                                 currency=args.currency, year=args.year, month=args.month)
+        except ValueError as error:
+            print("Import abgebrochen: " + str(error))
+            print("Es wurden keine Daten angelegt.")
+            return 2
         print(text)
         if args.dry_run:
             session.rollback()

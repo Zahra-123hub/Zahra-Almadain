@@ -791,6 +791,16 @@ function tabChildren(){
 var MONTHS_AR = ["كانون الثاني","شباط","آذار","نيسان","أيار","حزيران","تموز","آب","أيلول","تشرين الأول","تشرين الثاني","كانون الأول"];
 var CURRENCY_LABEL = {USD:"الدولار الأمريكي (USD)", SYP:"الليرة السورية (SYP)"};
 var STATUS_LABEL = {paid:"مدفوع", partial:"مدفوع جزئياً", open:"غير مدفوع", review:"يحتاج مراجعة"};
+/* On a phone a wide table becomes one card per row: every cell gets its column name as a caption. */
+function labelCells(table){
+  var heads = Array.prototype.map.call(table.querySelectorAll("thead th"), function(th){ return th.textContent; });
+  Array.prototype.forEach.call(table.querySelectorAll("tbody tr"), function(tr){
+    if(tr.classList.contains("a-detail-row")) return;
+    Array.prototype.forEach.call(tr.children, function(td, i){ if(heads[i] && td.colSpan === 1 && !td.hasAttribute("data-label")) td.setAttribute("data-label", heads[i]); });
+  });
+  return table;
+}
+function localToday(){ var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function money(value){ if(value === null || value === undefined || value === "") return "—"; return Number(value).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function esc(value){ return String(value == null ? "" : value).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 
@@ -846,7 +856,7 @@ function tabFees(){
   var addAmount = numberInput("", {required:"required"});
   var addCurrency = select(CURRENCY_OPTIONS, "SYP");
   var payAmount = numberInput("", {placeholder:"اتركه فارغاً إن لم يدفع بعد"});
-  var payDate = h("input", {type:"date", value:new Date().toISOString().slice(0, 10)});
+  var payDate = h("input", {type:"date", value:localToday()});
   var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
   var payNote = h("input", {type:"text", maxlength:"500"});
   var payPayer = h("input", {type:"text", maxlength:"120", placeholder:"من دفع؟", autocomplete:"off", list:"acc-payers"});
@@ -946,7 +956,7 @@ function tabFees(){
     function show(){
       line.innerHTML = "";
       line.append(
-        h("span", {class:"a-tag", dir:"ltr", text:p.paid_on}),
+        h("span", {class:"a-tag", dir:"ltr", text:p.paid_on || "—"}),
         h("strong", {text:money(p.amount) + " " + row.currency}),
         p.receipt_no ? h("span", {class:"a-tag", text:"إيصال " + p.receipt_no}) : "",
         p.payer_name ? h("span", {class:"a-tag sun", text:"دفعها: " + p.payer_name}) : h("span", {class:"hint", text:"الدافع غير مذكور"}),
@@ -963,7 +973,8 @@ function tabFees(){
   }
   function paymentForm(row, existing, cancel){
     var amount = numberInput(existing ? existing.amount : "", {required:"required", placeholder:existing ? "" : "المتبقي " + money(row.remaining)});
-    var date = h("input", {type:"date", required:"required", value:existing ? existing.paid_on : new Date().toISOString().slice(0, 10)});
+    var knownDate = !existing || !!existing.paid_on;  // an imported payment without a date may stay without one
+    var date = h("input", Object.assign({type:"date", value:existing ? (existing.paid_on || "") : localToday()}, knownDate ? {required:"required"} : {}));
     var receipt = h("input", {type:"text", maxlength:"40", value:existing ? existing.receipt_no : "", dir:"ltr"});
     var note = h("input", {type:"text", maxlength:"500", value:existing ? existing.note : ""});
     var payer = h("input", {type:"text", maxlength:"120", value:existing ? existing.payer_name : "", placeholder:"مثال: الأب أحمد", autocomplete:"off", list:"acc-payers"});
@@ -976,7 +987,7 @@ function tabFees(){
     ]);
     form.addEventListener("submit", async function(event){
       event.preventDefault();
-      var body = JSON.stringify({amount:amount.value, paid_on:date.value, receipt_no:receipt.value.trim() || null, note:note.value.trim(), payer_name:payer.value.trim()});
+      var body = JSON.stringify({amount:amount.value, paid_on:date.value || null, receipt_no:receipt.value.trim() || null, note:note.value.trim(), payer_name:payer.value.trim()});
       try{
         await request(existing ? "/api/admin/fees/payments/" + encodeURIComponent(existing.id) : "/api/admin/fees/charges/" + encodeURIComponent(row.id) + "/payments",
           {method:existing ? "PATCH" : "POST", body:body});
@@ -993,8 +1004,9 @@ function tabFees(){
     var amount = numberInput(r.amount, {placeholder:"الرسم", "aria-label":"الرسم المطلوب"});
     var save = h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
       try{
-        await request("/api/admin/fees/children/" + encodeURIComponent(r.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value.trim(), display_name:name.value.trim()})});
+        if(name.value.trim().length < 2){ setMsg(msg, "اكتب اسم الطفل (حرفان على الأقل).", "err"); return; }
         if(amount.value !== "") await request("/api/admin/fees/charges/" + encodeURIComponent(r.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})});
+        await request("/api/admin/fees/children/" + encodeURIComponent(r.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value.trim(), display_name:name.value.trim()})});
         setMsg(msg, "تم حفظ التصحيح. اضغط «تمت المراجعة» بعد التأكد من السطر.", "ok"); await load();
       }catch(error){ setMsg(msg, errText(error), "err"); }
     }});
@@ -1026,7 +1038,7 @@ function tabFees(){
       cell(money(totals.remaining), "num"), h("td", {colspan:"5"})])]);
     return h("div", {class:"a-card"}, [
       h("h3", {text:"الرسوم بـ" + CURRENCY_LABEL[code]}),
-      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table compact"}, [thead, tbody, tfoot])])
+      h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [thead, tbody, tfoot]))])
     ]);
   }
   function render(){
@@ -1075,11 +1087,11 @@ function tabFees(){
       var rows = data.rows.filter(function(r){ return r.currency === code; });
       var t = data.totals[code] || {amount:"0", paid:"0", remaining:"0"};
       var body = rows.map(function(r, i){
-        return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.child_name) + "</td><td>" + esc(r.class_name || "—") + "</td><td>" + money(r.amount) +
-          "</td><td>" + money(r.paid) + "</td><td class='" + (Number(r.remaining) > 0 ? "due" : "") + "'>" + money(r.remaining) + "</td><td>" + esc(r.last_paid_on || "—") +
-          "</td><td>" + esc(r.receipts.join("، ") || "—") + "</td><td class='l'>" + esc(r.payers.join("، ") || "—") + "</td><td class='l'>" + esc(r.notes.join("؛ ") || "—") + "</td></tr>";
+        return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.child_name) + "</td><td>" + esc(r.class_name || "—") + "</td><td class='n'>" + money(r.amount) +
+          "</td><td class='n'>" + money(r.paid) + "</td><td class='n " + (Number(r.remaining) > 0 ? "due" : "") + "'>" + money(r.remaining) + "</td><td class='n'>" + esc(r.last_paid_on || "—") +
+          "</td><td class='n'>" + esc(r.receipts.join("، ") || "—") + "</td><td class='l'>" + esc(r.payers.join("، ") || "—") + "</td><td class='l'>" + esc(r.notes.join("؛ ") || "—") + "</td></tr>";
       }).join("");
-      return {code:code, cols:[4, 17, 7, 11, 11, 11, 9, 9, 13, 8], html:"<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>الدافع</th><th>ملاحظات</th></tr></thead><tbody>" +
+      return {code:code, cols:[5, 14, 11, 11, 11, 11, 9, 9, 11, 8], html:"<table><thead><tr><th>الرقم</th><th>اسم الطفل</th><th>الصف</th><th>الرسم المطلوب</th><th>المدفوع</th><th>المتبقي</th><th>تاريخ الدفع</th><th>رقم الإيصال</th><th>الدافع</th><th>ملاحظات</th></tr></thead><tbody>" +
         (body || "<tr><td colspan='10'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.amount) +
         "</td><td>" + money(t.paid) + "</td><td>" + money(t.remaining) + "</td><td colspan='4'></td></tr></tfoot></table>"};
     });

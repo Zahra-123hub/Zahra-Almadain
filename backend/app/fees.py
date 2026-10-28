@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_session
 from app.models import Child, FeeAuditLog, FeeCharge, FeePayment
@@ -91,7 +91,7 @@ def totals_by_currency(rows: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
 
 class PaymentIn(BaseModel):
     amount: Decimal = Field(max_digits=14, decimal_places=2)
-    paid_on: date
+    paid_on: date | None = None  # only an imported payment whose date is unknown may stay without one
     receipt_no: str | None = Field(default=None, max_length=40)
     note: str = Field(default="", max_length=500)
     payer_name: str = Field(default="", max_length=120)  # who paid (e.g. the parent)
@@ -239,7 +239,11 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
-        query = select(FeeCharge, Child).join(Child, Child.id == FeeCharge.child_id)
+        query = (
+            select(FeeCharge, Child)
+            .join(Child, Child.id == FeeCharge.child_id)
+            .options(selectinload(FeeCharge.payments))
+        )
         if year:
             query = query.where(FeeCharge.year == year)
         if month:
@@ -292,7 +296,19 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(404, "الطفل غير موجود.")
         child.class_name = payload.class_name.strip()
         if payload.display_name is not None:
-            child.display_name = payload.display_name.strip()
+            name = payload.display_name.strip()
+            if len(name) < 2:
+                raise HTTPException(422, "اكتب اسم الطفل (حرفان على الأقل).")
+            clash = session.scalar(
+                select(Child.id).where(
+                    func.lower(Child.display_name) == name.lower(),
+                    Child.is_active.is_(True),
+                    Child.id != child.id,
+                )
+            )
+            if clash is not None:
+                raise HTTPException(409, "يوجد طفل بهذا الاسم.")
+            child.display_name = name
         log(session, actor, "child.update", child.id, f"الصف: {child.class_name}")
         session.commit()
         return {"id": str(child.id), "class_name": child.class_name}
@@ -344,6 +360,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         )
         first = payload.payment
         if first is not None and money(first.amount) > 0:
+            if first.paid_on is None:
+                raise HTTPException(422, "تاريخ الدفع مطلوب.")
             amount = money(first.amount)
             receipt = (first.receipt_no or "").strip() or None
             check_receipt(session, receipt, None)
@@ -460,6 +478,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         amount = money(payload.amount)
         if amount <= 0:
             raise HTTPException(422, "مبلغ الدفعة يجب أن يكون أكبر من صفر.")
+        if payload.paid_on is None:
+            raise HTTPException(422, "تاريخ الدفع مطلوب.")
         receipt = (payload.receipt_no or "").strip() or None
         check_receipt(session, receipt, None)
         check_not_over(charge, amount)
@@ -506,6 +526,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         amount = money(payload.amount)
         if amount <= 0:
             raise HTTPException(422, "مبلغ الدفعة يجب أن يكون أكبر من صفر.")
+        if payload.paid_on is None and payment.paid_on is not None:
+            raise HTTPException(422, "تاريخ الدفع مطلوب.")  # a known date cannot be removed again
         receipt = (payload.receipt_no or "").strip() or None
         check_receipt(session, receipt, payment.id)
         check_not_over(charge, amount, ignore=payment)

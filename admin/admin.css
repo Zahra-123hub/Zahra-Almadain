@@ -235,3 +235,45 @@ h2,h3{font-weight:800}
 /* ===== Final logo style: round, white, light ring ===== */
 .a-logo{width:52px;height:52px;padding:5px;border-radius:50%;background:#fff;object-fit:contain;box-shadow:0 0 0 3px rgba(255,255,255,.28);flex:none}
 @media(max-width:620px){.a-logo{width:42px;height:42px;padding:4px}}
+
+/* ===== Phone: long buttons wrap, entry tables become cards, compact top bar ===== */
+.a-row .a-btn{white-space:normal;max-width:100%;text-align:center}
+@media(max-width:700px){
+  .a-sheet,.a-sheet tbody,.a-sheet tfoot,.a-sheet tr{display:block;width:100%;min-width:0}
+  .a-sheet colgroup,.a-sheet thead{display:none}
+  .a-sheet tbody tr{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--bg2)}
+  .a-sheet tbody td{display:grid;grid-template-columns:34% 1fr;gap:8px;align-items:center;padding:5px 0;border:0;width:auto}
+  .a-sheet tbody td::before{content:attr(data-label);font-weight:700;font-size:.85rem;color:var(--head)}
+  .a-sheet tbody td:first-child{display:block;font-size:1.05rem;padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:4px}
+  .a-sheet tbody td:first-child::before{content:none}
+  .a-sheet tbody td:last-child{display:block}
+  .a-sheet tbody td:last-child::before{content:none}
+  .a-sheet tfoot tr{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;padding:10px 12px;margin:6px 0;border-radius:12px}
+  .a-sheet tfoot td{display:block;width:auto;padding:0;border:0}
+  .a-sheet .a-amount{width:100%}
+  .a-bar .a-top{gap:6px 8px}
+  .a-bar .a-hello{margin:0;padding:3px 10px;font-size:.85rem}
+  .a-bar .a-btn{padding:6px 12px;font-size:.85rem;min-height:36px}
+  .a-bar .a-lang button{min-width:58px;height:28px}
+}
+
+/* Phone: the read / edit tables (fees, payroll) as cards as well */
+@media(max-width:700px){
+  .a-table.compact,.a-table.compact tbody,.a-table.compact tfoot,.a-table.compact tr{display:block;width:100%;min-width:0}
+  .a-table.compact thead{display:none}
+  .a-table.compact tbody tr{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:14px}
+  .a-table.compact tbody td{display:grid;grid-template-columns:36% 1fr;gap:8px;align-items:center;padding:5px 0;border:0;text-align:start;direction:rtl}
+  .a-table.compact tbody td::before{content:attr(data-label);font-weight:700;font-size:.85rem;color:var(--head)}
+  .a-table.compact tbody td:not([data-label]){display:block}
+  .a-table.compact tbody td:not([data-label])::before{content:none}
+  .a-table.compact tbody td.name{display:block;font-size:1.05rem;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+  .a-table.compact tbody td.name::before{content:none}
+  .a-table.compact tbody td:last-child{display:block}
+  .a-table.compact tbody td:last-child::before{content:none}
+  .a-table.compact tbody td:last-child .a-btn{width:100%}
+  .a-table.compact .a-detail-row,.a-table.compact .a-detail-row td{display:block;border:0;padding:0;margin:0}
+  .a-table.compact tfoot tr{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;padding:10px 12px;margin:6px 0;border-radius:12px}
+  .a-table.compact tfoot td{display:block;width:auto;padding:0;border:0}
+  .a-table.compact tfoot td:empty{display:none}
+  .a-table-wrap{overflow-x:visible;border:0}
+}
