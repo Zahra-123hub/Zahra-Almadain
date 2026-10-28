@@ -234,6 +234,7 @@ class EntryIn(BaseModel):
     expense: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     manual: bool = True
     person: str = Field(default="", max_length=120)  # who spent / received the money
+    replaces: uuid.UUID | None = None  # the row in the other currency this one takes over (the row changed its currency)
 
 
 # --- serialisation ------------------------------------------------------------
@@ -530,10 +531,12 @@ def build_sheet(
     return Ledger.load(session, currency).sheet(period_type, year, month, week_start)
 
 
-def cash_report(session: Session, currency: str, today: date, until: tuple[int, int] | None = None) -> dict[str, Any]:
+def cash_report(
+    session: Session, currency: str, today: date, until: tuple[int, int] | None = None, ledger: "Ledger | None" = None
+) -> dict[str, Any]:
     """How much money the kindergarten has: opening balance + all income - all expense, month by month,
     up to this month (or up to `until` when a later month is asked for)."""
-    ledger = Ledger.load(session, currency)
+    ledger = ledger or Ledger.load(session, currency)
     opening = session.scalar(select(CashOpening).where(CashOpening.currency == currency))
     if opening is not None:
         start, amount = (opening.start_year, opening.start_month), money(opening.amount)
@@ -555,6 +558,98 @@ def cash_report(session: Session, currency: str, today: date, until: tuple[int, 
         "expense": str(money(expense)),
         "balance": to_now[-1]["closing"] if to_now else str(amount),
         "months": months,
+    }
+
+
+def sheet_rate(session: Session, end: date) -> tuple[Decimal, date, str, bool] | None:
+    """The rate for a sheet: today's (fetched automatically once a day) for the current period, the stored one of
+    that day for an old period. None when there is no rate at all."""
+    today = date.today()
+    if end >= today:
+        return todays_rate(session, today)
+    book = RateBook.load(session)
+    found = book.on(end)
+    if found is None:
+        return todays_rate(session, today)
+    row = next(r for r in book.rows if r.effective_date == found[1])
+    return found[0], found[1], "auto" if row.created_by == AUTO_RATE else "manual", False
+
+
+def unified_sheet(session: Session, period_type: str, year: int, month: int, week_start: date | None) -> dict[str, Any]:
+    """One sheet with both currencies: every item has one line per currency that has something in it (a blank line in
+    pounds when it has nothing), then the totals per currency, the same totals converted into the other currency,
+    and the cash balance at the start and the end of the period."""
+    start, end = sheet_range(period_type, year, month, week_start)
+    ledgers = {code: Ledger.load(session, code) for code in CURRENCIES}
+    sheets = {code: ledgers[code].sheet(period_type, year, month, week_start) for code in CURRENCIES}
+    standard = len(STANDARD_ITEMS)
+
+    def filled(row: dict[str, Any]) -> bool:
+        return row["id"] is not None or Decimal(row["income"]) != 0 or Decimal(row["expense"]) != 0
+
+    items: list[dict[str, Any]] = []
+    for index in range(standard):
+        lines = [{**sheets[code]["rows"][index], "currency": code} for code in CURRENCIES if filled(sheets[code]["rows"][index])]
+        first = sheets["SYP"]["rows"][index]
+        if not lines or (first["auto"] and not any(line["currency"] == "SYP" for line in lines)):
+            lines.insert(0, {**first, "currency": "SYP"})
+        items.append({"key": first["key"], "label": first["label"], "auto": first["auto"], "choice": first["choice"], "custom": False, "lines": lines})
+    rolled: dict[str, dict[str, Any]] = {}
+    for code in CURRENCIES:
+        for row in sheets[code]["rows"][standard:]:
+            line = {**row, "currency": code}
+            if row["key"] == "rolled":
+                group = rolled.setdefault(row["label"].strip().lower(), {"key": "rolled", "label": row["label"], "auto": False, "choice": False, "custom": False, "lines": []})
+                group["lines"].append(line)
+            else:
+                items.append({"key": "custom", "label": row["label"], "auto": False, "choice": False, "custom": True, "lines": [line]})
+    items.extend(rolled.values())
+    totals = {code: sheets[code]["totals"] for code in CURRENCIES}
+
+    # cash balance at the start and the end of the period (only when the opening capital has been entered)
+    today = date.today()
+    cashes = {code: cash_report(session, code, today, until=(end.year, end.month), ledger=ledgers[code]) for code in CURRENCIES}
+    balance: dict[str, Any] | None = None
+    if any(cashes[code]["configured"] for code in CURRENCIES):
+        balance = {}
+        for code in CURRENCIES:
+            months = {(m["year"], m["month"]): m for m in cashes[code]["months"]}
+            current = months.get((start.year, start.month))
+            if current is None:
+                balance[code] = None
+            elif period_type == "month":
+                balance[code] = {"opening": current["opening"], "closing": current["closing"]}
+            else:  # a day or a week: the month's opening balance plus what the earlier days of that month brought
+                opening = Decimal(current["opening"])
+                day = date(start.year, start.month, 1)
+                while day < start:
+                    opening += Decimal(ledgers[code].sheet("day", day.year, day.month, day)["totals"]["net"])
+                    day += timedelta(days=1)
+                balance[code] = {"opening": str(money(opening)), "closing": str(money(opening + Decimal(totals[code]["net"])))}
+
+    # the same figures with both currencies added up in each currency (only when dollars are involved)
+    dollars_involved = (
+        any(line["currency"] == "USD" and (filled(line)) for item in items for line in item["lines"])
+        or (balance is not None and balance.get("USD") is not None and (Decimal(balance["USD"]["opening"]) != 0 or Decimal(balance["USD"]["closing"]) != 0))
+    )
+    converted: dict[str, Any] | None = None
+    if dollars_involved:
+        found = sheet_rate(session, end)
+        if found is not None:
+            rate, rate_date, source, stale = found
+            converted = {"rate": rate_text(rate), "rate_date": rate_date.isoformat(), "source": source, "stale": stale}
+            for target in CURRENCIES:
+                income = sum((convert(Decimal(totals[c]["income"]), c, target, rate) for c in CURRENCIES), ZERO)
+                expense = sum((convert(Decimal(totals[c]["expense"]), c, target, rate) for c in CURRENCIES), ZERO)
+                entry: dict[str, Any] = {"income": str(income), "expense": str(expense), "net": str(income - expense)}
+                if balance is not None and all(balance.get(c) for c in CURRENCIES):
+                    for edge in ("opening", "closing"):
+                        entry[edge] = str(sum((convert(Decimal(balance[c][edge]), c, target, rate) for c in CURRENCIES), ZERO))
+                converted[target] = entry
+    return {
+        "period_type": period_type, "year": year, "month": month, "start": start.isoformat(), "end": end.isoformat(),
+        "items": items, "totals": totals, "balance": balance, "converted": converted,
+        "capital_set": any(cashes[code]["configured"] for code in CURRENCIES),
     }
 
 
@@ -990,7 +1085,17 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         """The cash balance per currency, with the month-by-month trail. USD and SYP are never mixed."""
         response.headers["Cache-Control"] = "no-store"
-        return {code: cash_report(session, code, date.today()) for code in CURRENCIES}
+        result: dict[str, Any] = {code: cash_report(session, code, date.today()) for code in CURRENCIES}
+        # what the kindergarten has in total in each currency (only when dollars are involved)
+        result["total"] = None
+        if any(Decimal(result["USD"][key]) != 0 for key in ("opening", "income", "expense", "balance")):
+            found = todays_rate(session, date.today())
+            if found is not None:
+                rate, rate_date, source, stale = found
+                result["total"] = {"rate": rate_text(rate), "rate_date": rate_date.isoformat(), "source": source, "stale": stale}
+                for target in CURRENCIES:
+                    result["total"][target] = {"balance": str(sum((convert(Decimal(result[c]["balance"]), c, target, rate) for c in CURRENCIES), ZERO))}
+        return result
 
     @router.put("/cash")
     def set_cash_opening(
@@ -1009,6 +1114,22 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         log(session, actor, "cash.opening", payload.currency, f"{payload.start_month}/{payload.start_year}")
         session.commit()
         return cash_report(session, payload.currency, date.today())
+
+    @router.get("/sheet-all")
+    def sheet_all(
+        response: Response,
+        period_type: str,
+        year: int,
+        month: int = 0,
+        week_start: date | None = None,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """The sheet with pounds and dollars together (each row has its own currency)."""
+        response.headers["Cache-Control"] = "no-store"
+        if period_type not in ("month", "week", "day"):
+            raise HTTPException(422, "نوع الجدول غير صالح.")
+        return unified_sheet(session, period_type, year, month, week_start)
 
     @router.put("/entries")
     def save_entry(
@@ -1038,6 +1159,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                 ).order_by(AccountingEntry.created_at.desc())
             )
         created = entry is None
+        if payload.replaces is not None and not created and entry.id != payload.replaces:
+            raise HTTPException(409, "يوجد سطر بالعملة المختارة لهذا البند؛ عدّله هناك بدلاً من نقل هذا السطر.")
         if entry is None:
             entry = AccountingEntry(
                 period_type=payload.period_type, year=year,
@@ -1063,6 +1186,12 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             if same:
                 entry.manual = False
         session.flush()
+        if payload.replaces is not None:  # the row moved to another currency: the old one goes away in the same save
+            old = session.get(AccountingEntry, payload.replaces)
+            if (old is not None and old.id != entry.id and old.period_type == payload.period_type
+                    and old.currency != payload.currency and old.item_key == payload.item_key
+                    and ((old.month == payload.month) if payload.period_type == "month" else (old.week_start == start))):
+                session.delete(old)
         if payload.item_key != "custom":  # two people saving the same row at once must not leave two rows
             for extra in session.scalars(
                 select(AccountingEntry).where(

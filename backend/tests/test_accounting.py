@@ -564,6 +564,93 @@ class AccountingApiTests(unittest.TestCase):
         finally:
             self.feed_mock = self.feed.start()
 
+    # ---- one sheet with pounds and dollars, capital and balance in every sheet ----
+    def _all(self, **query):
+        url = self.A + "/sheet-all?" + "&".join(f"{k}={v}" for k, v in query.items())
+        return self.client.get(url, headers=self.acc).json()
+
+    def _item(self, sheet, key, label=None):
+        return next(i for i in sheet["items"] if i["key"] == key and (label is None or i["label"] == label))
+
+    def test_a_sheet_has_a_line_per_currency_and_converts_only_when_dollars_are_involved(self):
+        day = {"period_type": "day", "year": 2026, "week_start": "2026-10-06"}
+        self._entry(**day, item_key="operating", expense="150000")
+        pounds_only = self._all(period_type="day", year=2026, week_start="2026-10-06")
+        self.assertEqual([l["currency"] for l in self._item(pounds_only, "operating")["lines"]], ["SYP"])
+        self.assertIsNone(pounds_only["converted"])
+        self.assertEqual(self.feed_mock.call_count, 0)  # nothing to convert: the internet is not asked
+        self.feed_mock.return_value = Decimal("12166")
+        self._entry(**day, item_key="operating", expense="10", currency="USD")
+        self._entry(**day, item_key="custom", item_label="Repair", expense="5", currency="USD")
+        sheet = self._all(period_type="day", year=2026, week_start="2026-10-06")
+        self.assertEqual([(l["currency"], l["expense"]) for l in self._item(sheet, "operating")["lines"]], [("SYP", "150000.00"), ("USD", "10.00")])
+        self.assertEqual([l["currency"] for l in self._item(sheet, "registration")["lines"]], ["SYP"])  # the automatic row is always there
+        self.assertEqual((sheet["totals"]["SYP"]["expense"], sheet["totals"]["USD"]["expense"]), ("150000.00", "15.00"))
+        self.assertEqual(sheet["converted"]["rate"], "12166")
+        self.assertEqual(sheet["converted"]["SYP"]["expense"], "332490.00")  # 150000 + 15 x 12166
+        self.assertEqual(sheet["converted"]["USD"]["expense"], "27.33")  # 150000 / 12166 = 12.33 + 15
+        self.assertEqual(sheet["converted"]["SYP"]["net"], "-332490.00")
+        repair = self._item(sheet, "custom", "Repair")
+        self.assertEqual((repair["custom"], repair["lines"][0]["currency"]), (True, "USD"))
+
+    def test_a_row_moves_to_the_other_currency_with_one_save(self):
+        day = {"period_type": "day", "year": 2026, "week_start": "2026-10-06"}
+        saved = self._entry(**day, item_key="operating", expense="12166").json()
+        old = self._item(self._all(period_type="day", year=2026, week_start="2026-10-06"), "operating")["lines"][0]
+        moved = self._entry(**day, item_key="operating", expense="1", currency="USD", replaces=old["id"])
+        self.assertEqual(moved.status_code, 200)
+        sheet = self._all(period_type="day", year=2026, week_start="2026-10-06")
+        self.assertEqual([(l["currency"], l["expense"]) for l in self._item(sheet, "operating")["lines"]], [("USD", "1.00")])
+        self.assertEqual(sheet["totals"]["SYP"]["expense"], "0.00")  # it left the pound book
+        # a custom row moves the same way (a new row in the new currency, the old one removed)
+        custom = self._entry(**day, item_key="custom", item_label="Repair", expense="500").json()
+        row = self._item(self._all(period_type="day", year=2026, week_start="2026-10-06"), "custom", "Repair")["lines"][0]
+        self._entry(**day, item_key="custom", item_label="Repair", expense="0.04", currency="USD", replaces=row["id"])
+        lines = self._item(self._all(period_type="day", year=2026, week_start="2026-10-06"), "custom", "Repair")["lines"]
+        self.assertEqual([(l["currency"], l["expense"]) for l in lines], [("USD", "0.04")])
+        # when the other currency already has that item, the row is not moved over it
+        self._entry(**day, item_key="buffet", income="100")
+        self._entry(**day, item_key="buffet", income="1", currency="USD")
+        pound_line = next(l for l in self._item(self._all(period_type="day", year=2026, week_start="2026-10-06"), "buffet")["lines"] if l["currency"] == "SYP")
+        clash = self._entry(**day, item_key="buffet", income="1", currency="USD", replaces=pound_line["id"])
+        self.assertEqual(clash.status_code, 409)
+        self.assertEqual(len(self._item(self._all(period_type="day", year=2026, week_start="2026-10-06"), "buffet")["lines"]), 2)
+
+    def test_the_capital_runs_through_day_week_and_month(self):
+        self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "SYP", "opening": "1000", "start_year": 2026, "start_month": 10})
+        self._entry(period_type="day", year=2026, week_start="2026-10-01", item_key="buffet", income="200")
+        self._entry(period_type="day", year=2026, week_start="2026-10-02", item_key="operating", expense="50")
+        self._entry(period_type="day", year=2026, week_start="2026-10-03", item_key="buffet", income="10")
+        third = self._all(period_type="day", year=2026, week_start="2026-10-03")["balance"]["SYP"]
+        self.assertEqual((third["opening"], third["closing"]), ("1150.00", "1160.00"))  # 1000 + 200 - 50, then + 10
+        first = self._all(period_type="day", year=2026, week_start="2026-10-01")["balance"]["SYP"]
+        self.assertEqual((first["opening"], first["closing"]), ("1000.00", "1200.00"))
+        month = self._all(period_type="month", year=2026, month=10)
+        self.assertEqual((month["balance"]["SYP"]["opening"], month["balance"]["SYP"]["closing"]), ("1000.00", "1160.00"))
+        self.assertTrue(month["capital_set"])
+        # a week inside the month starts from the month's opening plus the days before it
+        self._entry(period_type="day", year=2026, week_start="2026-10-06", item_key="operating", expense="100")
+        week = self._all(period_type="week", year=2026, week_start="2026-10-06")["balance"]["SYP"]
+        self.assertEqual((week["opening"], week["closing"]), ("1160.00", "1060.00"))
+        # before the capital starts there is no balance; the dollar book has its own (empty) balance
+        self.assertIsNone(self._all(period_type="month", year=2026, month=9)["balance"]["SYP"])
+        self.assertEqual(month["balance"]["USD"]["closing"], "0.00")
+
+    def test_without_capital_no_balance_is_claimed(self):
+        sheet = self._all(period_type="day", year=2026, week_start="2026-10-06")
+        self.assertEqual((sheet["balance"], sheet["capital_set"]), (None, False))
+
+    def test_total_of_the_kindergarten_in_both_currencies(self):
+        self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "SYP", "opening": "12166000", "start_year": 2026, "start_month": 10})
+        self.assertIsNone(self._cash()["total"])  # only pounds: nothing to add up
+        self.assertEqual(self.feed_mock.call_count, 0)
+        self.feed_mock.return_value = Decimal("12166")
+        self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "USD", "opening": "100", "start_year": 2026, "start_month": 10})
+        total = self._cash()["total"]
+        self.assertEqual((total["SYP"]["balance"], total["USD"]["balance"], total["rate"]), ("13382600.00", "1100.00", "12166"))
+        sheet = self._all(period_type="month", year=2026, month=10)
+        self.assertEqual((sheet["converted"]["SYP"]["opening"], sheet["converted"]["USD"]["opening"]), ("13382600.00", "1100.00"))
+
     def test_only_accountant_and_admin_may_set_a_rate_or_convert(self):
         for headers in (self.teacher, self.parent):
             self.assertEqual(self._rate("2026-10-01", "13000", headers).status_code, 403)
