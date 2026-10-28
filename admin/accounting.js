@@ -565,7 +565,7 @@ function tabSheet(type){
   function sheetCard(){
     var tbody = h("tbody", {});
     data.items.forEach(function(item){ item.lines.forEach(function(line, index){ tbody.appendChild(lineRow(item, line, index === 0)); }); });
-    var widths = isWeek ? [17, 12, 13, 12, 12, 12, 10, 12] : [20, 15, 16, 14, 15, 10, 10];
+    var widths = isWeek ? [14, 11, 12, 11, 16, 16, 9, 11] : [18, 13, 14, 12, 19, 12, 12];
     return h("div", {class:"a-card"}, [h("h3", {text:(isDay ? "اليوم" : isWeek ? "الأسبوع" : "الشهر") + " — ليرة ودولار معاً"}),
       h("p", {class:"hint", text:"لكل سطر عملته. غيّر العملة في السطر فيتحوّل المبلغ المكتوب تلقائياً بسعر اليوم، ثم اضغط «حفظ» لينتقل السطر إلى دفتر العملة الأخرى."}),
       h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("colgroup", {}, widths.map(function(w){ return h("col", {style:"width:" + w + "%"}); })),

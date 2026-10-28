@@ -320,3 +320,5 @@ h2,h3{font-weight:800}
   .a-card .a-sheet tbody td input,.a-card .a-sheet tbody td select{border-color:var(--line);background:var(--bg2)}
   .a-sheet .a-btn.sun.save{width:100%}
 }
+
+.a-card .a-sheet input[type=number]{font-size:.92rem;padding-inline:6px}
