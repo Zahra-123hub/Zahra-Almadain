@@ -9,7 +9,8 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from decimal import Decimal
+import calendar
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -19,12 +20,74 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_session
-from app.models import Child, FeeAuditLog, FeeCharge, FeePayment
+from app.models import Child, ExchangeRate, FeeAuditLog, FeeCharge, FeePayment
 
 CURRENCIES = ("SYP", "USD")  # the Syrian pound is the main currency and always comes first
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
 Money = Field(ge=0, max_digits=14, decimal_places=2)
+
+
+def exact(value: Decimal | int | str) -> Decimal:
+    """Rounds to cents the way an accountant does: half a cent always rounds up (never to the 'even' cent)."""
+    return Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def convert(amount: Decimal | int | str, source: str, target: str, rate: Decimal) -> Decimal:
+    """Changes an amount between Syrian pounds and dollars with exact decimal arithmetic.
+    `rate` = pounds per one dollar. Same currency: the amount is only rounded."""
+    amount = Decimal(amount)
+    if source == target:
+        return exact(amount)
+    if source == "USD":  # dollars -> pounds
+        return exact(amount * rate)
+    return exact(amount / rate)  # pounds -> dollars
+
+
+def rate_text(rate: Decimal) -> str:
+    """12500.000000 -> 12500, 12500.500000 -> 12500.5 (never scientific notation)."""
+    text = format(Decimal(rate), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def month_end(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+class RateBook:
+    """All exchange rates. The rate for a day is the latest one set on or before that day; a day before the very
+    first rate uses the first rate. No rate set at all: nothing can be converted (on() returns None)."""
+
+    def __init__(self, rows: list[ExchangeRate]):
+        self.rows = sorted(rows, key=lambda row: row.effective_date)
+
+    @classmethod
+    def load(cls, session: Session) -> "RateBook":
+        return cls(list(session.scalars(select(ExchangeRate))))
+
+    def on(self, day: date) -> tuple[Decimal, date] | None:
+        if not self.rows:
+            return None
+        chosen = self.rows[0]
+        for row in self.rows:
+            if row.effective_date <= day:
+                chosen = row
+        return Decimal(chosen.syp_per_usd), chosen.effective_date
+
+
+def converted_totals(book: RateBook, day: date, per_currency: dict[str, dict[str, str]], keys: tuple[str, ...]) -> dict[str, Any] | None:
+    """Totals of both currencies expressed in pounds and in dollars (each currency converted once, then added)."""
+    found = book.on(day)
+    if found is None:
+        return None
+    rate, rate_date = found
+    result: dict[str, Any] = {"rate": rate_text(rate), "rate_date": rate_date.isoformat()}
+    for target in CURRENCIES:
+        result[target] = {
+            key: str(sum((convert(Decimal(per_currency[code][key]), code, target, rate) for code in CURRENCIES), ZERO))
+            for key in keys
+        }
+    return result
 
 
 @dataclass
@@ -263,10 +326,13 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         classes = sorted(
             {value for (value,) in session.execute(select(Child.class_name).distinct()) if value}
         )
+        totals = totals_by_currency(rows)
+        day = month_end(year, month) if year and month else date.today()
         return {
             "rows": rows,
-            "totals": totals_by_currency(rows),
+            "totals": totals,
             "classes": classes,
+            "converted": converted_totals(RateBook.load(session), day, totals, ("amount", "paid", "remaining")),
         }
 
     @router.get("/children")

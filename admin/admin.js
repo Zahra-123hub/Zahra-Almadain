@@ -1045,6 +1045,7 @@ function tabFees(){
     tables.innerHTML = "";
     var shown = filters.currency ? [filters.currency] : ["SYP", "USD"];
     shown.forEach(function(code){ tables.appendChild(currencyTable(code)); });
+    if(!filters.currency) tables.appendChild(accConvertedCard(data.converted, [["amount", "الرسم المطلوب"], ["paid", "المدفوع"], ["remaining", "المتبقي"]]));
   }
 
   // ----- data loading --------------------------------------------------

@@ -379,6 +379,18 @@ class AccountingEntry(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class ExchangeRate(Base):
+    """How many Syrian pounds one US dollar was worth from a given day on (set by the accountant)."""
+
+    __tablename__ = "exchange_rates"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    effective_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    syp_per_usd: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class CashOpening(Base):
     """The money the kindergarten had when the books start (one row per currency).
     From that month on, the cash balance = opening + every income - every expense."""
