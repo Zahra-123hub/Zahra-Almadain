@@ -9,7 +9,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-import calendar
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable
 
@@ -50,10 +49,6 @@ def rate_text(rate: Decimal) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
 class RateBook:
     """All exchange rates. The rate for a day is the latest one set on or before that day; a day before the very
     first rate uses the first rate. No rate set at all: nothing can be converted (on() returns None)."""
@@ -73,21 +68,6 @@ class RateBook:
             if row.effective_date <= day:
                 chosen = row
         return Decimal(chosen.syp_per_usd), chosen.effective_date
-
-
-def converted_totals(book: RateBook, day: date, per_currency: dict[str, dict[str, str]], keys: tuple[str, ...]) -> dict[str, Any] | None:
-    """Totals of both currencies expressed in pounds and in dollars (each currency converted once, then added)."""
-    found = book.on(day)
-    if found is None:
-        return None
-    rate, rate_date = found
-    result: dict[str, Any] = {"rate": rate_text(rate), "rate_date": rate_date.isoformat()}
-    for target in CURRENCIES:
-        result[target] = {
-            key: str(sum((convert(Decimal(per_currency[code][key]), code, target, rate) for code in CURRENCIES), ZERO))
-            for key in keys
-        }
-    return result
 
 
 @dataclass
@@ -326,13 +306,10 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         classes = sorted(
             {value for (value,) in session.execute(select(Child.class_name).distinct()) if value}
         )
-        totals = totals_by_currency(rows)
-        day = month_end(year, month) if year and month else date.today()
         return {
             "rows": rows,
-            "totals": totals,
+            "totals": totals_by_currency(rows),
             "classes": classes,
-            "converted": converted_totals(RateBook.load(session), day, totals, ("amount", "paid", "remaining")),
         }
 
     @router.get("/children")

@@ -2,22 +2,7 @@
    Loaded before admin.js; uses its helpers (h, request, setMsg, errText, twoStep, money, esc, MONTHS_AR). */
 
 var ACC_CURRENCIES = ["SYP", "USD"];  // the Syrian pound is the main currency
-var ACC_CURRENCY_NAME = {USD:"الدولار الأمريكي (USD)", SYP:"الليرة السورية (SYP)", ALL_SYP:"الكل محوّلاً إلى الليرة السورية (SYP)", ALL_USD:"الكل محوّلاً إلى الدولار الأمريكي (USD)"};
-var ACC_CONVERTED_OPTIONS = [["ALL_SYP", "الكل محوّلاً إلى الليرة (SYP)"], ["ALL_USD", "الكل محوّلاً إلى الدولار (USD)"]];
-/* Exact money sums: amounts from the server are texts with two decimals; they are added as whole cents (no floating point). */
-function accCents(text){
-  var s = String(text == null || text === "" ? "0" : text), neg = s.charAt(0) === "-";
-  var parts = s.replace(/^[-+]/, "").split(".");
-  var cents = BigInt(parts[0] || "0") * 100n + BigInt(((parts[1] || "") + "00").slice(0, 2));
-  return neg ? -cents : cents;
-}
-function accMoneyText(cents){
-  var neg = cents < 0n; if(neg) cents = -cents;
-  var s = cents.toString().padStart(3, "0");
-  return (neg ? "-" : "") + s.slice(0, -2) + "." + s.slice(-2);
-}
-function accSumMoney(list){ var total = 0n; list.forEach(function(x){ total += accCents(x); }); return accMoneyText(total); }
-function accRealCodes(codes){ return codes.some(function(c){ return c.indexOf("ALL_") === 0; }) ? ACC_CURRENCIES : codes; }
+var ACC_CURRENCY_NAME = {USD:"الدولار الأمريكي (USD)", SYP:"الليرة السورية (SYP)"};
 var ACC_VIEWER = {name:"", role:""};
 
 /* Names typed before are offered as suggestions (<datalist>), so nobody has to retype them. */
@@ -46,17 +31,53 @@ function accSelect(options, value){
   el.value = value;
   return el;
 }
-/* Totals of both currencies in pounds and in dollars, worked out by the server (exact, one rate, rounded once). */
-function accConvertedCard(converted, cols){
-  if(!converted) return h("div", {class:"a-card a-review-note"}, [h("strong", {text:"المجموع بعد التحويل غير متاح: حدّد سعر الصرف أولاً من «نظرة عامة»."})]);
-  function table(code){
-    return h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table compact"}, [h("tbody", {}, cols.map(function(c){
-      return h("tr", {}, [h("td", {class:"name", text:c[1]}), h("td", {class:"num strong", text:money(converted[code][c[0]])})]);
-    }))])]);
+/* Asks for today's exchange rate (pounds for one dollar) and saves it; used the first time a conversion needs it. */
+async function accAskRate(current){
+  var text = window.prompt(current ? "سعر الصرف الحالي: 1 دولار = " + current + " ليرة. اكتب السعر الجديد:" : "لا يوجد سعر صرف محفوظ. اكتب كم ليرة سورية تساوي 1 دولار اليوم (مثال: 13000):", current || "");
+  if(text === null) throw fail("لم يُحدَّد سعر الصرف.");
+  text = text.trim().replace(/[٠-٩]/g, function(d){ return String(d.charCodeAt(0) - 1632); }).replace(",", ".");
+  return request("/api/admin/accounting/rates", {method:"PUT", body:JSON.stringify({effective_date:localToday(), syp_per_usd:text})});
+}
+/* The server converts the typed amounts exactly (decimal arithmetic, half a cent up) with the current rate. */
+async function accConvertMany(values, source, target){
+  var send = function(){ return request("/api/admin/accounting/convert", {method:"POST", body:JSON.stringify({amounts:values, source:source, target:target})}); };
+  try{ return await send(); }
+  catch(error){
+    if(String(error.message).indexOf("سعر صرف") === -1) throw error;
+    await accAskRate("");
+    return send();
   }
-  return h("div", {class:"a-card"}, [h("h3", {text:"المجموع بعد التحويل"}),
-    h("p", {class:"hint", text:"1 دولار = " + converted.rate + " ليرة (سعر " + converted.rate_date + "). كل عملة تُحوَّل مرة واحدة ثم تُجمع."}),
-    h("h4", {text:"بالليرة السورية"}), table("SYP"), h("h4", {text:"بالدولار الأمريكي"}), table("USD")]);
+}
+/* Switching the currency of a form converts the amounts already typed in it. Switching back restores exactly what
+   was typed (an amount that was not touched meanwhile is never converted twice), so nothing drifts. */
+function accLinkCurrency(select, inputs, notice){
+  var current = select.value;
+  var origin = new Map();  // input -> {cur: currency it was typed in, text: what was typed, shown: what the conversion put there}
+  function fire(input){ input.dispatchEvent(new Event("input", {bubbles:true})); }
+  select.addEventListener("change", async function(){
+    var target = select.value, source = current;
+    if(target === source) return;
+    try{
+      var filled = inputs.filter(function(i){ return i.value !== ""; });
+      var restore = [], change = [];
+      filled.forEach(function(i){ var o = origin.get(i); if(o && o.shown === i.value && o.cur === target) restore.push(i); else change.push(i); });
+      var done = change.length ? await accConvertMany(change.map(function(i){ return i.value; }), source, target) : null;
+      restore.forEach(function(i){ i.value = origin.get(i).text; origin.delete(i); fire(i); });
+      change.forEach(function(i, k){ origin.set(i, {cur:source, text:i.value, shown:done.amounts[k]}); i.value = done.amounts[k]; fire(i); });
+      current = target;
+      if(notice && done){
+        setMsg(notice, "حُوِّلت المبالغ من " + source + " إلى " + target + " بسعر 1 دولار = " + done.rate + " ليرة. ", "ok");
+        notice.appendChild(h("button", {type:"button", class:"a-btn ghost", text:"تغيير سعر الصرف", onclick:async function(){
+          try{ var saved = await accAskRate(done.rate); setMsg(notice, "السعر الجديد: 1 دولار = " + saved.current.rate + " ليرة (يُستعمل في التحويلات القادمة).", "ok"); }
+          catch(error){ setMsg(notice, errText(error), "err"); }
+        }}));
+      }
+    }catch(error){
+      select.value = current;  // the conversion did not happen: the form stays as it was
+      if(notice) setMsg(notice, errText(error), "err");
+    }
+  });
+  select._accSync = function(){ current = select.value; origin.clear(); };  // after a program sets the currency itself
 }
 function accNumber(value, extra){ return h("input", Object.assign({type:"number", min:"0", step:"0.01", inputmode:"decimal", value:value === undefined || value === null ? "" : value}, extra || {})); }
 function accMonths(withAll){ return (withAll ? [["", "كل الأشهر"]] : []).concat(MONTHS_AR.map(function(n, i){ return [String(i + 1), n]; })); }
@@ -144,7 +165,7 @@ var ACC_SUB = "";
 function tabOverview(){
   var now = new Date();
   var year = h("input", {type:"number", min:"2000", max:"2100", value:String(now.getFullYear())});
-  var currencySel = accSelect(accCurrencyOptions(false).concat(ACC_CONVERTED_OPTIONS), "SYP");  // pounds first; or everything converted into one currency
+  var currencySel = accSelect(accCurrencyOptions(false), "SYP");  // the Syrian pound first; switch to see the other currency
   var body = h("div", {});
   var msg = h("div", {class:"a-msg", role:"status"});
   year.addEventListener("change", load);
@@ -175,33 +196,28 @@ function tabOverview(){
       var review = data.review || {fees:0, salaries:0};
       var cash = {};
       try{ cash = await request("/api/admin/accounting/cash"); }catch(e){ /* the rest of the overview still works */ }
-      var rates = {rates:[], current:null};
-      try{ rates = await request("/api/admin/accounting/rates"); }catch(e){ /* optional */ }
-      body.appendChild(rateCard(rates));
-      if(currencySel.value.indexOf("ALL_") === 0){ body.appendChild(everythingCard(currencySel.value.slice(4), data, cash)); return; }
       if(review.fees || review.salaries){
         body.appendChild(h("div", {class:"a-card a-review-note"}, [h("strong", {text:"يوجد " + review.fees + " سطر اشتراكات و" + review.salaries + " سطر رواتب يحتاج إلى مراجعة."}),
           h("p", {class:"hint", text:"الأسطر المميّزة بالأصفر مستوردة من الأوراق وفيها خانة غير واضحة. افتحها وصحّحها ثم اضغط «تمت المراجعة»."})]));
       }
       [currencySel.value].forEach(function(code){
         var info = data[code];
-        if(cash[code]) body.appendChild(cashCard(code, cash[code], cash.total));
-        var rows = [], tot = {required:[], paid:[], remaining:[]};
+        if(cash[code]) body.appendChild(cashCard(code, cash[code]));
+        var rows = [], tot = {required:0, paid:0, remaining:0};
         Object.keys(info.classes).forEach(function(cls){
           info.classes[cls].forEach(function(cell){
-            tot.required.push(cell.required); tot.paid.push(cell.paid); tot.remaining.push(cell.remaining);
+            tot.required += Number(cell.required); tot.paid += Number(cell.paid); tot.remaining += Number(cell.remaining);
             rows.push(h("tr", {}, [h("td", {text:cls}), h("td", {text:MONTHS_AR[cell.month - 1]}), h("td", {class:"num", text:money(cell.required)}), h("td", {class:"num", text:money(cell.paid)}),
               h("td", {class:"num" + (Number(cell.remaining) > 0 ? " due" : ""), text:money(cell.remaining)}), h("td", {class:"num", text:String(cell.children_open)})]));
           });
         });
         if(!rows.length) rows.push(h("tr", {}, [h("td", {colspan:"6", class:"a-empty", text:"لا توجد اشتراكات بهذه العملة في هذه السنة."})]));
-        var yIncome = accSumMoney(info.series.map(function(s){ return s.income; }));
-        var yExpense = accSumMoney(info.series.map(function(s){ return s.expense; }));
-        var sumRequired = accSumMoney(tot.required), sumPaid = accSumMoney(tot.paid), sumRemaining = accSumMoney(tot.remaining);
+        var yIncome = info.series.reduce(function(a, s){ return a + Number(s.income); }, 0);
+        var yExpense = info.series.reduce(function(a, s){ return a + Number(s.expense); }, 0);
         body.appendChild(h("div", {class:"a-card"}, [
           h("h3", {text:"بـ" + ACC_CURRENCY_NAME[code]}),
           h("div", {class:"a-kpis"}, [
-            kpi("المطلوب", money(sumRequired)), kpi("المدفوع", money(sumPaid)), kpi("المتبقي", money(sumRemaining), accCents(sumRemaining) > 0n ? "due" : ""),
+            kpi("المطلوب", money(tot.required)), kpi("المدفوع", money(tot.paid)), kpi("المتبقي", money(tot.remaining), tot.remaining > 0 ? "due" : ""),
             kpi("أطفال عليهم متبقي", String(info.children_open)), kpi("الواردات (الجدول الشهري)", money(yIncome)), kpi("المصروفات (الجدول الشهري)", money(yExpense))
           ]),
           h("h4", {text:"الاشتراكات حسب الصف والشهر"}),
@@ -216,56 +232,7 @@ function tabOverview(){
     }catch(error){ body.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
   }
   /* How much money the kindergarten has: opening balance + all income - all expense, month by month. */
-  /* The exchange rate (pounds for one dollar), its history and a calculator. Everything is worked out by the server. */
-  function rateCard(rates){
-    var dateInput = h("input", {type:"date", value:localToday(), required:"required"});
-    var rateInput = accNumber("", {step:"any", required:"required", placeholder:"ليرة لكل دولار واحد"});
-    var rateMsg = h("div", {class:"a-msg", role:"status"});
-    var form = h("form", {class:"a-form-grid"}, [accField("اعتباراً من تاريخ", dateInput), accField("سعر الصرف (ليرة لكل 1 دولار)", rateInput),
-      h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ السعر"})])]);
-    form.addEventListener("submit", async function(event){
-      event.preventDefault();
-      try{
-        await request("/api/admin/accounting/rates", {method:"PUT", body:JSON.stringify({effective_date:dateInput.value, syp_per_usd:rateInput.value})});
-        setMsg(rateMsg, "تم حفظ سعر الصرف.", "ok"); await load();
-      }catch(error){ setMsg(rateMsg, errText(error), "err"); }
-    });
-    var amountInput = accNumber("", {step:"any", placeholder:"المبلغ"});
-    var direction = accSelect([["USD>SYP", "من دولار إلى ليرة"], ["SYP>USD", "من ليرة إلى دولار"]], "USD>SYP");
-    var result = h("strong", {class:"a-net"});
-    var calculator = h("div", {class:"a-form-grid"}, [accField("المبلغ", amountInput), accField("التحويل", direction),
-      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"حوّل", onclick:async function(){
-        var pair = direction.value.split(">");
-        try{
-          var done = await request("/api/admin/accounting/convert?amount=" + encodeURIComponent(amountInput.value || "0") + "&source=" + pair[0] + "&target=" + pair[1]);
-          result.textContent = money(done.amount) + (pair[1] === "SYP" ? " ل.س" : " $") + "  (1 دولار = " + done.rate + " ليرة)";
-        }catch(error){ result.textContent = errText(error); }
-      }}), result])]);
-    var history = (rates.rates || []).slice(0, 10).map(function(item){
-      return h("tr", {}, [h("td", {class:"name", text:item.date}), h("td", {class:"num", text:item.rate}),
-        h("td", {}, [twoStep("حذف", async function(){ await request("/api/admin/accounting/rates/" + encodeURIComponent(item.id), {method:"DELETE"}); await load(); })])]);
-    });
-    return h("div", {class:"a-card"}, [h("h3", {text:"سعر الصرف (ليرة لكل دولار)"}),
-      rates.current ? h("p", {class:"a-total-line", text:"السعر الحالي: 1 دولار = " + rates.current.rate + " ليرة (منذ " + rates.current.date + ")"})
-        : h("p", {class:"a-review-note", text:"لم يُحدَّد سعر الصرف بعد. أدخل السعر ليتمكّن النظام من التحويل بين الليرة والدولار تلقائياً."}),
-      h("p", {class:"hint", text:"يُستعمل السعر الأحدث الذي تاريخه قبل أو يساوي تاريخ العملية (الجداول الشهرية: آخر يوم في الشهر). التحويل دقيق: يُقرَّب إلى أقرب قرش، ونصف القرش يُقرَّب للأعلى."}),
-      form, rateMsg, h("h4", {text:"حاسبة التحويل"}), calculator,
-      history.length ? h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, ["من تاريخ", "السعر", ""].map(function(t){ return h("th", {text:t}); }))]), h("tbody", {}, history)]))]) : ""]);
-  }
-  /* Everything of the year in one currency: the monthly series converted, and the total money at today's rate. */
-  function everythingCard(target, data, cash){
-    var all = data.all && data.all[target];
-    if(!all) return h("div", {class:"a-card a-review-note"}, [h("strong", {text:"حدّد سعر الصرف أولاً (في بطاقة «سعر الصرف» أعلاه) لتظهر الأرقام محوّلة."})]);
-    var income = accSumMoney(all.series.map(function(s){ return s.income; })), expense = accSumMoney(all.series.map(function(s){ return s.expense; }));
-    var net = accMoneyText(accCents(income) - accCents(expense));
-    var total = cash && cash.total && cash.total[target];
-    return h("div", {class:"a-card a-cash"}, [h("h3", {text:"كل شيء بـ" + ACC_CURRENCY_NAME[target] + " (محوّل)"}),
-      h("div", {class:"a-kpis"}, [total ? kpi("إجمالي ما لدى الكيتا الآن (الليرة + الدولار)", money(total.balance), accCents(total.balance) < 0n ? "due" : "good") : null,
-        kpi("الواردات (السنة)", money(income)), kpi("المصروفات (السنة)", money(expense)), kpi("الصافي (السنة)", money(net), accCents(net) < 0n ? "due" : "")]),
-      h("p", {class:"hint", text:"كل شهر يُحوَّل بسعر آخر يوم فيه، وما لدى الكيتا الآن بسعر اليوم" + (cash && cash.total ? " (1 دولار = " + cash.total.rate + " ليرة)" : "") + ". الأرقام الأصلية بكل عملة تبقى كما هي في العملتين."}),
-      h("h4", {text:"الواردات والمصروفات لكل شهر (محوّلة)"}), chart(all.series)]);
-  }
-  function cashCard(code, cash, total){
+  function cashCard(code, cash){
     var amount = accNumber(cash.opening, {"aria-label":"رصيد البداية", required:"required"});
     var monthSel = accSelect(accMonths(false), String(cash.start_month));
     var yearInput = h("input", {type:"number", min:"2000", max:"2100", value:String(cash.start_year)});
@@ -289,8 +256,6 @@ function tabOverview(){
     return h("div", {class:"a-card a-cash"}, [
       h("h3", {text:"رصيد الكيتا بـ" + ACC_CURRENCY_NAME[code]}),
       h("div", {class:"a-kpis"}, [kpi("الرصيد الحالي", money(cash.balance), Number(cash.balance) < 0 ? "due" : "good"), kpi("إجمالي الوارد", money(cash.income)), kpi("إجمالي الصادر", money(cash.expense)), kpi("رصيد البداية", money(cash.opening))]),
-      total ? h("p", {class:"a-total-line", text:"إجمالي ما لدى الكيتا: " + money(total.SYP.balance) + " ل.س  =  " + money(total.USD.balance) + " $   (1 دولار = " + total.rate + " ليرة، سعر " + total.rate_date + ")"})
-        : h("p", {class:"hint", text:"لإظهار إجمالي ما لدى الكيتا بالعملتين معاً، حدّد سعر الصرف في البطاقة أعلاه."}),
       cash.configured ? "" : h("p", {class:"a-review-note", text:"لم تحدّد رصيد البداية بعد، لذلك يبدأ الحساب من صفر عند أول شهر فيه بيانات. اضغط «تعديل رصيد البداية» وأدخل المبلغ الموجود في الصندوق عند بدء العمل بالنظام."}),
       h("p", {class:"hint", text:"الرصيد = رصيد البداية + كل الواردات − كل المصروفات، من شهر البداية حتى نهاية الشهر الحالي. الواردات تأتي تلقائياً من الاشتراكات المدفوعة، والمصروفات من الرواتب ومن الجداول. الراتب الذي لم يُسلَّم بعد يُخصم في شهره."}),
       h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تعديل رصيد البداية", onclick:function(){ form.hidden = !form.hidden; }})]),
@@ -349,8 +314,9 @@ function tabSalaries(){
   addEmp.addEventListener("change", function(){
     syncNew();
     var chosen = employees.filter(function(e){ return e.id === addEmp.value; })[0];
-    if(chosen && chosen.salary !== null && chosen.salary !== undefined){ addBase.value = chosen.salary; addCurrency.value = chosen.salary_currency || "SYP"; updatePreview(); }
+    if(chosen && chosen.salary !== null && chosen.salary !== undefined){ addBase.value = chosen.salary; addCurrency.value = chosen.salary_currency || "SYP"; if(addCurrency._accSync) addCurrency._accSync(); updatePreview(); }
   });
+  accLinkCurrency(addCurrency, [addBase, addBonus, addAdvance, addDeduction], msg);
   var addForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إضافة سطر راتب"}), accField("الموظف", addEmp), nameField, jobField,
     accField("الشهر", addMonth), accField("السنة", addYear), accField("العملة", addCurrency),
@@ -436,10 +402,7 @@ function tabSalaries(){
     });
     return h("tr", {class:"a-detail-row"}, [h("td", {colspan:String(cols), class:"a-detail"}, [form])]);
   }
-  function render(){
-    tables.innerHTML = ""; (filters.currency ? [filters.currency] : ACC_CURRENCIES).forEach(function(code){ tables.appendChild(currencyTable(code)); });
-    if(!filters.currency) tables.appendChild(accConvertedCard(data.converted, [["base", "الراتب الأساسي"], ["bonus", "المكافآت / الإضافي"], ["advance", "السلف"], ["deduction", "الخصومات"], ["net", "الصافي المستحق"]]));
-  }
+  function render(){ tables.innerHTML = ""; (filters.currency ? [filters.currency] : ACC_CURRENCIES).forEach(function(code){ tables.appendChild(currencyTable(code)); }); }
   async function load(){
     accLoadNames();
     var q = []; ["year","month","currency","needs_review"].forEach(function(k){ if(filters[k]) q.push(k + "=" + encodeURIComponent(filters[k])); });
@@ -468,7 +431,7 @@ function tabSalaries(){
         (body || "<tr><td colspan='11'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.base) + "</td><td>" + money(t.bonus) + "</td><td>" + money(t.advance) +
         "</td><td>" + money(t.deduction) + "</td><td>" + money(t.net) + "</td><td colspan='3'></td></tr></tfoot></table>"};
     });
-    accPrint("كشف رواتب الموظفين والمدرسات", function(part){ return "الفترة: " + esc(period) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]) + (part.sheet.converted ? " &nbsp;|&nbsp; 1 $ = " + esc(part.sheet.rate) + " ل.س (" + esc(part.sheet.rate_date) + ")" : ""); }, parts, msg);
+    accPrint("كشف رواتب الموظفين والمدرسات", function(part){ return "الفترة: " + esc(period) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
   }
   var filterCard = h("div", {class:"a-card"}, [h("h3", {text:"كشف رواتب الموظفين والمدرسات"}),
     h("p", {class:"hint", text:"الصافي المستحق = الراتب الأساسي + المكافآت − السلف − الخصومات. يُحسب تلقائياً."}),
@@ -506,12 +469,12 @@ function tabSheet(type){
   var fYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var fMonth = accSelect(accMonths(false), filters.month);
   var fDay = h("input", {type:"date", value:filters.day});
-  var fCurrency = accSelect(accCurrencyOptions(true).concat(ACC_CONVERTED_OPTIONS), "SYP");
+  var fCurrency = accSelect(accCurrencyOptions(true), "SYP");
   [fYear, fMonth, fDay, fCurrency].forEach(function(el){ el.addEventListener("change", function(){ filters.year = fYear.value; filters.month = fMonth.value; filters.day = fDay.value; filters.currency = fCurrency.value; load(); }); });
 
   function sheetYear(){ return isWeek ? String(filters.day || "").slice(0, 4) || filters.year : filters.year; }  // week / day: the date decides
   function query(code){
-    var q = "period_type=" + type + "&year=" + encodeURIComponent(sheetYear()) + (code.indexOf("ALL_") === 0 ? "&convert_to=" + code.slice(4) : "&currency=" + code);
+    var q = "period_type=" + type + "&year=" + encodeURIComponent(sheetYear()) + "&currency=" + code;
     return q + (isWeek ? "&week_start=" + encodeURIComponent(filters.day) : "&month=" + encodeURIComponent(filters.month));
   }
   function entryBody(code, row, details, note, income, expense, person){
@@ -520,42 +483,7 @@ function tabSheet(type){
     if(row.custom) b.id = row.id;
     return b;
   }
-  /* Both currencies of the sheet in one currency: read only (to change an amount, pick its own currency). */
-  function convertedCard(code, sheet){
-    var heads = ["البند / المادة", "الوارد", "الصادر", "بالعملات الأصلية"];
-    function originals(row){
-      var text = ACC_CURRENCIES.map(function(c){
-        var p = row.parts[c], bits = [];
-        if(Number(p.income)) bits.push("+" + money(p.income));
-        if(Number(p.expense)) bits.push("−" + money(p.expense));
-        return bits.length ? c + " " + bits.join(" ") : "";
-      }).filter(Boolean).join("  ·  ");
-      return text || "—";
-    }
-    var tbody = h("tbody", {}, sheet.rows.map(function(r){
-      return h("tr", {}, [h("td", {class:"name", text:r.label}), h("td", {class:"num", text:Number(r.income) ? money(r.income) : "—"}), h("td", {class:"num", text:Number(r.expense) ? money(r.expense) : "—"}), h("td", {dir:"ltr", text:originals(r)})]);
-    }));
-    var t = sheet.totals;
-    var foot = h("tfoot", {}, [h("tr", {class:"a-total"}, [h("td", {text:"الإجمالي"}), h("td", {class:"num", text:money(t.income)}), h("td", {class:"num", text:money(t.expense)}), h("td", {class:"num" + (Number(t.net) < 0 ? " due" : ""), text:"الصافي: " + money(t.net)})])]);
-    return h("div", {class:"a-card"}, [h("h3", {text:SHEET_TITLE + " — " + ACC_CURRENCY_NAME[code]}),
-      h("p", {class:"hint", text:"1 دولار = " + sheet.rate + " ليرة (سعر " + sheet.rate_date + ", آخر يوم في الفترة). للتعديل اختر عملة واحدة من القائمة."}),
-      h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, heads.map(function(t2){ return h("th", {text:t2}); }))]), tbody, foot]))])]);
-  }
-  function convertedPrintPart(code, sheet){
-    var t = sheet.totals;
-    var body = sheet.rows.map(function(r){
-      var original = ACC_CURRENCIES.map(function(c){
-        var p = r.parts[c], bits = [];
-        if(Number(p.income)) bits.push("+" + money(p.income));
-        if(Number(p.expense)) bits.push("-" + money(p.expense));
-        return bits.length ? c + " " + bits.join(" ") : "";
-      }).filter(Boolean).join("  |  ");
-      return "<tr><td class='l'>" + esc(r.label) + "</td><td class='n'>" + (Number(r.income) ? money(r.income) : "") + "</td><td class='n'>" + (Number(r.expense) ? money(r.expense) : "") + "</td><td class='n'>" + esc(original) + "</td></tr>";
-    }).join("");
-    return {code:code, sheet:sheet, cols:[28, 18, 18, 36], html:"<table><thead>" + accTh(["البند / المادة", "الوارد", "الصادر", "بالعملات الأصلية"]) + "</thead><tbody>" + body + "</tbody><tfoot><tr><td>الإجمالي</td><td>" + money(t.income) + "</td><td>" + money(t.expense) + "</td><td>الصافي: " + money(t.net) + "</td></tr></tfoot></table>"};
-  }
   function sheetCard(code){
-    if(code.indexOf("ALL_") === 0) return convertedCard(code, sheets[code]);
     var sheet = sheets[code];
     var heads = isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبالغ الواردة","المبالغ الصادرة",""] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبلغ",""];
     var tbody = h("tbody", {});
@@ -646,11 +574,10 @@ function tabSheet(type){
   async function print(){
     var codes = filters.currency ? [filters.currency] : ACC_CURRENCIES;
     if(!isWeek){  // monthly sheet: the "salaries" line comes from the payroll, so fill it from the saved salaries first
-      try{ if(await accFillSavedSalaries(filters.year, filters.month, accRealCodes(codes), msg)) await load(); }
+      try{ if(await accFillSavedSalaries(filters.year, filters.month, codes, msg)) await load(); }
       catch(error){ setMsg(msg, errText(error), "err"); return; }
     }
     var parts = codes.filter(function(c){ return sheets[c]; }).map(function(code){
-      if(code.indexOf("ALL_") === 0) return convertedPrintPart(code, sheets[code]);
       var sheet = sheets[code], t = sheet.totals;
       var body = sheet.rows.map(function(r){
         var kindText = Number(r.income) ? "وارد" : Number(r.expense) ? "صادر" : "";
@@ -687,6 +614,7 @@ function tabEmployees(){
   var accountNew = h("select", {});
   var salaryNew = accNumber("", {placeholder:"الراتب الشهري المعتاد"});
   var salaryCurNew = accSelect(accCurrencyOptions(false), "SYP");
+  accLinkCurrency(salaryCurNew, [salaryNew], msg);
   var form = h("form", {class:"a-form-grid", style:"margin-top:8px"}, [accField("الاسم", name), accField("المسمى الوظيفي", job), accField("الراتب الشهري (يُحفظ ويُملأ تلقائياً)", salaryNew), accField("عملة الراتب", salaryCurNew), accField("حساب الدخول (اختياري)", accountNew),
     h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"＋ حفظ الموظف"})])]);
   function accountOptions(select, current){
@@ -721,6 +649,7 @@ function tabEmployees(){
         var jobInput = h("input", {type:"text", maxlength:"80", value:employee.job_title, "aria-label":"المسمى الوظيفي"});
         var salaryInput = accNumber(employee.salary, {"aria-label":"الراتب الشهري"});
         var salaryCur = accSelect(accCurrencyOptions(false), employee.salary_currency || "SYP");
+        accLinkCurrency(salaryCur, [salaryInput], msg);
         var accountSelect = h("select", {"aria-label":"حساب الدخول"});
         accountOptions(accountSelect, employee.account_id);
         body.appendChild(h("article", {class:"a-child"}, [

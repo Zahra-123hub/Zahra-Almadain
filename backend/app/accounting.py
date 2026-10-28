@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import Annotated
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Callable
@@ -25,15 +26,12 @@ from app.fees import (
     FeesActor,
     Money,
     RateBook,
-    rate_text,
     active_payments,
     convert,
-    converted_totals,
-    exact,
     log,
     money,
-    month_end,
     paid_amount,
+    rate_text,
     remaining_amount,
 )
 from app.models import (
@@ -151,6 +149,14 @@ class SalaryUpdate(BaseModel):
 class RateIn(BaseModel):
     effective_date: date
     syp_per_usd: Decimal = Field(gt=0, max_digits=18, decimal_places=6)  # pounds for one dollar
+
+
+class ConvertIn(BaseModel):
+    """Amounts typed in a form whose currency was switched."""
+
+    amounts: list[Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=6)]] = Field(min_length=1, max_length=30)
+    source: str = Field(pattern="^(USD|SYP)$")
+    target: str = Field(pattern="^(USD|SYP)$")
 
 
 class CashIn(BaseModel):
@@ -471,60 +477,6 @@ def build_sheet(
     return Ledger.load(session, currency).sheet(period_type, year, month, week_start)
 
 
-def need_rate(book: RateBook, day: date) -> tuple[Decimal, date]:
-    found = book.on(day)
-    if found is None:
-        raise HTTPException(409, "حدّد سعر الصرف أولاً (ليرة سورية لكل دولار) لإظهار الأرقام محوّلة.")
-    return found
-
-
-def converted_sheet(
-    session: Session, book: RateBook, period_type: str, year: int, month: int, week_start: date | None, target: str
-) -> dict[str, Any]:
-    """Both currencies of a sheet added up in one currency (read only). Each amount is converted once, with the
-    rate of the sheet's last day, and every total is the sum of the rows shown, so the numbers always add up."""
-    _start, end = sheet_range(period_type, year, month, week_start)
-    rate, rate_date = need_rate(book, end)
-    sheets = {code: Ledger.load(session, code).sheet(period_type, year, month, week_start) for code in CURRENCIES}
-    standard = len(STANDARD_ITEMS)
-    rows: list[dict[str, Any]] = []
-
-    def merged(label: str, key: str, kind: str, parts: dict[str, tuple[Decimal, Decimal]], extra: dict[str, Any]) -> dict[str, Any]:
-        income = sum((convert(parts[code][0], code, target, rate) for code in CURRENCIES), ZERO)
-        expense = sum((convert(parts[code][1], code, target, rate) for code in CURRENCIES), ZERO)
-        if key in CHOICE_ITEMS and income > 0 and expense == 0:
-            kind = "income"
-        return {
-            "id": None, "key": key, "label": label, "kind": kind, "choice": False, "custom": False, "rolled": False,
-            "details": "", "note": "", "person": "", "entered_by": "", "income": str(income), "expense": str(expense),
-            "auto": False, "auto_income": "0.00", "auto_expense": "0.00", "manual": False, "converted": True,
-            "parts": {code: {"income": str(parts[code][0]), "expense": str(parts[code][1])} for code in CURRENCIES}, **extra,
-        }
-
-    for index in range(standard):
-        base = sheets["SYP"]["rows"][index]
-        parts = {code: (Decimal(sheets[code]["rows"][index]["income"]), Decimal(sheets[code]["rows"][index]["expense"])) for code in CURRENCIES}
-        rows.append(merged(base["label"], base["key"], base["kind"], parts, {}))
-    extras: dict[str, dict[str, Any]] = {}
-    for code in CURRENCIES:
-        for row in sheets[code]["rows"][standard:]:
-            group = extras.setdefault(row["label"].strip().lower(), {"label": row["label"], "parts": {c: (ZERO, ZERO) for c in CURRENCIES}})
-            income, expense = group["parts"][code]
-            group["parts"][code] = (income + Decimal(row["income"]), expense + Decimal(row["expense"]))
-    for group in extras.values():
-        rows.append(merged(group["label"], "converted", "expense", group["parts"], {}))
-    income_total = sum((Decimal(r["income"]) for r in rows), ZERO)
-    expense_total = sum((Decimal(r["expense"]) for r in rows), ZERO)
-    return {
-        "rows": rows,
-        "totals": {"income": str(income_total), "expense": str(expense_total), "net": str(income_total - expense_total)},
-        "converted": True,
-        "rate": rate_text(rate),
-        "rate_date": rate_date.isoformat(),
-        "to": target,
-    }
-
-
 def cash_report(session: Session, currency: str, today: date, until: tuple[int, int] | None = None) -> dict[str, Any]:
     """How much money the kindergarten has: opening balance + all income - all expense, month by month,
     up to this month (or up to `until` when a later month is asked for)."""
@@ -782,10 +734,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         rows.sort(key=lambda r: r["employee_name"])
         for number, row in enumerate(rows, start=1):
             row["n"] = number
-        totals = salary_totals(rows)
-        day = month_end(year, month) if year and month else date.today()
-        return {"rows": rows, "totals": totals,
-                "converted": converted_totals(RateBook.load(session), day, totals, ("base", "bonus", "advance", "deduction", "net"))}
+        return {"rows": rows, "totals": salary_totals(rows)}
 
     def resolve_employee(session: Session, actor: FeesActor, payload: SalaryIn) -> Employee:
         if payload.employee_id is not None:
@@ -960,22 +909,13 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         response: Response,
         period_type: str,
         year: int,
-        currency: str = "",
+        currency: str,
         month: int = 0,
         week_start: date | None = None,
-        convert_to: str = "",
         _actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
-        if convert_to:  # both currencies in one: read only, with the exchange rate of the sheet's last day
-            if period_type not in ("month", "week", "day") or convert_to not in CURRENCIES:
-                raise HTTPException(422, "نوع الجدول أو العملة غير صالح.")
-            start, end = sheet_range(period_type, year, month, week_start)
-            data = converted_sheet(session, RateBook.load(session), period_type, year, month, week_start, convert_to)
-            data.update(period_type=period_type, year=year, month=month, currency=convert_to,
-                        start=start.isoformat(), end=end.isoformat(), balance=None)
-            return data
         if period_type not in ("month", "week", "day") or currency not in CURRENCIES:
             raise HTTPException(422, "نوع الجدول أو العملة غير صالح.")
         start, end = sheet_range(period_type, year, month, week_start)
@@ -997,75 +937,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         """The cash balance per currency, with the month-by-month trail. USD and SYP are never mixed."""
         response.headers["Cache-Control"] = "no-store"
-        result: dict[str, Any] = {code: cash_report(session, code, date.today()) for code in CURRENCIES}
-        # what the kindergarten has in total, in pounds and in dollars, at today's rate
-        result["total"] = converted_totals(
-            RateBook.load(session), date.today(), {code: {"balance": result[code]["balance"]} for code in CURRENCIES}, ("balance",)
-        )
-        return result
-
-    # ---- exchange rate ------------------------------------------------------
-
-    @router.get("/rates")
-    def list_rates(
-        response: Response,
-        _actor: FeesActor = Depends(guard),
-        session: Session = Depends(get_session),
-    ) -> dict[str, Any]:
-        response.headers["Cache-Control"] = "no-store"
-        book = RateBook.load(session)
-        today = book.on(date.today())
-        return {
-            "rates": [{"id": str(r.id), "date": r.effective_date.isoformat(), "rate": rate_text(r.syp_per_usd), "by": r.created_by}
-                      for r in reversed(book.rows)],
-            "current": None if today is None else {"rate": rate_text(today[0]), "date": today[1].isoformat()},
-        }
-
-    @router.put("/rates")
-    def set_rate(
-        payload: RateIn,
-        actor: FeesActor = Depends(guard),
-        session: Session = Depends(get_session),
-    ) -> dict[str, Any]:
-        """The value of one dollar in pounds from a day on. Setting a day again replaces that day's rate."""
-        row = session.scalar(select(ExchangeRate).where(ExchangeRate.effective_date == payload.effective_date))
-        if row is None:
-            row = ExchangeRate(effective_date=payload.effective_date)
-            session.add(row)
-        row.syp_per_usd = payload.syp_per_usd
-        row.created_by = actor.name[:80]
-        log(session, actor, "rate.set", payload.effective_date.isoformat(), str(payload.syp_per_usd))
-        session.commit()
-        return list_rates(Response(), actor, session)
-
-    @router.delete("/rates/{rate_id}")
-    def delete_rate(
-        rate_id: uuid.UUID,
-        actor: FeesActor = Depends(guard),
-        session: Session = Depends(get_session),
-    ) -> dict[str, Any]:
-        row = session.get(ExchangeRate, rate_id)
-        if row is None:
-            raise HTTPException(404, "السعر غير موجود.")
-        log(session, actor, "rate.delete", row.effective_date.isoformat(), "")
-        session.delete(row)
-        session.commit()
-        return list_rates(Response(), actor, session)
-
-    @router.get("/convert")
-    def convert_amount(
-        amount: Decimal,
-        source: str,
-        target: str,
-        on: date | None = None,
-        _actor: FeesActor = Depends(guard),
-        session: Session = Depends(get_session),
-    ) -> dict[str, str]:
-        """One exact conversion with the rate of that day (today by default)."""
-        if source not in CURRENCIES or target not in CURRENCIES:
-            raise HTTPException(422, "العملة غير صالحة.")
-        rate, rate_date = need_rate(RateBook.load(session), on or date.today())
-        return {"amount": str(convert(amount, source, target, rate)), "rate": rate_text(rate), "rate_date": rate_date.isoformat()}
+        return {code: cash_report(session, code, date.today()) for code in CURRENCIES}
 
     @router.put("/cash")
     def set_cash_opening(
@@ -1173,6 +1045,61 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session.commit()
         return build_sheet(session, period[0], period[1], period[2], period[3], period[4])
 
+    # ---- exchange rate (only used to convert what is typed in a form when its currency is switched) ----
+
+    def rate_state(session: Session) -> dict[str, Any]:
+        book = RateBook.load(session)
+        today = book.on(date.today())
+        return {
+            "rates": [{"id": str(r.id), "date": r.effective_date.isoformat(), "rate": rate_text(r.syp_per_usd)} for r in reversed(book.rows)],
+            "current": None if today is None else {"rate": rate_text(today[0]), "date": today[1].isoformat()},
+        }
+
+    @router.get("/rates")
+    def list_rates(
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "no-store"
+        return rate_state(session)
+
+    @router.put("/rates")
+    def set_rate(
+        payload: RateIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """The value of one dollar in pounds from a day on. Setting a day again replaces that day's rate."""
+        row = session.scalar(select(ExchangeRate).where(ExchangeRate.effective_date == payload.effective_date))
+        if row is None:
+            row = ExchangeRate(effective_date=payload.effective_date)
+            session.add(row)
+        row.syp_per_usd = payload.syp_per_usd
+        row.created_by = actor.name[:80]
+        log(session, actor, "rate.set", payload.effective_date.isoformat(), str(payload.syp_per_usd))
+        session.commit()
+        return rate_state(session)
+
+    @router.post("/convert")
+    def convert_amounts(
+        payload: ConvertIn,
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Converts typed amounts with today's rate: exact decimal arithmetic, half a cent rounds up."""
+        response.headers["Cache-Control"] = "no-store"
+        found = RateBook.load(session).on(date.today())
+        if found is None:
+            raise HTTPException(409, "لا يوجد سعر صرف محفوظ بعد.")
+        rate, rate_date = found
+        return {
+            "amounts": [str(convert(amount, payload.source, payload.target, rate)) for amount in payload.amounts],
+            "rate": rate_text(rate),
+            "rate_date": rate_date.isoformat(),
+        }
+
     # ---- overview -----------------------------------------------------------
 
     @router.get("/overview")
@@ -1190,8 +1117,6 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             .options(selectinload(FeeCharge.payments))
         ).all()
         result: dict[str, Any] = {}
-        ledgers = {code: Ledger.load(session, code) for code in CURRENCIES}
-        month_totals = {code: {m: ledgers[code].sheet("month", year, m, None)["totals"] for m in range(1, 13)} for code in CURRENCIES}
         for currency in CURRENCIES:
             cells: dict[tuple[str, int], dict[str, Any]] = {}
             for charge, child in charges:
@@ -1220,34 +1145,15 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                     }
                 )
             series = []
+            ledger = Ledger.load(session, currency)
             for month in range(1, 13):
-                totals = month_totals[currency][month]
+                totals = ledger.sheet("month", year, month, None)["totals"]
                 series.append({"month": month, "income": totals["income"], "expense": totals["expense"]})
             open_children = len({
                 child.id for charge, child in charges
                 if charge.currency == currency and (remaining_amount(charge) or 0) > 0
             })
             result[currency] = {"classes": by_class, "series": series, "children_open": open_children}
-        # both currencies in one: every month converted with the rate of that month's last day
-        book = RateBook.load(session)
-        everything: dict[str, Any] | None = {}
-        for target in CURRENCIES:
-            series = []
-            for month in range(1, 13):
-                found = book.on(month_end(year, month))
-                if found is None:
-                    everything = None
-                    break
-                rate = found[0]
-                income = sum((convert(Decimal(month_totals[c][month]["income"]), c, target, rate) for c in CURRENCIES), ZERO)
-                expense = sum((convert(Decimal(month_totals[c][month]["expense"]), c, target, rate) for c in CURRENCIES), ZERO)
-                series.append({"month": month, "income": str(income), "expense": str(expense)})
-            if everything is None:
-                break
-            everything[target] = {"series": series}
-        result["all"] = everything
-        today_rate = book.on(date.today())
-        result["rate"] = None if today_rate is None else {"rate": rate_text(today_rate[0]), "date": today_rate[1].isoformat()}
         result["review"] = {
             "fees": session.scalar(select(func.count()).select_from(FeeCharge).where(FeeCharge.needs_review.is_(True))) or 0,
             "salaries": session.scalar(select(func.count()).select_from(SalaryLine).where(SalaryLine.needs_review.is_(True))) or 0,
