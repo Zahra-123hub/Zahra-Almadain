@@ -856,6 +856,7 @@ function tabFees(){
   var addAmount = numberInput("", {required:"required"});
   var addCurrency = select(CURRENCY_OPTIONS, "SYP");
   var payAmount = numberInput("", {placeholder:"اتركه فارغاً إن لم يدفع بعد"});
+  accLinkCurrency(addCurrency, [addAmount, payAmount], msg);  // switching pound / dollar converts what was typed
   var payDate = h("input", {type:"date", value:localToday()});
   var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
   var payNote = h("input", {type:"text", maxlength:"500"});
@@ -897,6 +898,7 @@ function tabFees(){
   var genYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var genAmount = numberInput("", {required:"required"});
   var genCurrency = select(CURRENCY_OPTIONS, "SYP");
+  accLinkCurrency(genCurrency, [genAmount], msg);
   var genClass = h("input", {type:"text", maxlength:"60", placeholder:"اتركه فارغاً لكل الصفوف"});
   var genForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إنشاء رسوم الشهر لجميع الأطفال"}),
@@ -1045,7 +1047,6 @@ function tabFees(){
     tables.innerHTML = "";
     var shown = filters.currency ? [filters.currency] : ["SYP", "USD"];
     shown.forEach(function(code){ tables.appendChild(currencyTable(code)); });
-    if(!filters.currency) tables.appendChild(accConvertedCard(data.converted, [["amount", "الرسم المطلوب"], ["paid", "المدفوع"], ["remaining", "المتبقي"]]));
   }
 
   // ----- data loading --------------------------------------------------
