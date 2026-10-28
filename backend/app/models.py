@@ -379,6 +379,21 @@ class AccountingEntry(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class CashOpening(Base):
+    """The money the kindergarten had when the books start (one row per currency).
+    From that month on, the cash balance = opening + every income - every expense."""
+
+    __tablename__ = "cash_openings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    currency: Mapped[str] = mapped_column(String(3), unique=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    start_year: Mapped[int] = mapped_column(Integer)
+    start_month: Mapped[int] = mapped_column(Integer)
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class FeeAuditLog(Base):
     __tablename__ = "fee_audit_log"
 

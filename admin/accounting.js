@@ -145,12 +145,15 @@ function tabOverview(){
     try{
       var data = await request("/api/admin/accounting/overview?year=" + encodeURIComponent(year.value));
       var review = data.review || {fees:0, salaries:0};
+      var cash = {};
+      try{ cash = await request("/api/admin/accounting/cash"); }catch(e){ /* the rest of the overview still works */ }
       if(review.fees || review.salaries){
         body.appendChild(h("div", {class:"a-card a-review-note"}, [h("strong", {text:"يوجد " + review.fees + " سطر اشتراكات و" + review.salaries + " سطر رواتب يحتاج إلى مراجعة."}),
           h("p", {class:"hint", text:"الأسطر المميّزة بالأصفر مستوردة من الأوراق وفيها خانة غير واضحة. افتحها وصحّحها ثم اضغط «تمت المراجعة»."})]));
       }
       [currencySel.value].forEach(function(code){
         var info = data[code];
+        if(cash[code]) body.appendChild(cashCard(code, cash[code]));
         var rows = [], tot = {required:0, paid:0, remaining:0};
         Object.keys(info.classes).forEach(function(cls){
           info.classes[cls].forEach(function(cell){
@@ -178,6 +181,36 @@ function tabOverview(){
         ]));
       });
     }catch(error){ body.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
+  }
+  /* How much money the kindergarten has: opening balance + all income - all expense, month by month. */
+  function cashCard(code, cash){
+    var amount = accNumber(cash.opening, {"aria-label":"رصيد البداية", required:"required"});
+    var monthSel = accSelect(accMonths(false), String(cash.start_month));
+    var yearInput = h("input", {type:"number", min:"2000", max:"2100", value:String(cash.start_year)});
+    var cashMsg = h("div", {class:"a-msg", role:"status"});
+    var form = h("form", {class:"a-form-grid", hidden:"hidden"}, [accField("المبلغ في الصندوق عند البداية (" + code + ")", amount), accField("بداية الحساب من شهر", monthSel), accField("السنة", yearInput),
+      h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ رصيد البداية"})])]);
+    form.addEventListener("submit", async function(event){
+      event.preventDefault();
+      try{
+        await request("/api/admin/accounting/cash", {method:"PUT", body:JSON.stringify({currency:code, opening:amount.value || "0", start_year:Number(yearInput.value), start_month:Number(monthSel.value)})});
+        setMsg(cashMsg, "تم حفظ رصيد البداية.", "ok"); await load();
+      }catch(error){ setMsg(cashMsg, errText(error), "err"); }
+    });
+    var recent = cash.months.slice(-24).reverse();
+    var trail = h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+      h("thead", {}, [h("tr", {}, ["الشهر", "رصيد أول الشهر", "الوارد", "الصادر", "رصيد آخر الشهر"].map(function(t){ return h("th", {text:t}); }))]),
+      h("tbody", {}, recent.map(function(m){
+        return h("tr", {}, [h("td", {class:"name", text:MONTHS_AR[m.month - 1] + " " + m.year}), h("td", {class:"num", text:money(m.opening)}), h("td", {class:"num", text:money(m.income)}),
+          h("td", {class:"num", text:money(m.expense)}), h("td", {class:"num strong" + (Number(m.closing) < 0 ? " due" : ""), text:money(m.closing)})]);
+      }))]))]);
+    return h("div", {class:"a-card a-cash"}, [
+      h("h3", {text:"رصيد الكيتا بـ" + ACC_CURRENCY_NAME[code]}),
+      h("div", {class:"a-kpis"}, [kpi("الرصيد الحالي", money(cash.balance), Number(cash.balance) < 0 ? "due" : "good"), kpi("إجمالي الوارد", money(cash.income)), kpi("إجمالي الصادر", money(cash.expense)), kpi("رصيد البداية", money(cash.opening))]),
+      cash.configured ? "" : h("p", {class:"a-review-note", text:"لم تحدّد رصيد البداية بعد، لذلك يبدأ الحساب من صفر عند أول شهر فيه بيانات. اضغط «تعديل رصيد البداية» وأدخل المبلغ الموجود في الصندوق عند بدء العمل بالنظام."}),
+      h("p", {class:"hint", text:"الرصيد = رصيد البداية + كل الواردات − كل المصروفات، من شهر البداية حتى نهاية الشهر الحالي. الواردات تأتي تلقائياً من الاشتراكات المدفوعة، والمصروفات من الرواتب ومن الجداول. الراتب الذي لم يُسلَّم بعد يُخصم في شهره."}),
+      h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تعديل رصيد البداية", onclick:function(){ form.hidden = !form.hidden; }})]),
+      form, cashMsg, h("h4", {text:"الرصيد شهراً بشهر"}), trail]);
   }
   function kpi(label, value, cls){ return h("div", {class:"a-kpi " + (cls || "")}, [h("span", {text:label}), h("strong", {text:value})]); }
   load();
@@ -405,6 +438,14 @@ function tabSheet(type){
     var heads = isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبالغ الواردة","المبالغ الصادرة",""] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبلغ",""];
     var tbody = h("tbody", {});
     sheet.rows.forEach(function(row){
+      if(row.key === "rolled"){  // a free row written on a day / week sheet, added up here: shown, not edited
+        var readOnly = isWeek ? [h("td", {class:"num", text:Number(row.income) ? money(row.income) : "—"}), h("td", {class:"num", text:Number(row.expense) ? money(row.expense) : "—"})]
+          : [h("td", {class:"num", text:money(Number(row.income) || Number(row.expense))})];
+        var roRow = h("tr", {class:"a-rolled"}, [h("td", {class:"name"}, [row.label, h("span", {class:"a-badge partial", text:"مجمّع تلقائياً"})]), h("td", {text:"—"}), h("td", {text:"—"}), h("td", {text:"—"})].concat(readOnly).concat([h("td")]));
+        Array.prototype.forEach.call(roRow.children, function(cellNode, i){ if(i > 0 && heads[i]) cellNode.setAttribute("data-label", heads[i]); });
+        tbody.appendChild(roRow);
+        return;
+      }
       var details = h("input", {type:"text", maxlength:"500", value:row.details, "aria-label":"التفاصيل"});
       var note = h("input", {type:"text", maxlength:"500", value:row.note, "aria-label":"الملاحظات"});
       var person = h("input", {type:"text", maxlength:"120", value:row.person || "", placeholder:"الاسم", "aria-label":"المسؤول", list:"acc-persons", title:row.entered_by ? "أدخله: " + row.entered_by : ""});
@@ -428,13 +469,17 @@ function tabSheet(type){
       }})];
       if(row.id && (row.custom || row.manual)) actions.push(twoStep(row.custom ? "حذف" : "إعادة للتلقائي", async function(){
         sheets[code] = Object.assign(sheets[code], await request("/api/admin/accounting/entries/" + encodeURIComponent(row.id), {method:"DELETE"})); setMsg(msg, row.custom ? "تم حذف البند." : "عاد البند إلى القيمة التلقائية.", "ok"); render(); }));
-      var label = h("td", {class:"name"}, [row.label, row.auto ? h("span", {class:"a-badge " + (row.manual ? "partial" : "paid"), text:row.manual ? "يدوي" : "تلقائي"}) : ""]);
+      var label = h("td", {class:"name"}, [row.label, row.auto ? h("span", {class:"a-badge " + (row.manual ? "partial" : "paid"), text:row.manual ? "يدوي" : "تلقائي"}) : "",
+        row.rolled ? h("span", {class:"a-badge partial", text:"مجمّع تلقائياً", title:"مجموع ما كُتب في الجداول الأدق (الأسبوعي واليومي)"}) : ""]);
       if(row.auto && row.manual) label.appendChild(h("small", {class:"hint", text:"القيمة التلقائية: " + money(row.key === "registration" ? row.auto_income : row.auto_expense)}));
       var sheetRow = h("tr", {}, [label, h("td", {}, [details]), h("td", {}, [note]), h("td", {}, [person])].concat(amountCells).concat([h("td", {}, [h("div", {class:"a-row", style:"margin:0"}, actions)])]));
       Array.prototype.forEach.call(sheetRow.children, function(cellNode, i){ if(i > 0 && heads[i]) cellNode.setAttribute("data-label", heads[i]); });  // shown as captions on a phone
       tbody.appendChild(sheetRow);
     });
     var t = sheet.totals;
+    var balanceRows = (!isWeek && sheet.balance) ? [["رصيد أول الشهر", sheet.balance.opening], ["رصيد آخر الشهر", sheet.balance.closing]].map(function(b){
+      return h("tr", {class:"a-total"}, [h("td", {colspan:"4", text:b[0]}), h("td", {class:"num" + (Number(b[1]) < 0 ? " due" : ""), text:money(b[1])}), h("td")]);
+    }) : [];
     var foot = h("tfoot", {}, isWeek ? [
       h("tr", {class:"a-total"}, [h("td", {colspan:"4", text:"الإجمالي العام (" + code + ")"}), h("td", {class:"num", text:money(t.income)}), h("td", {class:"num", text:money(t.expense)}), h("td")]),
       h("tr", {class:"a-total"}, [h("td", {colspan:"4", text:"الصافي (واردات − مصروفات)"}), h("td", {colspan:"2", class:"num" + (Number(t.net) < 0 ? " due" : ""), text:money(t.net)}), h("td")])
@@ -442,7 +487,7 @@ function tabSheet(type){
       h("tr", {class:"a-total"}, [h("td", {colspan:"4", text:"إجمالي الواردات"}), h("td", {class:"num", text:money(t.income)}), h("td")]),
       h("tr", {class:"a-total"}, [h("td", {colspan:"4", text:"إجمالي المصروفات"}), h("td", {class:"num", text:money(t.expense)}), h("td")]),
       h("tr", {class:"a-total"}, [h("td", {colspan:"4", text:"الإجمالي العام (الصافي)"}), h("td", {class:"num" + (Number(t.net) < 0 ? " due" : ""), text:money(t.net)}), h("td")])
-    ]);
+    ].concat(balanceRows));
     var customForm = customRowForm(code);
     return h("div", {class:"a-card"}, [h("h3", {text:(isDay ? "اليوم " : isWeek ? "الأسبوع " : "الشهر ") + "بـ" + ACC_CURRENCY_NAME[code]}),
       h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("colgroup", {}, (isWeek ? [19, 14, 15, 14, 13, 13, 12] : [22, 17, 18, 15, 16, 12]).map(function(w){ return h("col", {style:"width:" + w + "%"}); })),
@@ -491,7 +536,8 @@ function tabSheet(type){
         return "<tr><td class='l'>" + esc(r.label) + "</td><td class='l'>" + esc(r.details) + "</td><td class='l'>" + esc(r.note) + "</td><td class='l'>" + esc(r.person || "") + "</td>" + amounts + "</tr>";
       }).join("");
       var foot = isWeek ? "<tr><td colspan='4'>الإجمالي العام (" + code + ")</td><td>" + money(t.income) + "</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='4'>الصافي</td><td colspan='2'>" + money(t.net) + "</td></tr>"
-        : "<tr><td colspan='5'>إجمالي الواردات</td><td>" + money(t.income) + "</td></tr><tr><td colspan='5'>إجمالي المصروفات</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='5'>الإجمالي العام (الصافي)</td><td>" + money(t.net) + "</td></tr>";
+        : "<tr><td colspan='5'>إجمالي الواردات</td><td>" + money(t.income) + "</td></tr><tr><td colspan='5'>إجمالي المصروفات</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='5'>الإجمالي العام (الصافي)</td><td>" + money(t.net) + "</td></tr>" +
+          (sheet.balance ? "<tr><td colspan='5'>رصيد أول الشهر</td><td>" + money(sheet.balance.opening) + "</td></tr><tr><td colspan='5'>رصيد آخر الشهر</td><td>" + money(sheet.balance.closing) + "</td></tr>" : "");
       return {code:code, sheet:sheet, cols:isWeek ? [21, 18, 21, 16, 12, 12] : [22, 16, 18, 16, 9, 19], html:"<table><thead>" + accTh(isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبالغ الواردة","المبالغ الصادرة"] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","النوع","المبلغ"]) + "</thead><tbody>" + body + "</tbody><tfoot>" + foot + "</tfoot></table>"};
     });
     accPrint(SHEET_TITLE, function(part){
@@ -499,7 +545,7 @@ function tabSheet(type){
   }
   var periodFields = isWeek ? [accField(isDay ? "اليوم" : "أي يوم من الأسبوع", fDay)] : [accField("السنة", fYear), accField("الشهر", fMonth)];
   var head = h("div", {class:"a-card"}, [h("h3", {text:SHEET_TITLE}),
-    h("p", {class:"hint", text:"«رسوم التسجيل والاشتراكات» و«رواتب المدرسات والموظفين» تُعبَّآن تلقائياً: الاشتراكات حسب تاريخ الدفع، والرواتب حسب تاريخ الاستلام (الراتب الذي لم يُستلم بعد يُحسب في الجدول الشهري لشهره). عند تعديل المبلغ يدوياً يتوقف التحديث التلقائي لذلك البند؛ وحفظ ملاحظة فقط لا يغيّره."}),
+    h("p", {class:"hint", text:"«رسوم التسجيل والاشتراكات» و«رواتب المدرسات والموظفين» تُعبَّآن تلقائياً: الاشتراكات حسب تاريخ الدفع، والرواتب حسب تاريخ الاستلام (الراتب الذي لم يُستلم بعد يُحسب في الجدول الشهري لشهره). عند تعديل المبلغ يدوياً يتوقف التحديث التلقائي لذلك البند؛ وحفظ ملاحظة فقط لا يغيّره. ما لم يُكتب في هذا الجدول يُجمع تلقائياً من الجداول الأدق (اليومي ثم الأسبوعي)، وما يُكتب هنا يغلب عليها."}),
     h("div", {class:"a-form-grid"}, periodFields.concat([accField("العملة", fCurrency)])),
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);
   load();
