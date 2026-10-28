@@ -66,8 +66,9 @@ function accLinkCurrency(select, inputs, notice){
       change.forEach(function(i, k){ origin.set(i, {cur:source, text:i.value, shown:done.amounts[k]}); i.value = done.amounts[k]; fire(i); });
       current = target;
       if(notice && done){
-        setMsg(notice, "حُوِّلت المبالغ من " + source + " إلى " + target + " بسعر 1 دولار = " + done.rate + " ليرة. ", "ok");
-        notice.appendChild(h("button", {type:"button", class:"a-btn ghost", text:"تغيير سعر الصرف", onclick:async function(){
+        setMsg(notice, "حُوِّلت المبالغ من " + source + " إلى " + target + " بسعر 1 دولار = " + done.rate + " ليرة (" + (done.source === "auto" ? "سعر اليوم تلقائياً من الإنترنت" : "السعر المحفوظ") + ")." +
+          (done.stale ? " تنبيه: تعذّر جلب سعر اليوم فاستُعمل آخر سعر محفوظ بتاريخ " + done.rate_date + "." : "") + " ", done.stale ? "err" : "ok");
+        notice.appendChild(h("button", {type:"button", class:"a-btn ghost", text:"استعمال سعر آخر", onclick:async function(){
           try{ var saved = await accAskRate(done.rate); setMsg(notice, "السعر الجديد: 1 دولار = " + saved.current.rate + " ليرة (يُستعمل في التحويلات القادمة).", "ok"); }
           catch(error){ setMsg(notice, errText(error), "err"); }
         }}));

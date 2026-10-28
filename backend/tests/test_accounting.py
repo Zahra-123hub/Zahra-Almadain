@@ -112,6 +112,8 @@ class AccountingApiTests(unittest.TestCase):
             },
         )
         self.env.start()
+        self.feed = patch("app.accounting.fetch_online_rate", return_value=None)  # the tests never touch the internet
+        self.feed_mock = self.feed.start()
         self.engine = create_engine(
             "sqlite+pysqlite:///:memory:",
             connect_args={"check_same_thread": False},
@@ -151,6 +153,7 @@ class AccountingApiTests(unittest.TestCase):
         main.app.dependency_overrides.pop(get_session, None)
         main.app.dependency_overrides.pop(main.optional_session, None)
         self.engine.dispose()
+        self.feed.stop()
         self.env.stop()
 
     def salary(self, name="Rima", base="1000", currency="SYP", month=10, **extra):
@@ -515,6 +518,51 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(again["current"]["rate"], "14000")
         self.assertEqual(self._rate(today.isoformat(), "0").status_code, 422)
         self.assertEqual(self._rate(today.isoformat(), "-3").status_code, 422)
+
+    def test_the_rate_is_fetched_automatically_once_a_day(self):
+        import datetime
+        today = datetime.date.today()
+        self.feed_mock.return_value = Decimal("12166.006900")
+        first = self._convert(["1000000"], "SYP", "USD").json()
+        self.assertEqual((first["amounts"], first["rate"], first["source"], first["stale"]), (["82.20"], "12166.0069", "auto", False))
+        self.assertEqual(self._convert(["100"], "USD", "SYP").json()["amounts"], ["1216600.69"])
+        self.assertEqual(self.feed_mock.call_count, 1)  # asked the internet only once for today
+        stored = self.client.get("/api/admin/accounting/rates", headers=self.acc).json()
+        self.assertEqual([(r["date"], r["rate"]) for r in stored["rates"]], [(today.isoformat(), "12166.0069")])
+        # a rate typed for today beats the feed
+        self._rate(today.isoformat(), "13000")
+        self.assertEqual((self._convert(["1"], "USD", "SYP").json()["rate"], self._convert(["1"], "USD", "SYP").json()["source"]), ("13000", "manual"))
+        self.assertEqual(self.feed_mock.call_count, 1)
+
+    def test_when_the_feed_is_down_the_last_stored_rate_is_used_and_marked_old(self):
+        import datetime
+        today = datetime.date.today()
+        self.assertEqual(self._convert(["1"], "USD", "SYP").status_code, 409)  # nothing stored, nothing online: nothing guessed
+        self._rate((today - datetime.timedelta(days=3)).isoformat(), "12000")
+        old = self._convert(["2"], "USD", "SYP").json()
+        self.assertEqual((old["amounts"], old["stale"], old["rate_date"]), (["24000.00"], True, (today - datetime.timedelta(days=3)).isoformat()))
+        self.feed_mock.return_value = Decimal("12200")  # the feed is back: today's rate is stored and used
+        fresh = self._convert(["2"], "USD", "SYP").json()
+        self.assertEqual((fresh["amounts"], fresh["stale"], fresh["source"]), (["24400.00"], False, "auto"))
+
+    def test_the_feed_quote_of_the_new_pound_is_scaled_to_the_old_pound(self):
+        import app.accounting as acc
+        feed = unittest.mock.MagicMock()
+        feed.json.return_value = {"rates": {"SYP": 121.660069}}
+        self.feed.stop()  # use the real function, with a fake web reply
+        try:
+            with patch("app.accounting.httpx.get", return_value=feed):
+                self.assertEqual(acc.fetch_online_rate(), Decimal("12166.006900"))
+                with patch.dict(os.environ, {"SYP_RATE_SCALE": "1"}):
+                    self.assertEqual(acc.fetch_online_rate(), Decimal("121.660069"))
+                feed.json.return_value = {"rates": {"SYP": 12950.5}}  # a quote that is already in old pounds stays as it is
+                self.assertEqual(acc.fetch_online_rate(), Decimal("12950.500000"))
+                feed.json.return_value = {"rates": {}}
+                self.assertIsNone(acc.fetch_online_rate())
+            with patch("app.accounting.httpx.get", side_effect=OSError("offline")):
+                self.assertIsNone(acc.fetch_online_rate())
+        finally:
+            self.feed_mock = self.feed.start()
 
     def test_only_accountant_and_admin_may_set_a_rate_or_convert(self):
         for headers in (self.teacher, self.parent):

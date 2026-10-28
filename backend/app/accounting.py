@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Annotated
+
+import httpx
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Callable
@@ -46,6 +48,57 @@ from app.models import (
     Role,
     SalaryLine,
 )
+
+RATE_FEED_URL = "https://open.er-api.com/v6/latest/USD"  # a free public daily rates feed (no key)
+AUTO_RATE = "auto"  # marks a stored rate that was fetched by the system itself
+
+
+def fetch_online_rate() -> Decimal | None:
+    """Pounds for one dollar from a public daily exchange-rate feed, or None when it cannot be reached.
+
+    The feed quotes the NEW Syrian pound (1 new = 100 old, about 122 per dollar). The books of the kindergarten are in
+    the old pound (amounts in the millions), so a quote below 1000 is multiplied by SYP_RATE_SCALE (default 100).
+    Set SYP_RATE_SCALE=1 on the server if the books are ever kept in the new pound."""
+    try:
+        reply = httpx.get(RATE_FEED_URL, timeout=6.0)
+        reply.raise_for_status()
+        value = Decimal(str(reply.json()["rates"]["SYP"]))
+    except Exception:  # offline, rate limited, changed format: the caller falls back to the last stored rate
+        return None
+    if value <= 0:
+        return None
+    try:
+        scale = Decimal(os.getenv("SYP_RATE_SCALE", "100"))
+    except Exception:
+        scale = Decimal(100)
+    if value < 1000 and scale > 0:
+        value *= scale
+    return value.quantize(Decimal("0.000001"))
+
+
+def todays_rate(session: Session, today: date) -> tuple[Decimal, date, str, bool] | None:
+    """(rate, its date, "auto" | "manual", stale). A rate stored for today is used as it is (a typed one beats the
+    feed). Otherwise the feed is asked once for today and the answer is stored. If the feed is down, the latest
+    stored rate is used and marked stale. No rate at all: None."""
+    book = RateBook.load(session)
+    todays = next((row for row in book.rows if row.effective_date == today), None)
+    if todays is not None:
+        return Decimal(todays.syp_per_usd), today, "auto" if todays.created_by == AUTO_RATE else "manual", False
+    fetched = fetch_online_rate()
+    if fetched is not None:
+        session.add(ExchangeRate(effective_date=today, syp_per_usd=fetched, created_by=AUTO_RATE))
+        try:
+            session.commit()
+        except IntegrityError:  # someone else stored today's rate at the same moment
+            session.rollback()
+            return todays_rate(session, today)
+        return fetched, today, "auto", False
+    latest = book.on(today)
+    if latest is None:
+        return None
+    row = next(r for r in book.rows if r.effective_date == latest[1])
+    return latest[0], latest[1], "auto" if row.created_by == AUTO_RATE else "manual", True
+
 
 # key, Arabic label, kind of money the row normally carries
 STANDARD_ITEMS = [
@@ -1076,7 +1129,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             row = ExchangeRate(effective_date=payload.effective_date)
             session.add(row)
         row.syp_per_usd = payload.syp_per_usd
-        row.created_by = actor.name[:80]
+        row.created_by = actor.name[:80] if actor.name != AUTO_RATE else "admin"
         log(session, actor, "rate.set", payload.effective_date.isoformat(), str(payload.syp_per_usd))
         session.commit()
         return rate_state(session)
@@ -1088,16 +1141,19 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         _actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
-        """Converts typed amounts with today's rate: exact decimal arithmetic, half a cent rounds up."""
+        """Converts typed amounts with today's rate, fetched by the system itself (once a day) unless one was typed.
+        Exact decimal arithmetic, half a cent rounds up."""
         response.headers["Cache-Control"] = "no-store"
-        found = RateBook.load(session).on(date.today())
+        found = todays_rate(session, date.today())
         if found is None:
             raise HTTPException(409, "لا يوجد سعر صرف محفوظ بعد.")
-        rate, rate_date = found
+        rate, rate_date, source, stale = found
         return {
             "amounts": [str(convert(amount, payload.source, payload.target, rate)) for amount in payload.amounts],
             "rate": rate_text(rate),
             "rate_date": rate_date.isoformat(),
+            "source": source,
+            "stale": stale,
         }
 
     # ---- overview -----------------------------------------------------------
