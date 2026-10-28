@@ -80,6 +80,27 @@ class CalculationTests(unittest.TestCase):
         self.assertEqual(totals["USD"]["net"], "50.00")
 
 
+class ConversionTests(unittest.TestCase):
+    def test_conversion_is_exact_and_rounds_half_up(self):
+        from app.fees import convert, rate_text
+        D = Decimal
+        self.assertEqual(convert(D("1000"), "USD", "SYP", D("12500.5")), D("12500500.00"))
+        self.assertEqual(convert(D("1000000"), "SYP", "USD", D("12500.5")), D("80.00"))  # 79.9968
+        self.assertEqual(convert(D("2.50"), "SYP", "USD", D("3")), D("0.83"))  # 0.8333...
+        # half a cent rounds UP (banker's rounding would give 0.00 here)
+        self.assertEqual(convert(D("0.05"), "SYP", "USD", D("10")), D("0.01"))
+        self.assertEqual(convert(D("0.15"), "SYP", "USD", D("10")), D("0.02"))
+        self.assertEqual(convert(D("1.005"), "USD", "USD", D("1")), D("1.01"))
+        # the same currency is only rounded, a huge sum keeps every digit
+        self.assertEqual(convert(D("123456789012.34"), "SYP", "SYP", D("9")), D("123456789012.34"))
+        self.assertEqual(convert(D("999999999.99"), "USD", "SYP", D("13000.123456")), D("13000123455870.00"))  # 13,000,123,456,000 - 130.00123456 = ...869.99876544
+        # no floating point error: 0.1 + 0.2 style sums stay exact
+        self.assertEqual(convert(D("0.10"), "USD", "SYP", D("3")) + convert(D("0.20"), "USD", "SYP", D("3")), D("0.90"))
+        self.assertEqual(rate_text(D("12500.000000")), "12500")
+        self.assertEqual(rate_text(D("12500.500000")), "12500.5")
+        self.assertEqual(rate_text(D("0.000125")), "0.000125")
+
+
 class AccountingApiTests(unittest.TestCase):
     def setUp(self):
         self.env = patch.dict(
@@ -364,6 +385,98 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(created.status_code, 201)
         people = self.client.get(self.A + "/employees", headers=self.acc).json()
         self.assertEqual([(p["id"], p["salary"], p["account_username"]) for p in people], [(person["id"], "300.00", "hana-teacher")])
+
+    # ---- exchange rate and conversion ----
+    def _rate(self, day, rate, headers=None):
+        return self.client.put(self.A + "/rates", headers=headers or self.acc, json={"effective_date": day, "syp_per_usd": rate})
+
+    def test_the_rate_for_a_day_is_the_latest_one_set_on_or_before_it(self):
+        self.assertIsNone(self.client.get(self.A + "/rates", headers=self.acc).json()["current"])
+        self.assertEqual(self.client.get(self.A + "/convert?amount=1&source=USD&target=SYP", headers=self.acc).status_code, 409)  # no rate yet
+        self.assertEqual(self._rate("2026-09-01", "12000").status_code, 200)
+        self._rate("2026-10-15", "13000.5")
+        convert_on = lambda day, amount="100", source="USD", target="SYP": self.client.get(
+            f"{self.A}/convert?amount={amount}&source={source}&target={target}&on={day}", headers=self.acc).json()
+        self.assertEqual((convert_on("2026-10-14")["amount"], convert_on("2026-10-14")["rate"]), ("1200000.00", "12000"))
+        self.assertEqual((convert_on("2026-10-15")["amount"], convert_on("2026-10-15")["rate"]), ("1300050.00", "13000.5"))
+        self.assertEqual(convert_on("2026-08-01")["rate"], "12000")  # before the first rate: the first one
+        self.assertEqual(convert_on("2026-11-30", "1300050", "SYP", "USD")["amount"], "100.00")
+        # setting a day again replaces that day, a rate can be removed
+        self._rate("2026-10-15", "14000")
+        listing = self.client.get(self.A + "/rates", headers=self.acc).json()
+        self.assertEqual([(r["date"], r["rate"]) for r in listing["rates"]], [("2026-10-15", "14000"), ("2026-09-01", "12000")])
+        after = self.client.delete(f"{self.A}/rates/{listing['rates'][0]['id']}", headers=self.acc).json()
+        self.assertEqual([r["date"] for r in after["rates"]], ["2026-09-01"])
+        # rates must be positive; only accountant and admin may set them
+        self.assertEqual(self._rate("2026-10-20", "0").status_code, 422)
+        self.assertEqual(self._rate("2026-10-20", "-5").status_code, 422)
+        self.assertEqual(self._rate("2026-10-20", "13000", self.teacher).status_code, 403)
+        self.assertEqual(self._rate("2026-10-20", "13000", self.parent).status_code, 403)
+
+    def test_a_sheet_in_one_currency_adds_both_currencies_with_the_rate_of_its_last_day(self):
+        month = {"period_type": "month", "year": 2026, "month": 10}
+        self._entry(**month, item_key="buffet", income="1000000")
+        self._entry(**month, item_key="buffet", income="100", currency="USD")
+        self._entry(**month, item_key="operating", expense="260000")
+        self._entry(**month, item_key="operating", expense="10.40", currency="USD")
+        url = f"{self.A}/sheet?period_type=month&year=2026&month=10&convert_to="
+        self.assertEqual(self.client.get(url + "SYP", headers=self.acc).status_code, 409)  # no rate, no guessing
+        self._rate("2026-10-01", "12000")
+        self._rate("2026-10-31", "13000")  # the last day of the sheet decides
+        in_pounds = self.client.get(url + "SYP", headers=self.acc).json()
+        rows = {r["key"]: r for r in in_pounds["rows"]}
+        self.assertEqual((in_pounds["rate"], in_pounds["rate_date"], in_pounds["currency"], in_pounds["converted"]), ("13000", "2026-10-31", "SYP", True))
+        self.assertEqual((rows["buffet"]["income"], rows["buffet"]["kind"]), ("2300000.00", "income"))  # 1,000,000 + 100 x 13,000
+        self.assertEqual(rows["operating"]["expense"], "395200.00")  # 260,000 + 10.40 x 13,000
+        self.assertEqual(rows["buffet"]["parts"]["USD"]["income"], "100.00")
+        self.assertEqual((in_pounds["totals"]["income"], in_pounds["totals"]["expense"], in_pounds["totals"]["net"]), ("2300000.00", "395200.00", "1904800.00"))
+        in_dollars = self.client.get(url + "USD", headers=self.acc).json()
+        rows = {r["key"]: r for r in in_dollars["rows"]}
+        self.assertEqual(rows["buffet"]["income"], "176.92")  # 1,000,000 / 13,000 = 76.923... + 100
+        self.assertEqual(rows["operating"]["expense"], "30.40")  # 260,000 / 13,000 = 20 + 10.40
+        # every total is the sum of the rows shown
+        for sheet in (in_pounds, in_dollars):
+            self.assertEqual(Decimal(sheet["totals"]["income"]), sum((Decimal(r["income"]) for r in sheet["rows"]), Decimal(0)))
+            self.assertEqual(Decimal(sheet["totals"]["expense"]), sum((Decimal(r["expense"]) for r in sheet["rows"]), Decimal(0)))
+        # the plain sheets are untouched
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="USD"), "buffet")["income"], "100.00")
+
+    def test_the_total_of_the_kindergarten_in_pounds_and_in_dollars(self):
+        import datetime
+        today = datetime.date.today()
+        for currency, amount in (("SYP", "1300000"), ("USD", "100")):
+            self.client.put(self.A + "/cash", headers=self.acc, json={"currency": currency, "opening": amount, "start_year": today.year, "start_month": today.month})
+        self.assertIsNone(self._cash()["total"])  # no rate: no total
+        self._rate(today.isoformat(), "13000")
+        total = self._cash()["total"]
+        self.assertEqual((total["rate"], total["SYP"]["balance"], total["USD"]["balance"]), ("13000", "2600000.00", "200.00"))
+        # the balances of the two currencies themselves stay as they are
+        self.assertEqual((self._cash()["SYP"]["balance"], self._cash()["USD"]["balance"]), ("1300000.00", "100.00"))
+
+    def test_fees_and_payroll_show_both_currencies_converted(self):
+        self._fee(month=10, amount="1300000", paid="300000", paid_on="2026-10-05")
+        usd_child = self.client.post("/api/admin/fees/charges", headers=self.acc, json={"child_name": "Dollar Child", "year": 2026, "month": 10, "amount": "100", "currency": "USD", "payment": {"amount": "40", "paid_on": "2026-10-06"}}).json()
+        self.assertIsNone(self.client.get("/api/admin/fees?year=2026&month=10", headers=self.acc).json()["converted"])
+        self._rate("2026-10-01", "13000")
+        fees = self.client.get("/api/admin/fees?year=2026&month=10", headers=self.acc).json()["converted"]
+        self.assertEqual((fees["SYP"]["amount"], fees["SYP"]["paid"], fees["SYP"]["remaining"]), ("2600000.00", "820000.00", "1780000.00"))
+        self.assertEqual((fees["USD"]["amount"], fees["USD"]["paid"], fees["USD"]["remaining"]), ("200.00", "63.08", "136.92"))  # 300,000 / 13,000 = 23.08 + 40
+        self.salary("Rima", "2600000", month=10)
+        self.salary("Dina", "100", currency="USD", month=10)
+        pay = self.client.get(self.A + "/salaries?year=2026&month=10", headers=self.acc).json()["converted"]
+        self.assertEqual((pay["SYP"]["net"], pay["USD"]["net"]), ("3900000.00", "300.00"))
+
+    def test_the_overview_has_a_series_with_everything_in_one_currency(self):
+        self._entry(period_type="month", year=2026, month=10, item_key="buffet", income="1300000")
+        self._entry(period_type="month", year=2026, month=10, item_key="buffet", income="10", currency="USD")
+        self.assertIsNone(self.client.get(self.A + "/overview?year=2026", headers=self.acc).json()["all"])
+        self._rate("2026-01-01", "13000")
+        overview = self.client.get(self.A + "/overview?year=2026", headers=self.acc).json()
+        october = lambda target: next(m for m in overview["all"][target]["series"] if m["month"] == 10)
+        self.assertEqual(october("SYP")["income"], "1430000.00")  # 1,300,000 + 10 x 13,000
+        self.assertEqual(october("USD")["income"], "110.00")  # 100 + 10
+        self.assertEqual(overview["rate"]["rate"], "13000")
+        self.assertEqual(len(overview["all"]["SYP"]["series"]), 12)
 
     # ---- cash balance and roll-up ----
     def _entry(self, **body):

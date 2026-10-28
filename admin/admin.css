@@ -284,3 +284,5 @@ h2,h3{font-weight:800}
 .a-cash .a-kpis .a-kpi:first-child{grid-column:1 / -1;text-align:center;padding:18px}
 .a-cash .a-kpis .a-kpi:first-child strong{font-size:clamp(1.8rem,5vw,2.6rem)}
 .a-rolled td{opacity:.9;font-style:normal}
+
+.a-total-line{margin:8px 0;padding:10px 14px;border:2px solid var(--sun);border-radius:12px;font-weight:800;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
