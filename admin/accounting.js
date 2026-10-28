@@ -46,14 +46,14 @@ function accPrint(title, subtitle, parts, msgEl){
     ".top .spacer{width:62px}.meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}" +
     ".meta span{border:1.5px solid #17408f;border-radius:999px;padding:2px 14px;font-weight:700;font-size:11pt;background:#eef3fc}" +
     "table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}" +
-    "th,td{border:1px solid #555;padding:5px 8px;text-align:center;vertical-align:middle;overflow-wrap:anywhere}" +
-    "th{background:#17408f;color:#fff;font-size:11.5pt;padding:7px 6px}td{height:10mm}tbody tr:nth-child(even) td{background:#f4f7fc}" +
+    "th,td{border:1px solid #555;padding:4px 7px;text-align:center;vertical-align:middle;overflow-wrap:break-word}td.n{white-space:nowrap}" +
+    "th{background:#17408f;color:#fff;font-size:11pt;padding:6px 5px}td{height:8mm;font-size:11.5pt}tbody tr:nth-child(even) td{background:#f4f7fc}" +
     "td.l{text-align:right}td.l:first-child{font-weight:700}" +
-    "tfoot td{background:#fde9a8;font-weight:800;border-top:3px double #17408f;height:11mm;font-size:12.5pt}" +
+    "tfoot{display:table-row-group}tfoot td{background:#fde9a8;font-weight:800;border-top:3px double #17408f;height:9mm;font-size:12pt;white-space:nowrap}" +
     ".due{color:#b00020;font-weight:800}" +
-    ".sign{display:flex;gap:70px;margin-top:22px;page-break-inside:avoid}.sign>div{flex:1;text-align:center}.sign b{display:block;font-size:12.5pt;margin-bottom:34px}" +
-    ".sign span{display:block;border-top:1.5px solid #111;padding-top:4px;min-height:26px;font-weight:700}.sign i{display:block;margin-top:10px;font-style:normal}" +
-    "footer{margin-top:10px;font-size:9pt;color:#555;text-align:left}";
+    ".sign{display:flex;gap:70px;margin-top:14px;page-break-inside:avoid}.sign>div{flex:1;text-align:center}.sign b{display:block;font-size:12pt;margin-bottom:22px}" +
+    ".sign span{display:block;border-top:1.5px solid #111;padding-top:3px;min-height:20px;font-weight:700}.sign i{display:block;margin-top:6px;font-style:normal}" +
+    "footer{margin-top:6px;font-size:9pt;color:#555;text-align:left}";
   var sign = "<div class='sign'><div><b>توقيع المحاسب</b><span>" + esc(ACC_VIEWER.role === "accountant" ? ACC_VIEWER.name : "") + "</span><i>التاريخ: ____ / ____ / ________</i></div>" +
     "<div><b>توقيع الإدارة</b><span></span><i>التاريخ: ____ / ____ / ________</i></div></div>";
   var today = new Date().toLocaleDateString("ar-SY");
@@ -280,7 +280,7 @@ function tabSalaries(){
     var foot = h("tfoot", {}, [h("tr", {class:"a-total"}, [h("td", {colspan:"3", text:"الإجمالي العام (" + code + ")"}), h("td", {class:"num", text:money(t.base)}), h("td", {class:"num", text:money(t.bonus)}),
       h("td", {class:"num", text:money(t.advance)}), h("td", {class:"num", text:money(t.deduction)}), h("td", {class:"num", text:money(t.net)}), h("td", {colspan:"3"})])]);
     return h("div", {class:"a-card"}, [h("h3", {text:"الرواتب بـ" + ACC_CURRENCY_NAME[code]}),
-      h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), tbody, foot])])]);
+      h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), tbody, foot]))])]);
   }
   function salaryBody(fields){
     function num(el){ return el.value === "" ? null : el.value; }  // empty stays empty, never 0
@@ -342,9 +342,9 @@ function tabSalaries(){
     var parts = codes.map(function(code){
       var rows = data.rows.filter(function(r){ return r.currency === code; });
       var t = data.totals[code] || {base:"0", bonus:"0", advance:"0", deduction:"0", net:"0"};
-      var body = rows.map(function(r, i){ return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.employee_name) + "</td><td>" + esc(r.job_title || "—") + "</td><td>" + money(r.base) + "</td><td>" + money(r.bonus) +
-        "</td><td>" + money(r.advance) + "</td><td>" + money(r.deduction) + "</td><td><b>" + money(r.net) + "</b></td><td>" + esc(r.paid_on || "—") + "</td><td>" + esc(r.paid_by || "") + "</td><td><span class='line'>&nbsp;</span></td></tr>"; }).join("");
-      return {code:code, cols:[5,13,9,13,10,8,8,13,8,7,6], html:"<table><thead>" + accTh(["الرقم","اسم الموظف / المدرسة","المسمى الوظيفي","الراتب الأساسي","المكافآت / الإضافي","السلف","الخصومات","الصافي المستحق","تاريخ الاستلام","صرفه","توقيع المستلم"]) + "</thead><tbody>" +
+      var body = rows.map(function(r, i){ return "<tr><td>" + (i + 1) + "</td><td class='l'>" + esc(r.employee_name) + "</td><td>" + esc(r.job_title || "—") + "</td><td class='n'>" + money(r.base) + "</td><td class='n'>" + money(r.bonus) +
+        "</td><td class='n'>" + money(r.advance) + "</td><td class='n'>" + money(r.deduction) + "</td><td class='n'><b>" + money(r.net) + "</b></td><td class='n'>" + esc(r.paid_on || "—") + "</td><td>" + esc(r.paid_by || "") + "</td><td><span class='line'>&nbsp;</span></td></tr>"; }).join("");
+      return {code:code, cols:[5,12,9,12,10,8,8,13,8,7,8], html:"<table><thead>" + accTh(["الرقم","اسم الموظف / المدرسة","المسمى الوظيفي","الراتب الأساسي","المكافآت / الإضافي","السلف","الخصومات","الصافي المستحق","تاريخ الاستلام","صرفه","توقيع المستلم"]) + "</thead><tbody>" +
         (body || "<tr><td colspan='11'>لا توجد بيانات</td></tr>") + "</tbody><tfoot><tr><td colspan='3'>الإجمالي العام (" + code + ")</td><td>" + money(t.base) + "</td><td>" + money(t.bonus) + "</td><td>" + money(t.advance) +
         "</td><td>" + money(t.deduction) + "</td><td>" + money(t.net) + "</td><td colspan='3'></td></tr></tfoot></table>"};
     });
@@ -354,11 +354,17 @@ function tabSalaries(){
     h("p", {class:"hint", text:"الصافي المستحق = الراتب الأساسي + المكافآت − السلف − الخصومات. يُحسب تلقائياً."}),
     h("div", {class:"a-form-grid"}, [accField("السنة", fYear), accField("الشهر", fMonth), accField("العملة", fCurrency), h("label", {class:"a-field a-check-field"}, [fReview, h("span", {text:"فقط ما يحتاج مراجعة"})])]),
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"＋ إضافة سطر راتب", onclick:function(){ addForm.hidden = !addForm.hidden; }}),
-      h("button", {type:"button", class:"a-btn ghost", text:"إنشاء رواتب الشهر لكل الموظفين (من الرواتب المحفوظة)", onclick:async function(){
-        var month = Number(fMonth.value) || (new Date().getMonth() + 1);
+      h("button", {type:"button", class:"a-btn ghost", text:"إنشاء رواتب الشهر للجميع", onclick:async function(){
+        var month = Number(fMonth.value), year = Number(fYear.value);
+        if(!month || !year){ setMsg(msg, "اختر السنة والشهر أولاً.", "err"); return; }
         try{
-          var res = await request("/api/admin/accounting/salaries/generate", {method:"POST", body:JSON.stringify({year:Number(fYear.value), month:month, currency:fCurrency.value || "SYP"})});
-          setMsg(msg, "تم إنشاء " + res.created + " سطر راتب، وتخطّي " + res.skipped + " (موجود مسبقاً). الموظفون بلا راتب محفوظ لا يُنشأ لهم سطر.", "ok"); await load();
+          var created = 0, skipped = 0;
+          var codes = fCurrency.value ? [fCurrency.value] : ACC_CURRENCIES;
+          for(var i = 0; i < codes.length; i++){
+            var res = await request("/api/admin/accounting/salaries/generate", {method:"POST", body:JSON.stringify({year:year, month:month, currency:codes[i]})});
+            created += res.created; skipped += res.skipped;
+          }
+          setMsg(msg, "تم إنشاء " + created + " سطر راتب، وتخطّي " + skipped + " (موجود مسبقاً). الموظفون بلا راتب محفوظ لا يُنشأ لهم سطر.", "ok"); await load();
         }catch(error){ setMsg(msg, errText(error), "err"); }
       }}),
       h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);
@@ -373,7 +379,7 @@ function tabSheet(type){
   var isWeek = type !== "month";  // week and day sheets have separate income / expense columns
   var isDay = type === "day";
   var SHEET_TITLE = isDay ? "جدول المحاسبة اليومي" : isWeek ? "جدول المحاسبة الأسبوعي" : "جدول المحاسبة الشهري";
-  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), day:new Date().toISOString().slice(0, 10), currency:"SYP"};
+  var filters = {year:String(now.getFullYear()), month:String(now.getMonth() + 1), day:localToday(), currency:"SYP"};
   var sheets = {};
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var tables = h("div", {});
@@ -383,12 +389,13 @@ function tabSheet(type){
   var fCurrency = accSelect(accCurrencyOptions(true), "SYP");
   [fYear, fMonth, fDay, fCurrency].forEach(function(el){ el.addEventListener("change", function(){ filters.year = fYear.value; filters.month = fMonth.value; filters.day = fDay.value; filters.currency = fCurrency.value; load(); }); });
 
+  function sheetYear(){ return isWeek ? String(filters.day || "").slice(0, 4) || filters.year : filters.year; }  // week / day: the date decides
   function query(code){
-    var q = "period_type=" + type + "&year=" + encodeURIComponent(filters.year) + "&currency=" + code;
+    var q = "period_type=" + type + "&year=" + encodeURIComponent(sheetYear()) + "&currency=" + code;
     return q + (isWeek ? "&week_start=" + encodeURIComponent(filters.day) : "&month=" + encodeURIComponent(filters.month));
   }
   function entryBody(code, row, details, note, income, expense, person){
-    var b = {period_type:type, year:Number(filters.year), currency:code, item_key:row.key, item_label:row.label, details:details, note:note, person:person || "", income:income || "0", expense:expense || "0", manual:true};
+    var b = {period_type:type, year:Number(sheetYear()), currency:code, item_key:row.key, item_label:row.label, details:details, note:note, person:person || "", income:income || "0", expense:expense || "0", manual:true};
     if(isWeek) b.week_start = filters.day; else b.month = Number(filters.month);
     if(row.custom) b.id = row.id;
     return b;
@@ -423,7 +430,9 @@ function tabSheet(type){
         sheets[code] = Object.assign(sheets[code], await request("/api/admin/accounting/entries/" + encodeURIComponent(row.id), {method:"DELETE"})); setMsg(msg, row.custom ? "تم حذف البند." : "عاد البند إلى القيمة التلقائية.", "ok"); render(); }));
       var label = h("td", {class:"name"}, [row.label, row.auto ? h("span", {class:"a-badge " + (row.manual ? "partial" : "paid"), text:row.manual ? "يدوي" : "تلقائي"}) : ""]);
       if(row.auto && row.manual) label.appendChild(h("small", {class:"hint", text:"القيمة التلقائية: " + money(row.key === "registration" ? row.auto_income : row.auto_expense)}));
-      tbody.appendChild(h("tr", {}, [label, h("td", {}, [details]), h("td", {}, [note]), h("td", {}, [person])].concat(amountCells).concat([h("td", {}, [h("div", {class:"a-row", style:"margin:0"}, actions)])])));
+      var sheetRow = h("tr", {}, [label, h("td", {}, [details]), h("td", {}, [note]), h("td", {}, [person])].concat(amountCells).concat([h("td", {}, [h("div", {class:"a-row", style:"margin:0"}, actions)])]));
+      Array.prototype.forEach.call(sheetRow.children, function(cellNode, i){ if(i > 0 && heads[i]) cellNode.setAttribute("data-label", heads[i]); });  // shown as captions on a phone
+      tbody.appendChild(sheetRow);
     });
     var t = sheet.totals;
     var foot = h("tfoot", {}, isWeek ? [
@@ -476,20 +485,21 @@ function tabSheet(type){
     var parts = codes.filter(function(c){ return sheets[c]; }).map(function(code){
       var sheet = sheets[code], t = sheet.totals;
       var body = sheet.rows.map(function(r){
-        var amounts = isWeek ? "<td>" + (Number(r.income) ? money(r.income) : "") + "</td><td>" + (Number(r.expense) ? money(r.expense) : "") + "</td>" : "<td>" + ((Number(r.income) || Number(r.expense)) ? money(Number(r.income) || Number(r.expense)) : "") + "</td>";
+        var kindText = Number(r.income) ? "وارد" : Number(r.expense) ? "صادر" : "";
+        var amounts = isWeek ? "<td class='n'>" + (Number(r.income) ? money(r.income) : "") + "</td><td class='n'>" + (Number(r.expense) ? money(r.expense) : "") + "</td>"
+          : "<td>" + kindText + "</td><td class='n'>" + ((Number(r.income) || Number(r.expense)) ? money(Number(r.income) || Number(r.expense)) : "") + "</td>";
         return "<tr><td class='l'>" + esc(r.label) + "</td><td class='l'>" + esc(r.details) + "</td><td class='l'>" + esc(r.note) + "</td><td class='l'>" + esc(r.person || "") + "</td>" + amounts + "</tr>";
       }).join("");
       var foot = isWeek ? "<tr><td colspan='4'>الإجمالي العام (" + code + ")</td><td>" + money(t.income) + "</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='4'>الصافي</td><td colspan='2'>" + money(t.net) + "</td></tr>"
-        : "<tr><td colspan='4'>إجمالي الواردات</td><td>" + money(t.income) + "</td></tr><tr><td colspan='4'>إجمالي المصروفات</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='4'>الإجمالي العام (الصافي)</td><td>" + money(t.net) + "</td></tr>";
-      return {code:code, sheet:sheet, cols:isWeek ? [21, 18, 21, 16, 12, 12] : [24, 20, 22, 18, 16], html:"<table><thead>" + accTh(isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبالغ الواردة","المبالغ الصادرة"] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبلغ"]) + "</thead><tbody>" + body + "</tbody><tfoot>" + foot + "</tfoot></table>"};
+        : "<tr><td colspan='5'>إجمالي الواردات</td><td>" + money(t.income) + "</td></tr><tr><td colspan='5'>إجمالي المصروفات</td><td>" + money(t.expense) + "</td></tr><tr><td colspan='5'>الإجمالي العام (الصافي)</td><td>" + money(t.net) + "</td></tr>";
+      return {code:code, sheet:sheet, cols:isWeek ? [21, 18, 21, 16, 12, 12] : [22, 16, 18, 16, 9, 19], html:"<table><thead>" + accTh(isWeek ? ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","المبالغ الواردة","المبالغ الصادرة"] : ["البند / المادة","التفاصيل","البيان / الملاحظات","المسؤول (من صرف / استلم)","النوع","المبلغ"]) + "</thead><tbody>" + body + "</tbody><tfoot>" + foot + "</tfoot></table>"};
     });
     accPrint(SHEET_TITLE, function(part){
       return (isDay ? "التاريخ: " + esc(part.sheet.start) + " (" + esc(new Date(part.sheet.start + "T00:00:00").toLocaleDateString("ar-SY", {weekday:"long"})) + ")" : isWeek ? "من " + esc(part.sheet.start) + " إلى " + esc(part.sheet.end) : "الشهر: " + esc(MONTHS_AR[Number(filters.month) - 1]) + " " + esc(filters.year)) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
   }
   var periodFields = isWeek ? [accField(isDay ? "اليوم" : "أي يوم من الأسبوع", fDay)] : [accField("السنة", fYear), accField("الشهر", fMonth)];
-  if(isWeek) periodFields.unshift(accField("السنة", fYear));
   var head = h("div", {class:"a-card"}, [h("h3", {text:SHEET_TITLE}),
-    h("p", {class:"hint", text:"«رسوم التسجيل والاشتراكات» و«رواتب المدرسات والموظفين» تُعبَّآن تلقائياً من الاشتراكات المدفوعة ومن صافي الرواتب، ويمكن تعديلهما يدوياً."}),
+    h("p", {class:"hint", text:"«رسوم التسجيل والاشتراكات» و«رواتب المدرسات والموظفين» تُعبَّآن تلقائياً: الاشتراكات حسب تاريخ الدفع، والرواتب حسب تاريخ الاستلام (الراتب الذي لم يُستلم بعد يُحسب في الجدول الشهري لشهره). عند تعديل المبلغ يدوياً يتوقف التحديث التلقائي لذلك البند؛ وحفظ ملاحظة فقط لا يغيّره."}),
     h("div", {class:"a-form-grid"}, periodFields.concat([accField("العملة", fCurrency)])),
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);
   load();

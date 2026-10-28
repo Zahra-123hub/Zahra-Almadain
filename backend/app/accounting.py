@@ -6,6 +6,7 @@ Fees themselves live in app.fees. Everything here is only reachable through the 
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -13,9 +14,9 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_session
 from app.fees import (
@@ -80,8 +81,18 @@ def salary_totals(rows: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
     return {code: {key: str(money(value)) for key, value in bucket.items()} for code, bucket in result.items()}
 
 
+def week_start_day() -> int:
+    """First day of the week for the weekly sheet: 0 = Monday (default) ... 5 = Saturday, 6 = Sunday.
+    Set ACCOUNTING_WEEK_START on the server; stored weeks are keyed by their first day."""
+    try:
+        value = int(os.getenv("ACCOUNTING_WEEK_START", "0"))
+    except ValueError:
+        return 0
+    return value if 0 <= value <= 6 else 0
+
+
 def week_monday(day: date) -> date:
-    return day - timedelta(days=day.weekday())
+    return day - timedelta(days=(day.weekday() - week_start_day()) % 7)
 
 
 # --- request models ----------------------------------------------------------
@@ -193,43 +204,32 @@ def sheet_range(period_type: str, year: int, month: int, week_start: date | None
     return first, last
 
 
+def sheet_year(period_type: str, year: int, start: date) -> int:
+    """Monthly sheets use the year given; weekly and daily sheets always use the year of their own date,
+    so the year field can never disagree with the date."""
+    return year if period_type == "month" else start.year
+
+
 def auto_values(
     session: Session, period_type: str, year: int, month: int, week_start: date | None, currency: str
 ) -> dict[str, Decimal]:
     """Registration income (paid fees) and salary expense (net pay) for the period."""
     start, end = sheet_range(period_type, year, month, week_start)
+    # Every sheet counts money by the day it was received / paid out, so days add up to weeks and months.
+    # Exceptions (monthly sheet only): a payment without a date counts in the month of its fee, and a salary
+    # row that has not been paid out yet counts in its own salary month.
+    received = and_(FeePayment.paid_on >= start, FeePayment.paid_on <= end)
     if period_type == "month":
-        paid = session.scalar(
-            select(func.coalesce(func.sum(FeePayment.amount), 0))
-            .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
-            .where(
-                FeePayment.deleted_at.is_(None),
-                FeeCharge.currency == currency,
-                FeeCharge.year == year,
-                FeeCharge.month == month,
-            )
-        )
-        lines = session.scalars(
-            select(SalaryLine).where(
-                SalaryLine.currency == currency, SalaryLine.year == year, SalaryLine.month == month
-            )
-        ).all()
-    else:
-        paid = session.scalar(
-            select(func.coalesce(func.sum(FeePayment.amount), 0))
-            .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
-            .where(
-                FeePayment.deleted_at.is_(None),
-                FeeCharge.currency == currency,
-                FeePayment.paid_on >= start,
-                FeePayment.paid_on <= end,
-            )
-        )
-        lines = session.scalars(
-            select(SalaryLine).where(
-                SalaryLine.currency == currency, SalaryLine.paid_on >= start, SalaryLine.paid_on <= end
-            )
-        ).all()
+        received = or_(received, and_(FeePayment.paid_on.is_(None), FeeCharge.year == year, FeeCharge.month == month))
+    paid = session.scalar(
+        select(func.coalesce(func.sum(FeePayment.amount), 0))
+        .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
+        .where(FeePayment.deleted_at.is_(None), FeeCharge.currency == currency, received)
+    )
+    handed_out = and_(SalaryLine.paid_on >= start, SalaryLine.paid_on <= end)
+    if period_type == "month":
+        handed_out = or_(handed_out, and_(SalaryLine.paid_on.is_(None), SalaryLine.year == year, SalaryLine.month == month))
+    lines = session.scalars(select(SalaryLine).where(SalaryLine.currency == currency, handed_out)).all()
     salaries = sum(
         (net_pay(l.base, l.bonus, l.advance, l.deduction) or ZERO for l in lines), ZERO
     )
@@ -243,7 +243,7 @@ def build_sheet(
     stored = session.scalars(
         select(AccountingEntry).where(
             AccountingEntry.period_type == period_type,
-            AccountingEntry.year == year,
+            AccountingEntry.year == sheet_year(period_type, year, start),
             AccountingEntry.currency == currency,
             (AccountingEntry.month == month) if period_type == "month" else (AccountingEntry.week_start == start),
         ).order_by(AccountingEntry.created_at)
@@ -596,20 +596,39 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
-        check_net(payload.base, payload.bonus, payload.advance, payload.deduction)
         line = get_line(session, line_id)
-        for field in ("base", "bonus", "advance", "deduction"):
-            value = getattr(payload, field)
-            setattr(line, field, None if value is None else money(value))
-        line.paid_on = payload.paid_on
+        sent = payload.model_fields_set  # a field that was not sent stays as it is (null clears it)
+        amounts = ("base", "bonus", "advance", "deduction")
+        merged = {name: (getattr(payload, name) if name in sent else getattr(line, name)) for name in amounts}
+        check_net(merged["base"], merged["bonus"], merged["advance"], merged["deduction"])
+        before = f"{line.base} → "
+        for name in amounts:
+            if name in sent:
+                value = getattr(payload, name)
+                setattr(line, name, None if value is None else money(value))
+        if "paid_on" in sent:
+            line.paid_on = payload.paid_on
         if payload.paid_by is not None:
             line.paid_by = payload.paid_by.strip()
-        line.recorded_by = actor.name[:80]
+        if payload.employee_name is not None:
+            new_name = payload.employee_name.strip()
+            if len(new_name) < 2:
+                raise HTTPException(422, "اسم الموظف مطلوب (حرفان على الأقل).")
+            if new_name != line.employee.name:
+                clash = session.scalar(
+                    select(Employee.id).where(
+                        func.lower(Employee.name) == new_name.lower(),
+                        Employee.is_active.is_(True),
+                        Employee.id != line.employee.id,
+                    )
+                )
+                if clash is not None:
+                    raise HTTPException(409, "يوجد موظف بهذا الاسم.")
+                line.employee.name = new_name
         if payload.job_title is not None:
             line.employee.job_title = payload.job_title.strip()
-        if payload.employee_name is not None:
-            line.employee.name = payload.employee_name.strip()
-        log(session, actor, "salary.update", line.id, f"{line.month}/{line.year} {line.currency}")
+        line.recorded_by = actor.name[:80]
+        log(session, actor, "salary.update", line.id, f"{line.month}/{line.year} {line.currency} {before}{line.base}")
         session.commit()
         session.refresh(line)
         return salary_row(line)
@@ -668,6 +687,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         start, _ = sheet_range(payload.period_type, payload.year, payload.month, payload.week_start)
+        year = sheet_year(payload.period_type, payload.year, start)
         standard = {key for key, _label, _kind in STANDARD_ITEMS}
         if payload.item_key != "custom" and payload.item_key not in standard:
             raise HTTPException(422, "بند غير معروف.")
@@ -680,17 +700,17 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             entry = session.scalar(
                 select(AccountingEntry).where(
                     AccountingEntry.period_type == payload.period_type,
-                    AccountingEntry.year == payload.year,
+                    AccountingEntry.year == year,
                     AccountingEntry.currency == payload.currency,
                     AccountingEntry.item_key == payload.item_key,
                     (AccountingEntry.month == payload.month) if payload.period_type == "month"
                     else (AccountingEntry.week_start == start),
-                )
+                ).order_by(AccountingEntry.created_at.desc())
             )
         created = entry is None
         if entry is None:
             entry = AccountingEntry(
-                period_type=payload.period_type, year=payload.year,
+                period_type=payload.period_type, year=year,
                 month=payload.month if payload.period_type == "month" else 0,
                 week_start=start if payload.period_type != "month" else None,
                 currency=payload.currency, item_key=payload.item_key,
@@ -703,7 +723,29 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         entry.entered_by = actor.name[:80]
         entry.income, entry.expense = money(payload.income), money(payload.expense)
         entry.manual = payload.manual
+        if payload.manual and payload.item_key in AUTO_ITEMS:
+            # Saving only a note / name next to an unchanged amount must not freeze the automatic value.
+            auto = auto_values(session, payload.period_type, payload.year, payload.month, payload.week_start, payload.currency)
+            if payload.item_key == "registration":
+                same = money(payload.income) == auto["registration"] and money(payload.expense) == ZERO
+            else:
+                same = money(payload.expense) == auto["salaries"] and money(payload.income) == ZERO
+            if same:
+                entry.manual = False
         session.flush()
+        if payload.item_key != "custom":  # two people saving the same row at once must not leave two rows
+            for extra in session.scalars(
+                select(AccountingEntry).where(
+                    AccountingEntry.period_type == payload.period_type,
+                    AccountingEntry.year == year,
+                    AccountingEntry.currency == payload.currency,
+                    AccountingEntry.item_key == payload.item_key,
+                    (AccountingEntry.month == payload.month) if payload.period_type == "month"
+                    else (AccountingEntry.week_start == start),
+                    AccountingEntry.id != entry.id,
+                )
+            ).all():
+                session.delete(extra)
         log(session, actor, "entry.create" if created else "entry.update", entry.id,
             f"{payload.period_type} {payload.item_key} {payload.currency}")
         session.commit()
@@ -737,7 +779,10 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         charges = session.execute(
-            select(FeeCharge, Child).join(Child, Child.id == FeeCharge.child_id).where(FeeCharge.year == year)
+            select(FeeCharge, Child)
+            .join(Child, Child.id == FeeCharge.child_id)
+            .where(FeeCharge.year == year)
+            .options(selectinload(FeeCharge.payments))
         ).all()
         result: dict[str, Any] = {}
         for currency in CURRENCIES:

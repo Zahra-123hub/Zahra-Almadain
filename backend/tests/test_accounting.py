@@ -17,7 +17,7 @@ from app import accounting, fees, main
 from app.database import Base, get_session
 from app import import_vorlagen
 from app.import_vorlagen import parse_date, run_import
-from app.models import Account, Child, Employee, FeeCharge, FeePayment, Role, SalaryLine
+from app.models import Account, AccountingEntry, Child, Employee, FeeCharge, FeePayment, Role, SalaryLine
 from app.numbers_ar import parse_amount
 
 
@@ -166,6 +166,135 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self.salary("Bad", "-5").status_code, 422)
         with Session(self.engine) as session:
             self.assertEqual(len(session.scalars(select(Employee)).all()), 2)  # Rima reused; rejected rows create nobody
+
+    # ---- corrections after the accounting review ----
+    A = "/api/admin/accounting"
+
+    def _sheet(self, **query):
+        return self.client.get(self.A + "/sheet?" + "&".join(f"{k}={v}" for k, v in query.items()), headers=self.acc).json()
+
+    def _row(self, sheet, key):
+        return next(row for row in sheet["rows"] if row["key"] == key)
+
+    def _fee(self, month=10, amount="1000", paid="400", paid_on="2026-11-02"):
+        child_id = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["id"]
+        charge = self.client.post("/api/admin/fees/charges", headers=self.acc, json={
+            "child_id": child_id, "year": 2026, "month": month, "amount": amount, "currency": "SYP"}).json()
+        if paid:
+            self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc, json={"amount": paid, "paid_on": paid_on})
+        return charge
+
+    def test_income_counts_by_payment_date_in_every_sheet(self):
+        self._fee(month=10, paid="400", paid_on="2026-11-02")  # fee for October, money received on 2 November
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "registration")["income"], "0.00")
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=11, currency="SYP"), "registration")["income"], "400.00")
+        self.assertEqual(self._row(self._sheet(period_type="week", year=2026, currency="SYP", week_start="2026-11-02"), "registration")["income"], "400.00")
+        self.assertEqual(self._row(self._sheet(period_type="day", year=2026, currency="SYP", week_start="2026-11-02"), "registration")["income"], "400.00")
+        self.assertEqual(self._row(self._sheet(period_type="day", year=2026, currency="SYP", week_start="2026-11-03"), "registration")["income"], "0.00")
+
+    def test_payment_without_date_counts_in_the_month_of_its_fee(self):
+        charge = self._fee(month=9, paid=None)
+        with Session(self.engine) as session:
+            session.add(FeePayment(charge_id=uuid.UUID(charge["id"]), amount=Decimal("300"), paid_on=None))
+            session.commit()
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=9, currency="SYP"), "registration")["income"], "300.00")
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "registration")["income"], "0.00")
+        # it can still be edited without inventing a date, but a new payment needs one
+        payment_id = self.client.get("/api/admin/fees?year=2026&month=9", headers=self.acc).json()["rows"][0]["payments"][0]["id"]
+        keep = self.client.patch(f"/api/admin/fees/payments/{payment_id}", headers=self.acc, json={"amount": "300", "paid_on": None, "note": "ok"})
+        self.assertEqual(keep.status_code, 200)
+        self.assertIsNone(keep.json()["payments"][0]["paid_on"])
+        self.assertEqual(self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc, json={"amount": "10"}).status_code, 422)
+        dated = self.client.patch(f"/api/admin/fees/payments/{payment_id}", headers=self.acc, json={"amount": "300", "paid_on": "2026-09-15"})
+        self.assertEqual(dated.status_code, 200)
+        self.assertEqual(self.client.patch(f"/api/admin/fees/payments/{payment_id}", headers=self.acc, json={"amount": "300", "paid_on": None}).status_code, 422)
+
+    def test_salaries_count_when_paid_out_unpaid_ones_in_their_own_month(self):
+        self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Rima", "salary": "500", "salary_currency": "SYP"})
+        self.client.post(self.A + "/salaries/generate", headers=self.acc, json={"year": 2026, "month": 11, "currency": "SYP"})
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=11, currency="SYP"), "salaries")["expense"], "500.00")
+        self.assertEqual(self._row(self._sheet(period_type="week", year=2026, currency="SYP", week_start="2026-11-02"), "salaries")["expense"], "0.00")
+        line = self.client.get(self.A + "/salaries?year=2026&month=11", headers=self.acc).json()["rows"][0]
+        self.client.patch(f"{self.A}/salaries/{line['id']}", headers=self.acc, json={"base": "500", "paid_on": "2026-10-30"})
+        # paid out on 30 October: it is an October expense now and no longer November's
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "salaries")["expense"], "500.00")
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=11, currency="SYP"), "salaries")["expense"], "0.00")
+        self.assertEqual(self._row(self._sheet(period_type="day", year=2026, currency="SYP", week_start="2026-10-30"), "salaries")["expense"], "500.00")
+
+    def test_saving_a_note_does_not_freeze_an_automatic_amount(self):
+        charge = self._fee(month=10, paid="400", paid_on="2026-10-05")
+        body = {"period_type": "month", "year": 2026, "month": 10, "currency": "SYP", "item_key": "registration",
+                "income": "400", "expense": "0", "note": "only a note", "manual": True}
+        saved = self.client.put(self.A + "/entries", headers=self.acc, json=body).json()
+        row = self._row(saved, "registration")
+        self.assertFalse(row["manual"])
+        self.assertEqual(row["note"], "only a note")
+        self.client.post(f"/api/admin/fees/charges/{charge['id']}/payments", headers=self.acc, json={"amount": "100", "paid_on": "2026-10-20"})
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "registration")["income"], "500.00")
+        # a really different amount is a manual override
+        body["income"] = "999"
+        override = self._row(self.client.put(self.A + "/entries", headers=self.acc, json=body).json(), "registration")
+        self.assertTrue(override["manual"])
+        self.assertEqual(override["income"], "999.00")
+
+    def test_salary_update_changes_only_what_is_sent(self):
+        line = self.salary("Rima", "1000", bonus="100", paid_on="2026-10-28").json()
+        sent = self.client.patch(f"{self.A}/salaries/{line['id']}", headers=self.acc, json={"paid_by": "Samir"}).json()
+        self.assertEqual((sent["base"], sent["bonus"], sent["paid_on"], sent["paid_by"]), ("1000.00", "100.00", "2026-10-28", "Samir"))
+        cleared = self.client.patch(f"{self.A}/salaries/{line['id']}", headers=self.acc, json={"bonus": None, "paid_on": None}).json()
+        self.assertIsNone(cleared["bonus"])
+        self.assertIsNone(cleared["paid_on"])
+        self.assertEqual(cleared["base"], "1000.00")
+        # the net check uses the stored values too
+        self.assertEqual(self.client.patch(f"{self.A}/salaries/{line['id']}", headers=self.acc, json={"advance": "5000"}).status_code, 422)
+
+    def test_names_cannot_become_blank_or_duplicate(self):
+        first = self.salary("Rima", "1000").json()
+        self.salary("Dina", "500")
+        blank = self.client.patch(f"{self.A}/salaries/{first['id']}", headers=self.acc, json={"employee_name": "  ", "base": "1000"})
+        self.assertEqual(blank.status_code, 422)
+        clash = self.client.patch(f"{self.A}/salaries/{first['id']}", headers=self.acc, json={"employee_name": "dina", "base": "1000"})
+        self.assertEqual(clash.status_code, 409)
+        renamed = self.client.patch(f"{self.A}/salaries/{first['id']}", headers=self.acc, json={"employee_name": "Rima S.", "base": "1000"})
+        self.assertEqual(renamed.json()["employee_name"], "Rima S.")
+        child = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]
+        self.assertEqual(self.client.patch(f"/api/admin/fees/children/{child['id']}", headers=self.acc, json={"class_name": "KG1", "display_name": ""}).status_code, 422)
+        self.client.post("/api/admin/fees/charges", headers=self.acc, json={"child_name": "Bashar", "year": 2026, "month": 10, "amount": "1", "currency": "SYP"})
+        self.assertEqual(self.client.patch(f"/api/admin/fees/children/{child['id']}", headers=self.acc, json={"class_name": "KG1", "display_name": "bashar"}).status_code, 409)
+        self.assertEqual(self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["display_name"], "Amal")
+
+    def test_week_and_day_sheets_take_the_year_from_their_date(self):
+        entry = {"period_type": "day", "year": 2025, "week_start": "2026-03-05", "currency": "SYP", "item_key": "operating",
+                 "income": "0", "expense": "100", "manual": True}  # a wrong year typed next to a 2026 date
+        self.client.put(self.A + "/entries", headers=self.acc, json=entry)
+        for year in (2025, 2026):
+            self.assertEqual(self._row(self._sheet(period_type="day", year=year, currency="SYP", week_start="2026-03-05"), "operating")["expense"], "100.00")
+        # a week across New Year is one sheet whichever day of it is opened
+        week = {"period_type": "week", "year": 2026, "week_start": "2026-12-30", "currency": "SYP", "item_key": "misc",
+                "income": "0", "expense": "7", "manual": True}
+        self.client.put(self.A + "/entries", headers=self.acc, json=week)
+        for day in ("2026-12-29", "2027-01-02"):
+            self.assertEqual(self._row(self._sheet(period_type="week", year=2027, currency="SYP", week_start=day), "misc")["expense"], "7.00")
+
+    def test_saving_a_standard_row_twice_leaves_one_row(self):
+        body = {"period_type": "month", "year": 2026, "month": 10, "currency": "SYP", "item_key": "operating", "income": "0", "expense": "10", "manual": True}
+        self.client.put(self.A + "/entries", headers=self.acc, json=body)
+        with Session(self.engine) as session:  # simulate the duplicate a simultaneous save could leave behind
+            session.add(AccountingEntry(period_type="month", year=2026, month=10, currency="SYP", item_key="operating", income=0, expense=5, manual=True))
+            session.commit()
+        body["expense"] = "20"
+        self.client.put(self.A + "/entries", headers=self.acc, json=body)
+        with Session(self.engine) as session:
+            rows = session.scalars(select(AccountingEntry).where(AccountingEntry.item_key == "operating")).all()
+            self.assertEqual([str(r.expense) for r in rows], ["20.00"])
+
+    def test_week_can_start_on_another_day(self):
+        import datetime
+        with patch.dict(os.environ, {"ACCOUNTING_WEEK_START": "6"}):  # Sunday
+            self.assertEqual(accounting.week_monday(datetime.date(2026, 11, 4)), datetime.date(2026, 11, 1))
+        self.assertEqual(accounting.week_monday(datetime.date(2026, 11, 4)), datetime.date(2026, 11, 2))
+        with patch.dict(os.environ, {"ACCOUNTING_WEEK_START": "nonsense"}):
+            self.assertEqual(accounting.week_start_day(), 0)
 
     # ---- sheets ----
     def test_monthly_sheet_fills_registration_and_salaries_automatically(self):
@@ -484,6 +613,29 @@ class ImportTests(unittest.TestCase):
 
     def run_fees(self, session):
         return run_import(session, self.fees_csv, None)
+
+    def test_excel_files_with_semicolons_tabs_or_utf16_are_read(self):
+        row = ["1", "Amal", "KG1", "مليون", "500000", "500000", "03/09", "R1", "", "9", "2026"]
+        for name, delimiter, encoding in (("semi.csv", ";", "utf-8-sig"), ("tab.csv", "\t", "utf-8-sig"), ("utf16.csv", "\t", "utf-16")):
+            path = Path(self.dir.name) / name
+            header = FEES_HEADER.split(",")
+            path.write_text(delimiter.join(header) + "\n" + delimiter.join(row) + "\n", encoding=encoding)
+            rows, ignored = import_vorlagen.read_csv(path, import_vorlagen.FEE_HEADERS)
+            self.assertEqual(len(rows), 1, name)
+            self.assertEqual((rows[0]["name"], rows[0]["required"], rows[0]["paid"]), ("Amal", "مليون", "500000"), name)
+            self.assertEqual(ignored, [], name)
+
+    def test_file_in_the_windows_code_page_is_refused_with_a_clear_message(self):
+        path = Path(self.dir.name) / "ansi.csv"
+        # an ANSI export leaves bytes that are not valid UTF-8
+        path.write_bytes(FEES_HEADER.encode("utf-8") + "\n1,Amal \xe9,KG1,100\n".encode("latin-1"))
+        with self.assertRaises(ValueError) as caught:
+            import_vorlagen.read_csv(path, import_vorlagen.FEE_HEADERS)
+        self.assertIn("UTF-8", str(caught.exception))
+        with Session(self.engine) as session:
+            with self.assertRaises(ValueError):
+                run_import(session, path, None)
+            self.assertEqual(session.scalar(select(func.count()).select_from(FeeCharge)), 0)
 
     def test_values_are_stored_as_read_and_empty_stays_empty(self):
         self.write(
