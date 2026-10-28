@@ -38,22 +38,23 @@ function accCurrencyOptions(withAll){ return (withAll ? [["", "كل العملا
 /* Printable A4 landscape RTL page: header with logo, even columns, tall rows to write in,
    highlighted totals and the two signature fields. `parts` = [{html, cols?, ...}]. */
 function accPrint(title, subtitle, parts, msgEl){
-  var css = "@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}" +
-    "body{font-family:Almarai,'Segoe UI',Tahoma,sans-serif;color:#111;margin:0;font-size:12pt;line-height:1.35}" +
-    "section{page-break-after:always;padding:2mm 0}section:last-child{page-break-after:auto}" +
-    ".top{display:flex;align-items:center;gap:14px;border-bottom:3px solid #17408f;padding-bottom:8px;margin-bottom:10px}" +
-    ".top img{width:62px;height:62px;object-fit:contain}.top .t{flex:1;text-align:center}.top h1{margin:0;font-size:19pt;color:#17408f}.top h2{margin:2px 0 0;font-size:15pt}" +
-    ".top .spacer{width:62px}.meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}" +
-    ".meta span{border:1.5px solid #17408f;border-radius:999px;padding:2px 14px;font-weight:700;font-size:11pt;background:#eef3fc}" +
+  /* Black and white on purpose: no filled areas, no colours, thin lines, so a print uses very little ink. */
+  var css = "@page{size:A4 landscape;margin:8mm}*{box-sizing:border-box}html{-webkit-print-color-adjust:economy;print-color-adjust:economy}" +
+    "body{font-family:Almarai,'Segoe UI',Tahoma,sans-serif;color:#000;background:#fff;margin:0;font-size:12pt;line-height:1.35}" +
+    "section{page-break-after:always;padding:0}section:last-child{page-break-after:auto}" +
+    ".top{display:flex;align-items:center;gap:14px;border-bottom:1.5px solid #000;padding-bottom:5px;margin-bottom:6px}" +
+    ".top img{width:50px;height:50px;object-fit:contain;filter:grayscale(1) contrast(1.2)}.top .t{flex:1;text-align:center}.top h1{margin:0;font-size:19pt;color:#000}.top h2{margin:2px 0 0;font-size:15pt}" +
+    ".top .spacer{width:50px}.meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:0 0 6px}" +
+    ".meta span{border:1px solid #000;border-radius:999px;padding:2px 14px;font-weight:700;font-size:11pt}" +
     "table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{page-break-inside:avoid}" +
-    "th,td{border:1px solid #555;padding:4px 7px;text-align:center;vertical-align:middle;overflow-wrap:break-word}td.n{white-space:nowrap}" +
-    "th{background:#17408f;color:#fff;font-size:11pt;padding:6px 5px}td{height:8mm;font-size:11.5pt}tbody tr:nth-child(even) td{background:#f4f7fc}" +
+    "th,td{border:1px solid #000;padding:4px 7px;text-align:center;vertical-align:middle;overflow-wrap:break-word}td.n{white-space:nowrap}" +
+    "th{font-weight:800;font-size:11pt;padding:6px 5px;border-bottom:2px solid #000}td{height:7mm;font-size:11.5pt}" +
     "td.l{text-align:right}td.l:first-child{font-weight:700}" +
-    "tfoot{display:table-row-group}tfoot td{background:#fde9a8;font-weight:800;border-top:3px double #17408f;height:9mm;font-size:12pt;white-space:nowrap}" +
-    ".due{color:#b00020;font-weight:800}" +
-    ".sign{display:flex;gap:70px;margin-top:14px;page-break-inside:avoid}.sign>div{flex:1;text-align:center}.sign b{display:block;font-size:12pt;margin-bottom:22px}" +
-    ".sign span{display:block;border-top:1.5px solid #111;padding-top:3px;min-height:20px;font-weight:700}.sign i{display:block;margin-top:6px;font-style:normal}" +
-    "footer{margin-top:6px;font-size:9pt;color:#555;text-align:left}";
+    "tfoot{display:table-row-group}tfoot td{font-weight:800;border-top:2px solid #000;height:7mm;font-size:12pt;white-space:nowrap}" +
+    ".due{font-weight:800;text-decoration:underline}" +
+    ".sign{display:flex;gap:70px;margin-top:10px;page-break-inside:avoid}.sign>div{flex:1;text-align:center}.sign b{display:block;font-size:12pt;margin-bottom:12px}" +
+    ".sign span{display:block;border-top:1px solid #000;padding-top:3px;min-height:20px;font-weight:700}.sign i{display:block;margin-top:6px;font-style:normal}" +
+    "footer{margin-top:3px;font-size:8.5pt;color:#000;text-align:left}";
   var sign = "<div class='sign'><div><b>توقيع المحاسب</b><span>" + esc(ACC_VIEWER.role === "accountant" ? ACC_VIEWER.name : "") + "</span><i>التاريخ: ____ / ____ / ________</i></div>" +
     "<div><b>توقيع الإدارة</b><span></span><i>التاريخ: ____ / ____ / ________</i></div></div>";
   var today = new Date().toLocaleDateString("ar-SY");
@@ -605,7 +606,9 @@ function tabEmployees(){
           h("div", {class:"a-form-grid"}, [accField("الاسم", nameInput), accField("المسمى الوظيفي", jobInput), accField("الراتب الشهري", salaryInput), accField("عملة الراتب", salaryCur), accField("حساب الدخول", accountSelect),
             h("div", {class:"a-row"}, [
               h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
-                try{ await request("/api/admin/accounting/employees/" + encodeURIComponent(employee.id), {method:"PATCH", body:JSON.stringify({name:nameInput.value.trim(), job_title:jobInput.value.trim(), account_id:accountSelect.value || null, salary:salaryInput.value === "" ? null : salaryInput.value, salary_currency:salaryCur.value})}); setMsg(msg, "تم الحفظ.", "ok"); await load(); }
+                try{
+                  var saved = await request("/api/admin/accounting/employees/" + encodeURIComponent(employee.id), {method:"PATCH", body:JSON.stringify({name:nameInput.value.trim(), job_title:jobInput.value.trim(), account_id:accountSelect.value || null, salary:salaryInput.value === "" ? null : salaryInput.value, salary_currency:salaryCur.value})});
+                  setMsg(msg, "تم الحفظ." + (saved.updated_salary_rows ? " وتحدّث راتب " + saved.updated_salary_rows + " سطر لم يُستلم بعد ليوافق الراتب الجديد." : ""), "ok"); await load(); }
                 catch(error){ setMsg(msg, errText(error), "err"); }
               }}),
               twoStep("حذف من القائمة", async function(){

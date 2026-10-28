@@ -1147,10 +1147,11 @@ def attach_person_to_account(
     other = session.scalar(
         select(Employee).where(
             func.lower(Employee.name) == name.lower(),
-            Employee.is_active.is_(True),
             Employee.id != (employee.id if employee else uuid.UUID(int=0)),
-        )
+        ).order_by(Employee.is_active.desc(), Employee.created_at)
     )
+    if other is not None and not other.is_active and employee is not None:
+        other = None  # a removed person with the same name does not block this one
     if other is not None:
         if other.account_id is not None and other.account_id != account.id:
             raise HTTPException(409, "يوجد موظف بهذا الاسم مرتبط بحساب آخر.")
