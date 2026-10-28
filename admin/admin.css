@@ -277,3 +277,10 @@ h2,h3{font-weight:800}
   .a-table.compact tfoot td:empty{display:none}
   .a-table-wrap{overflow-x:visible;border:0}
 }
+
+/* Cash balance */
+.a-cash{border:2px solid var(--sun)}
+.a-kpi.good strong{color:#7DC243}
+.a-cash .a-kpis .a-kpi:first-child{grid-column:1 / -1;text-align:center;padding:18px}
+.a-cash .a-kpis .a-kpi:first-child strong{font-size:clamp(1.8rem,5vw,2.6rem)}
+.a-rolled td{opacity:.9;font-style:normal}

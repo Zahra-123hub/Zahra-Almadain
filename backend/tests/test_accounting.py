@@ -296,6 +296,104 @@ class AccountingApiTests(unittest.TestCase):
         with patch.dict(os.environ, {"ACCOUNTING_WEEK_START": "nonsense"}):
             self.assertEqual(accounting.week_start_day(), 0)
 
+    # ---- cash balance and roll-up ----
+    def _entry(self, **body):
+        base = {"currency": "SYP", "income": "0", "expense": "0", "manual": True}
+        return self.client.put(self.A + "/entries", headers=self.acc, json={**base, **body})
+
+    def _cash(self):
+        return self.client.get(self.A + "/cash", headers=self.acc).json()
+
+    def test_cash_balance_is_opening_plus_income_minus_expense(self):
+        import datetime
+        today = datetime.date.today()
+        self.assertEqual(self._cash()["SYP"]["balance"], "0.00")
+        self.assertFalse(self._cash()["SYP"]["configured"])
+        # opening balance at the start of this month, then income and expense in this month
+        set_up = self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "SYP", "opening": "1000", "start_year": today.year, "start_month": today.month})
+        self.assertEqual(set_up.status_code, 200)
+        self.assertTrue(set_up.json()["configured"])
+        self._entry(period_type="month", year=today.year, month=today.month, item_key="buffet", income="300")
+        self._entry(period_type="month", year=today.year, month=today.month, item_key="operating", expense="450")
+        usd = self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "USD", "opening": "50", "start_year": today.year, "start_month": today.month}).json()
+        cash = self._cash()
+        self.assertEqual((cash["SYP"]["income"], cash["SYP"]["expense"], cash["SYP"]["balance"]), ("300.00", "450.00", "850.00"))
+        self.assertEqual((usd["balance"], cash["USD"]["balance"]), ("50.00", "50.00"))  # the currencies never mix
+        # fee money received and a paid salary change the balance by themselves
+        charge = self._fee(month=today.month, amount="1000", paid="400", paid_on=today.isoformat())
+        self.assertEqual(self._cash()["SYP"]["balance"], "1250.00")
+        self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Rima", "salary": "200", "salary_currency": "SYP"})
+        self.client.post(self.A + "/salaries/generate", headers=self.acc, json={"year": today.year, "month": today.month, "currency": "SYP"})
+        self.assertEqual(self._cash()["SYP"]["balance"], "1050.00")
+        # the monthly sheet shows the balance at the start and the end of the month
+        sheet = self._sheet(period_type="month", year=today.year, month=today.month, currency="SYP")
+        self.assertEqual(sheet["balance"], {"opening": "1000.00", "closing": "1050.00"})
+        # removing the payment takes the money away again
+        payment_id = self.client.get(f"/api/admin/fees?year={today.year}&month={today.month}", headers=self.acc).json()["rows"][0]["payments"][0]["id"]
+        self.client.delete(f"/api/admin/fees/payments/{payment_id}", headers=self.acc)
+        self.assertEqual(self._cash()["SYP"]["balance"], "650.00")
+
+    def test_balance_carries_over_from_month_to_month(self):
+        self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "SYP", "opening": "500", "start_year": 2026, "start_month": 1})
+        self._entry(period_type="month", year=2026, month=1, item_key="buffet", income="200")
+        self._entry(period_type="month", year=2026, month=2, item_key="operating", expense="100")
+        self._entry(period_type="month", year=2026, month=3, item_key="buffet", income="50")
+        months = {(m["year"], m["month"]): m for m in self.client.get(self.A + "/cash", headers=self.acc).json()["SYP"]["months"]}
+        self.assertEqual((months[(2026, 1)]["opening"], months[(2026, 1)]["closing"]), ("500.00", "700.00"))
+        self.assertEqual((months[(2026, 2)]["opening"], months[(2026, 2)]["closing"]), ("700.00", "600.00"))
+        self.assertEqual((months[(2026, 3)]["opening"], months[(2026, 3)]["closing"]), ("600.00", "650.00"))
+        march = self._sheet(period_type="month", year=2026, month=3, currency="SYP")
+        self.assertEqual(march["balance"], {"opening": "600.00", "closing": "650.00"})
+        # a month before the books start has no balance
+        self.assertIsNone(self._sheet(period_type="month", year=2025, month=12, currency="SYP")["balance"])
+        # without an opening balance nothing is claimed on the sheet
+        self.client.post(self.A + "/reset", headers=self.legacy, json={"confirm": "RESET"})
+        self.assertIsNone(self._sheet(period_type="month", year=2026, month=3, currency="SYP")["balance"])
+        self.assertFalse(self._cash()["SYP"]["configured"])
+
+    def test_only_accountant_and_admin_can_set_the_opening_balance(self):
+        body = {"currency": "SYP", "opening": "10", "start_year": 2026, "start_month": 1}
+        self.assertEqual(self.client.put(self.A + "/cash", headers=self.teacher, json=body).status_code, 403)
+        self.assertEqual(self.client.put(self.A + "/cash", headers=self.parent, json=body).status_code, 403)
+        self.assertEqual(self.client.put(self.A + "/cash", headers=self.acc, json={**body, "opening": "-5"}).status_code, 422)
+        self.assertEqual(self.client.put(self.A + "/cash", headers=self.acc, json={**body, "start_month": 13}).status_code, 422)
+        self.assertEqual(self.client.put(self.A + "/cash", headers=self.acc, json=body).status_code, 200)
+
+    def test_days_and_weeks_add_up_into_the_month_without_double_counting(self):
+        # 6 and 7 October fall in the week of Monday 5 October; 20 October is another week
+        self._entry(period_type="day", year=2026, week_start="2026-10-06", item_key="operating", expense="10")
+        self._entry(period_type="day", year=2026, week_start="2026-10-07", item_key="operating", expense="20")
+        self._entry(period_type="day", year=2026, week_start="2026-10-20", item_key="operating", expense="5")
+        month = lambda: self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "operating")
+        self.assertEqual((month()["expense"], month()["rolled"]), ("35.00", True))
+        self.assertEqual(self._row(self._sheet(period_type="week", year=2026, currency="SYP", week_start="2026-10-05"), "operating")["expense"], "30.00")
+        # a weekly row replaces the days of that week (it is the summary of them), the other days still count
+        self._entry(period_type="week", year=2026, week_start="2026-10-05", item_key="operating", expense="100")
+        self.assertEqual(month()["expense"], "105.00")
+        # a monthly row replaces everything below it
+        self._entry(period_type="month", year=2026, month=10, item_key="operating", expense="999")
+        self.assertEqual((month()["expense"], month()["rolled"]), ("999.00", False))
+        # taking the monthly row away brings the roll-up back
+        entry_id = month()["id"]
+        self.client.delete(f"{self.A}/entries/{entry_id}", headers=self.acc)
+        self.assertEqual(month()["expense"], "105.00")
+
+    def test_custom_rows_of_the_days_appear_once_in_the_week_and_month(self):
+        self._entry(period_type="day", year=2026, week_start="2026-10-06", item_key="custom", item_label="Repair", expense="40")
+        self._entry(period_type="day", year=2026, week_start="2026-10-08", item_key="custom", item_label="repair", expense="10")
+        for sheet in (self._sheet(period_type="week", year=2026, currency="SYP", week_start="2026-10-05"),
+                      self._sheet(period_type="month", year=2026, month=10, currency="SYP")):
+            rolled = [r for r in sheet["rows"] if r["key"] == "rolled"]
+            self.assertEqual([(r["label"], r["expense"]) for r in rolled], [("Repair", "50.00")])
+            self.assertEqual(sheet["totals"]["expense"], "50.00")
+
+    def test_an_auto_item_is_not_counted_twice_through_the_roll_up(self):
+        self._fee(month=10, paid="400", paid_on="2026-10-06")
+        day = self._sheet(period_type="day", year=2026, currency="SYP", week_start="2026-10-06")
+        self.assertEqual(self._row(day, "registration")["income"], "400.00")
+        self.assertEqual(self._row(self._sheet(period_type="week", year=2026, currency="SYP", week_start="2026-10-05"), "registration")["income"], "400.00")
+        self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "registration")["income"], "400.00")
+
     # ---- sheets ----
     def test_monthly_sheet_fills_registration_and_salaries_automatically(self):
         child_id = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["id"]
@@ -364,7 +462,7 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual((rows["registration"]["income"], rows["salaries"]["expense"]), ("300.00", "0.00"))
         second = {r["key"]: r for r in self.client.get(url + "2026-10-06", headers=self.acc).json()["rows"]}
         self.assertEqual((second["registration"]["income"], second["salaries"]["expense"]), ("200.00", "5000.00"))
-        # rows saved for one day do not leak into another day or into the week sheet
+        # rows saved for one day do not leak into another day (the week sheet adds its days up, see the roll-up tests)
         saved = self.client.put("/api/admin/accounting/entries", headers=self.acc, json={
             "period_type": "day", "year": 2026, "week_start": "2026-10-05", "currency": "SYP",
             "item_key": "operating", "expense": "75", "details": "x"}).json()
@@ -372,7 +470,7 @@ class AccountingApiTests(unittest.TestCase):
         other = self.client.get(url + "2026-10-06", headers=self.acc).json()
         self.assertEqual(other["totals"]["expense"], "5000.00")
         week = self.client.get("/api/admin/accounting/sheet?period_type=week&year=2026&currency=SYP&week_start=2026-10-05", headers=self.acc).json()
-        self.assertEqual(next(r for r in week["rows"] if r["key"] == "operating")["expense"], "0.00")
+        self.assertEqual(next(r for r in week["rows"] if r["key"] == "operating")["expense"], "75.00")  # rolled up from the day
 
     def test_buffet_and_transport_can_be_income_or_expense(self):
         base = {"period_type": "month", "year": 2026, "month": 10, "currency": "SYP"}
@@ -519,7 +617,7 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self.client.post(url, headers=self.acc, json={"confirm": "RESET"}).status_code, 401)  # accountants cannot
         self.assertEqual(self.client.post(url, headers=self.legacy, json={"confirm": "yes"}).status_code, 422)  # needs the word
         done = self.client.post(url, headers=self.legacy, json={"confirm": "RESET"}).json()
-        self.assertEqual(done, {"payments": 1, "fees": 1, "salaries": 1, "sheet_rows": 1})
+        self.assertEqual(done, {"payments": 1, "fees": 1, "salaries": 1, "sheet_rows": 1, "cash": 0})
         overview = self.client.get("/api/admin/accounting/overview?year=2026", headers=self.acc).json()
         self.assertEqual(overview["SYP"]["classes"], {})
         self.assertTrue(all(m["income"] == "0.00" and m["expense"] == "0.00" for m in overview["SYP"]["series"]))

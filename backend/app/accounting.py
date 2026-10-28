@@ -33,6 +33,7 @@ from app.fees import (
 from app.models import (
     Account,
     AccountingEntry,
+    CashOpening,
     Child,
     Employee,
     FeeCharge,
@@ -140,6 +141,13 @@ class SalaryUpdate(BaseModel):
     paid_by: str | None = Field(default=None, max_length=120)
 
 
+class CashIn(BaseModel):
+    currency: str = Field(pattern="^(USD|SYP)$")
+    opening: Decimal = Money  # money in the cash box when the books start
+    start_year: int = Field(ge=2000, le=2100)
+    start_month: int = Field(ge=1, le=12)
+
+
 class EntryIn(BaseModel):
     id: uuid.UUID | None = None
     period_type: str = Field(pattern="^(month|week|day)$")
@@ -210,101 +218,272 @@ def sheet_year(period_type: str, year: int, start: date) -> int:
     return year if period_type == "month" else start.year
 
 
-def auto_values(
-    session: Session, period_type: str, year: int, month: int, week_start: date | None, currency: str
-) -> dict[str, Decimal]:
-    """Registration income (paid fees) and salary expense (net pay) for the period."""
-    start, end = sheet_range(period_type, year, month, week_start)
-    # Every sheet counts money by the day it was received / paid out, so days add up to weeks and months.
-    # Exceptions (monthly sheet only): a payment without a date counts in the month of its fee, and a salary
-    # row that has not been paid out yet counts in its own salary month.
-    received = and_(FeePayment.paid_on >= start, FeePayment.paid_on <= end)
-    if period_type == "month":
-        received = or_(received, and_(FeePayment.paid_on.is_(None), FeeCharge.year == year, FeeCharge.month == month))
-    paid = session.scalar(
-        select(func.coalesce(func.sum(FeePayment.amount), 0))
-        .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
-        .where(FeePayment.deleted_at.is_(None), FeeCharge.currency == currency, received)
-    )
-    handed_out = and_(SalaryLine.paid_on >= start, SalaryLine.paid_on <= end)
-    if period_type == "month":
-        handed_out = or_(handed_out, and_(SalaryLine.paid_on.is_(None), SalaryLine.year == year, SalaryLine.month == month))
-    lines = session.scalars(select(SalaryLine).where(SalaryLine.currency == currency, handed_out)).all()
-    salaries = sum(
-        (net_pay(l.base, l.bonus, l.advance, l.deduction) or ZERO for l in lines), ZERO
-    )
-    return {"registration": money(paid), "salaries": money(salaries)}
+def _add_days(day: date, days: int) -> date:
+    return day + timedelta(days=days)
 
 
-def build_sheet(
-    session: Session, period_type: str, year: int, month: int, week_start: date | None, currency: str
-) -> dict[str, Any]:
-    start, _ = sheet_range(period_type, year, month, week_start)
-    stored = session.scalars(
-        select(AccountingEntry).where(
-            AccountingEntry.period_type == period_type,
-            AccountingEntry.year == sheet_year(period_type, year, start),
-            AccountingEntry.currency == currency,
-            (AccountingEntry.month == month) if period_type == "month" else (AccountingEntry.week_start == start),
-        ).order_by(AccountingEntry.created_at)
-    ).all()
-    by_key = {entry.item_key: entry for entry in stored if entry.item_key != "custom"}
-    auto = auto_values(session, period_type, year, month, week_start, currency)
-    rows: list[dict[str, Any]] = []
-    for key, label, kind in STANDARD_ITEMS:
-        entry = by_key.get(key)
-        auto_income = auto["registration"] if key == "registration" else ZERO
-        auto_expense = auto["salaries"] if key == "salaries" else ZERO
-        manual = bool(entry and entry.manual)
-        if key in AUTO_ITEMS and not manual:
-            income, expense = auto_income, auto_expense
-        elif entry:
-            income, expense = money(entry.income), money(entry.expense)
+class Ledger:
+    """Everything one currency has in the books, loaded once. Sheets, the monthly series and the cash balance
+    are all worked out from this one picture, so they can never disagree.
+
+    Money is counted by the day it moved: fee payments by their payment date, salaries by the day they were
+    handed out. Exceptions (monthly sheet only): a payment without a date counts in the month of its fee, a salary
+    not yet handed out in its own salary month.
+    Rows written by hand: the most summarised sheet wins (month > week > day). Whatever is not written on a
+    higher sheet adds up automatically from the weeks and days below it."""
+
+    def __init__(self, currency: str, entries: list[AccountingEntry], payments: list[tuple], salaries: list[tuple]):
+        self.currency = currency
+        self.payments = payments  # (paid_on or None, amount, fee year, fee month)
+        self.salaries = salaries  # (paid_on or None, net pay, year, month)
+        self.month_items: dict[tuple[int, int], dict[str, AccountingEntry]] = {}
+        self.month_customs: dict[tuple[int, int], list[AccountingEntry]] = {}
+        self.week_items: dict[date, dict[str, AccountingEntry]] = {}
+        self.week_customs: dict[date, list[AccountingEntry]] = {}
+        self.day_items: dict[date, dict[str, AccountingEntry]] = {}
+        self.day_customs: dict[date, list[AccountingEntry]] = {}
+        for entry in sorted(entries, key=lambda e: (e.created_at is not None, e.created_at)):
+            if entry.period_type == "month":
+                where_items, where_customs, where = self.month_items, self.month_customs, (entry.year, entry.month)
+            elif entry.period_type == "week" and entry.week_start:
+                where_items, where_customs, where = self.week_items, self.week_customs, entry.week_start
+            elif entry.period_type == "day" and entry.week_start:
+                where_items, where_customs, where = self.day_items, self.day_customs, entry.week_start
+            else:
+                continue
+            if entry.item_key == "custom":
+                where_customs.setdefault(where, []).append(entry)
+            else:
+                where_items.setdefault(where, {})[entry.item_key] = entry  # the newest one wins
+
+    @classmethod
+    def load(cls, session: Session, currency: str) -> "Ledger":
+        entries = list(session.scalars(select(AccountingEntry).where(AccountingEntry.currency == currency)))
+        payments = [
+            (paid_on, money(amount), year, month)
+            for paid_on, amount, year, month in session.execute(
+                select(FeePayment.paid_on, FeePayment.amount, FeeCharge.year, FeeCharge.month)
+                .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
+                .where(FeePayment.deleted_at.is_(None), FeeCharge.currency == currency)
+            )
+        ]
+        salaries = [
+            (line.paid_on, net_pay(line.base, line.bonus, line.advance, line.deduction) or ZERO, line.year, line.month)
+            for line in session.scalars(select(SalaryLine).where(SalaryLine.currency == currency))
+        ]
+        return cls(currency, entries, payments, salaries)
+
+    # ---- automatic items -------------------------------------------------------
+    def auto(self, period_type: str, year: int, month: int, start: date, end: date) -> dict[str, Decimal]:
+        def total(records: list[tuple]) -> Decimal:
+            result = ZERO
+            for paid_on, amount, record_year, record_month in records:
+                if paid_on is None:
+                    hit = period_type == "month" and (record_year, record_month) == (year, month)
+                else:
+                    hit = start <= paid_on <= end
+                if hit:
+                    result += amount
+            return money(result)
+
+        return {"registration": total(self.payments), "salaries": total(self.salaries)}
+
+    # ---- roll-up of the weeks and days below a sheet ---------------------------
+    def _week_in_month(self, week_start: date, year: int, month: int) -> bool:
+        middle = _add_days(week_start, 3)  # a week counts for the month most of its days belong to
+        return (middle.year, middle.month) == (year, month)
+
+    def _rolled_item(self, period_type: str, key: str, year: int, month: int, start: date, end: date) -> tuple[Decimal, Decimal] | None:
+        income = expense = ZERO
+        found = False
+        if period_type == "week":
+            for offset in range((end - start).days + 1):
+                entry = self.day_items.get(_add_days(start, offset), {}).get(key)
+                if entry is not None:
+                    income, expense, found = income + money(entry.income), expense + money(entry.expense), True
+        elif period_type == "month":
+            weeks = [ws for ws, items in self.week_items.items() if key in items]
+            for ws in weeks:
+                if self._week_in_month(ws, year, month):
+                    entry = self.week_items[ws][key]
+                    income, expense, found = income + money(entry.income), expense + money(entry.expense), True
+            for day, items in self.day_items.items():
+                entry = items.get(key)
+                if entry is None or not start <= day <= end:
+                    continue
+                if any(ws <= day <= _add_days(ws, 6) for ws in weeks):
+                    continue  # the weekly row already covers this day
+                income, expense, found = income + money(entry.income), expense + money(entry.expense), True
+        return (income, expense) if found else None
+
+    def _rolled_customs(self, period_type: str, year: int, month: int, start: date, end: date) -> list[tuple[str, Decimal, Decimal]]:
+        sources: list[AccountingEntry] = []
+        if period_type == "week":
+            for offset in range((end - start).days + 1):
+                sources += self.day_customs.get(_add_days(start, offset), [])
+        elif period_type == "month":
+            for ws, items in self.week_customs.items():
+                if self._week_in_month(ws, year, month):
+                    sources += items
+            for day, items in self.day_customs.items():
+                if start <= day <= end:
+                    sources += items
+        groups: dict[str, list] = {}
+        for entry in sources:
+            group = groups.setdefault(entry.item_label.strip().lower(), [entry.item_label.strip(), ZERO, ZERO])
+            group[1] += money(entry.income)
+            group[2] += money(entry.expense)
+        return [(label, income, expense) for label, income, expense in groups.values()]
+
+    # ---- a sheet -----------------------------------------------------------------
+    def sheet(self, period_type: str, year: int, month: int, week_start: date | None) -> dict[str, Any]:
+        start, end = sheet_range(period_type, year, month, week_start)
+        if period_type == "month":
+            stored, customs = self.month_items.get((year, month), {}), self.month_customs.get((year, month), [])
+        elif period_type == "week":
+            stored, customs = self.week_items.get(start, {}), self.week_customs.get(start, [])
         else:
-            income = expense = ZERO
-        if key in CHOICE_ITEMS and income > 0 and expense == 0:
-            kind = "income"
-        rows.append(
-            {
-                "id": str(entry.id) if entry else None,
-                "key": key,
-                "label": label,
-                "kind": kind,
-                "choice": key in CHOICE_ITEMS,
-                "custom": False,
-                "details": entry.details if entry else "",
-                "note": entry.note if entry else "",
-                "person": entry.person if entry else "",
-                "entered_by": entry.entered_by if entry else "",
-                "income": str(income),
-                "expense": str(expense),
-                "auto": key in AUTO_ITEMS,
-                "auto_income": str(auto_income),
-                "auto_expense": str(auto_expense),
-                "manual": manual,
-            }
-        )
-    for entry in stored:
-        if entry.item_key == "custom":
+            stored, customs = self.day_items.get(start, {}), self.day_customs.get(start, [])
+        auto = self.auto(period_type, year, month, start, end)
+        rows: list[dict[str, Any]] = []
+        for key, label, kind in STANDARD_ITEMS:
+            entry = stored.get(key)
+            auto_income = auto["registration"] if key == "registration" else ZERO
+            auto_expense = auto["salaries"] if key == "salaries" else ZERO
+            manual = bool(entry and entry.manual)
+            rolled = False
+            if key in AUTO_ITEMS and not manual:
+                income, expense = auto_income, auto_expense
+            elif entry:
+                income, expense = money(entry.income), money(entry.expense)
+            else:
+                income = expense = ZERO
+                below = self._rolled_item(period_type, key, year, month, start, end)
+                if below is not None:
+                    income, expense = below
+                    rolled = True
+            if key in CHOICE_ITEMS and income > 0 and expense == 0:
+                kind = "income"
+            rows.append(
+                {
+                    "id": str(entry.id) if entry else None,
+                    "key": key,
+                    "label": label,
+                    "kind": kind,
+                    "choice": key in CHOICE_ITEMS,
+                    "custom": False,
+                    "rolled": rolled,
+                    "details": entry.details if entry else "",
+                    "note": entry.note if entry else "",
+                    "person": entry.person if entry else "",
+                    "entered_by": entry.entered_by if entry else "",
+                    "income": str(income),
+                    "expense": str(expense),
+                    "auto": key in AUTO_ITEMS,
+                    "auto_income": str(auto_income),
+                    "auto_expense": str(auto_expense),
+                    "manual": manual,
+                }
+            )
+        for entry in customs:
             rows.append(
                 {
                     "id": str(entry.id), "key": "custom", "label": entry.item_label,
                     "kind": "expense" if money(entry.expense) > 0 or money(entry.income) == 0 else "income",
-                    "custom": True, "details": entry.details, "note": entry.note,
+                    "custom": True, "rolled": False, "details": entry.details, "note": entry.note,
                     "person": entry.person, "entered_by": entry.entered_by,
                     "income": str(money(entry.income)), "expense": str(money(entry.expense)),
                     "auto": False, "auto_income": "0.00", "auto_expense": "0.00", "manual": True,
                 }
             )
-    income_total = sum((Decimal(r["income"]) for r in rows), ZERO)
-    expense_total = sum((Decimal(r["expense"]) for r in rows), ZERO)
+        for label, income, expense in self._rolled_customs(period_type, year, month, start, end):
+            rows.append(
+                {
+                    "id": None, "key": "rolled", "label": label,
+                    "kind": "expense" if expense > 0 or income == 0 else "income",
+                    "custom": False, "rolled": True, "details": "", "note": "", "person": "", "entered_by": "",
+                    "income": str(income), "expense": str(expense),
+                    "auto": False, "auto_income": "0.00", "auto_expense": "0.00", "manual": False,
+                }
+            )
+        income_total = sum((Decimal(r["income"]) for r in rows), ZERO)
+        expense_total = sum((Decimal(r["expense"]) for r in rows), ZERO)
+        return {
+            "rows": rows,
+            "totals": {
+                "income": str(money(income_total)),
+                "expense": str(money(expense_total)),
+                "net": str(money(income_total - expense_total)),
+            },
+        }
+
+    # ---- cash balance --------------------------------------------------------------
+    def first_month(self) -> tuple[int, int] | None:
+        found: list[tuple[int, int]] = []
+        for paid_on, _amount, year, month in self.payments + self.salaries:
+            found.append((paid_on.year, paid_on.month) if paid_on else (year, month))
+        found += list(self.month_items) + list(self.month_customs)
+        for week_start in list(self.week_items) + list(self.week_customs):
+            found.append((_add_days(week_start, 3).year, _add_days(week_start, 3).month))
+        for day in list(self.day_items) + list(self.day_customs):
+            found.append((day.year, day.month))
+        return min(found) if found else None
+
+    def cash_months(self, opening: Decimal, start: tuple[int, int], end: tuple[int, int]) -> list[dict[str, str]]:
+        """Month by month: balance at the start, income, expense, balance at the end (start..end inclusive)."""
+        months: list[dict[str, str]] = []
+        balance = money(opening)
+        year, month = start
+        while (year, month) <= end and len(months) < 240:
+            totals = self.sheet("month", year, month, None)["totals"]
+            income, expense = Decimal(totals["income"]), Decimal(totals["expense"])
+            closing = money(balance + income - expense)
+            months.append({"year": year, "month": month, "opening": str(balance), "income": str(income),
+                           "expense": str(expense), "closing": str(closing)})
+            balance = closing
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return months
+
+
+def auto_values(
+    session: Session, period_type: str, year: int, month: int, week_start: date | None, currency: str
+) -> dict[str, Decimal]:
+    """Registration income (paid fees) and salary expense (net pay) for the period."""
+    start, end = sheet_range(period_type, year, month, week_start)
+    return Ledger.load(session, currency).auto(period_type, year, month, start, end)
+
+
+def build_sheet(
+    session: Session, period_type: str, year: int, month: int, week_start: date | None, currency: str
+) -> dict[str, Any]:
+    return Ledger.load(session, currency).sheet(period_type, year, month, week_start)
+
+
+def cash_report(session: Session, currency: str, today: date, until: tuple[int, int] | None = None) -> dict[str, Any]:
+    """How much money the kindergarten has: opening balance + all income - all expense, month by month,
+    up to this month (or up to `until` when a later month is asked for)."""
+    ledger = Ledger.load(session, currency)
+    opening = session.scalar(select(CashOpening).where(CashOpening.currency == currency))
+    if opening is not None:
+        start, amount = (opening.start_year, opening.start_month), money(opening.amount)
+    else:
+        start, amount = ledger.first_month() or (today.year, today.month), ZERO
+    end = max((today.year, today.month), until or (0, 0), start)
+    months = ledger.cash_months(amount, start, end)
+    now = (today.year, today.month)
+    to_now = [m for m in months if (m["year"], m["month"]) <= now] or months[:1]
+    income = sum((Decimal(m["income"]) for m in to_now), ZERO)
+    expense = sum((Decimal(m["expense"]) for m in to_now), ZERO)
     return {
-        "rows": rows,
-        "totals": {
-            "income": str(money(income_total)),
-            "expense": str(money(expense_total)),
-            "net": str(money(income_total - expense_total)),
-        },
+        "currency": currency,
+        "configured": opening is not None,
+        "opening": str(amount),
+        "start_year": start[0],
+        "start_month": start[1],
+        "income": str(money(income)),
+        "expense": str(money(expense)),
+        "balance": to_now[-1]["closing"] if to_now else str(amount),
+        "months": months,
     }
 
 
@@ -677,8 +856,41 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         start, end = sheet_range(period_type, year, month, week_start)
         data = build_sheet(session, period_type, year, month, week_start, currency)
         data.update(period_type=period_type, year=year, month=month, currency=currency,
-                    start=start.isoformat(), end=end.isoformat())
+                    start=start.isoformat(), end=end.isoformat(), balance=None)
+        if period_type == "month":
+            cash = cash_report(session, currency, date.today(), until=(year, month))
+            current = next((m for m in cash["months"] if (m["year"], m["month"]) == (year, month)), None)
+            if current is not None and cash["configured"]:
+                data["balance"] = {"opening": current["opening"], "closing": current["closing"]}
         return data
+
+    @router.get("/cash")
+    def cash(
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """The cash balance per currency, with the month-by-month trail. USD and SYP are never mixed."""
+        response.headers["Cache-Control"] = "no-store"
+        return {code: cash_report(session, code, date.today()) for code in CURRENCIES}
+
+    @router.put("/cash")
+    def set_cash_opening(
+        payload: CashIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Sets the money the kindergarten had at the start of a month; the balance is counted from there."""
+        row = session.scalar(select(CashOpening).where(CashOpening.currency == payload.currency))
+        if row is None:
+            row = CashOpening(currency=payload.currency)
+            session.add(row)
+        row.amount = money(payload.opening)
+        row.start_year, row.start_month = payload.start_year, payload.start_month
+        row.updated_by = actor.name[:80]
+        log(session, actor, "cash.opening", payload.currency, f"{payload.start_month}/{payload.start_year}")
+        session.commit()
+        return cash_report(session, payload.currency, date.today())
 
     @router.put("/entries")
     def save_entry(
@@ -813,8 +1025,9 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                     }
                 )
             series = []
+            ledger = Ledger.load(session, currency)
             for month in range(1, 13):
-                totals = build_sheet(session, "month", year, month, None, currency)["totals"]
+                totals = ledger.sheet("month", year, month, None)["totals"]
                 series.append({"month": month, "income": totals["income"], "expense": totals["expense"]})
             open_children = len({
                 child.id for charge, child in charges

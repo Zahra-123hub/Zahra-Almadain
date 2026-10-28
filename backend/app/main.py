@@ -34,6 +34,7 @@ from app.models import (
     Child,
     DailyReport,
     AccountingEntry,
+    CashOpening,
     Employee,
     FeeAuditLog,
     FeeCharge,
@@ -1351,6 +1352,7 @@ def reset_financial_data(
         "fees": session.execute(delete(FeeCharge)).rowcount or 0,
         "salaries": session.execute(delete(SalaryLine)).rowcount or 0,
         "sheet_rows": session.execute(delete(AccountingEntry)).rowcount or 0,
+        "cash": session.execute(delete(CashOpening)).rowcount or 0,
     }
     session.add(
         FeeAuditLog(actor_name="admin", action="finance.reset", entity_id="all", details=str(counts)[:1000])
