@@ -37,12 +37,11 @@ var AREAS = [
       {ar:"مسرح الدمى", en:"Puppet theatre", de:"Puppentheater"},
       {ar:"ألعاب جماعية تعلّم التعاون والصداقة", en:"Group games that teach cooperation and friendship", de:"Gruppenspiele, die Zusammenarbeit und Freundschaft lehren"},
       {ar:"أركان تعليمية للعب في الصف", en:"Learning corners for play in the classroom", de:"Lernecken zum Spielen im Gruppenraum"}]},
-  {n:{ar:"العربية", en:"Arabic", de:"Arabisch"}, d:{ar:"قصص وأناشيد وحروف تبني لغة سليمة وحب القراءة، وتعلّم الطفل أن يعبّر عمّا في نفسه بثقة.", en:"Stories, songs and letters build strong language and a love of reading, and teach the child to express themselves with confidence.", de:"Geschichten, Lieder und Buchstaben bauen Sprachgefühl und Leselust auf und helfen dem Kind, sich selbstbewusst auszudrücken."}, c:"#E0403D",
-   a:[{ar:"قصص مصوّرة", en:"Picture stories", de:"Bilderbuchgeschichten"},
-      {ar:"أناشيد وأغانٍ", en:"Songs and rhymes", de:"Lieder und Reime"},
-      {ar:"التعرّف على الحروف وكتابتها", en:"Getting to know and writing letters", de:"Buchstaben kennenlernen und schreiben"},
-      {ar:"الحوار والتعبير الشفهي", en:"Conversation and speaking", de:"Gespräche und freies Sprechen"},
-      {ar:"قصة هادئة في ختام كل يوم", en:"A calm story at the end of every day", de:"Eine ruhige Geschichte zum Ende jedes Tages"}]},
+  {n:{ar:"العربية", en:"Arabic", de:"Arabisch"}, d:{ar:"نحرص في روضة زهرة المدائن على تأسيس أطفالنا لغوياً من خلال منهاج عربي متكامل ينمّي مهارات الاستماع والتحدث والقراءة والكتابة بأساليب ممتعة وتفاعلية، مع إثرائهم بتدريس الجزء الرشيدي لتعليم الحروف وأصواتها ومخارجها بطريقة صحيحة، لبناء أساس لغوي متين يرافق أطفالنا في مسيرتهم التعليمية.", en:"At Zahrat Al-Madayn Kindergarten we give our children a firm start in language through a complete Arabic curriculum that develops listening, speaking, reading and writing in fun, interactive ways. It is enriched by teaching the Rashidi part to learn the letters, their sounds and where they are pronounced, correctly. This builds a solid foundation in language that stays with our children throughout their learning journey.", de:"Im Kindergarten Zahrat Al-Madayn legen wir den sprachlichen Grundstein unserer Kinder mit einem vollständigen arabischen Lehrplan, der Zuhören, Sprechen, Lesen und Schreiben auf unterhaltsame, interaktive Weise fördert. Ergänzt wird er durch den Unterricht des Raschidi-Teils, in dem die Buchstaben, ihre Laute und ihre Artikulationsstellen richtig gelernt werden. So entsteht ein solides sprachliches Fundament, das unsere Kinder auf ihrem ganzen Bildungsweg begleitet."}, c:"#E0403D",
+   a:[{ar:"الاستماع والتحدث", en:"Listening and speaking", de:"Zuhören und Sprechen"},
+      {ar:"القراءة والكتابة", en:"Reading and writing", de:"Lesen und Schreiben"},
+      {ar:"الحروف وأصواتها ومخارجها بطريقة صحيحة", en:"Letters, their sounds and where they are pronounced, correctly", de:"Buchstaben, ihre Laute und Artikulationsstellen, richtig gelernt"},
+      {ar:"أساليب ممتعة وتفاعلية: قصص وأناشيد وألعاب", en:"Fun, interactive methods: stories, songs and games", de:"Unterhaltsame, interaktive Methoden: Geschichten, Lieder und Spiele"}]},
   {n:{ar:"الفنون", en:"Arts", de:"Kreatives"}, d:{ar:"رسم وتلوين وأشغال يدوية للتعبير عن المشاعر والأفكار، وتنمية الذوق والدقّة في اليدين.", en:"Drawing, coloring and crafts help children express feelings and ideas, and build taste and fine motor skills.", de:"Malen, Ausmalen und Basteln helfen, Gefühle und Ideen auszudrücken, und fördern Geschmack und Fingerfertigkeit."}, c:"#2F8FCB",
    a:[{ar:"رسم وتلوين", en:"Drawing and coloring", de:"Malen und Ausmalen"},
       {ar:"أشغال يدوية", en:"Handicrafts", de:"Basteln"},
@@ -56,13 +55,16 @@ var AREAS = [
       {ar:"تجارب علمية بسيطة", en:"Simple science experiments", de:"Einfache Experimente"},
       {ar:"أنشطة مونتيسوري", en:"Montessori activities", de:"Montessori-Aktivitäten"},
       {ar:"وسائل تعليمية وشاشات عرض", en:"Teaching aids and display screens", de:"Lernmittel und Bildschirme"}]},
-  {n:{ar:"القيم والقرآن", en:"Values & Qur'an", de:"Werte und Koran"}, d:{ar:"قيم وأخلاق إسلامية تُغرس بالمحبة: القرآن الكريم والأذكار، والمشاركة والاحترام والنظافة، عادات جميلة تكبر مع الطفل.", en:"Islamic values and good manners, taught with love: the Qur'an and daily adhkar, sharing, respect and cleanliness, good habits that grow with the child.", de:"Islamische Werte und gute Umgangsformen, mit Liebe vermittelt: Koran und tägliche Gebete, Teilen, Respekt und Sauberkeit, gute Gewohnheiten, die mit dem Kind wachsen."}, c:"#4C8C1C",
-   a:[{ar:"القرآن الكريم: حفظ وتلاوة بالتجويد الميسّر بما يناسب عمر الطفل", en:"The Qur'an: memorizing and reciting with simplified tajweed suited to the child's age", de:"Der Koran: Auswendiglernen und Rezitieren mit vereinfachtem Tajwid, passend zum Alter"},
-      {ar:"أذكار الصباح والدعاء", en:"Morning adhkar and supplications", de:"Morgengebete und Bittgebete"},
-      {ar:"المشاركة والتعاون", en:"Sharing and cooperation", de:"Teilen und Zusammenarbeit"},
+  {n:{ar:"القيم", en:"Values", de:"Werte"}, d:{ar:"قيم وأخلاق إسلامية تُغرس بالمحبة: المشاركة والاحترام والصدق والنظافة، عادات جميلة تكبر مع الطفل.", en:"Islamic values and good manners, taught with love: sharing, respect, honesty and cleanliness, good habits that grow with the child.", de:"Islamische Werte und gute Umgangsformen, mit Liebe vermittelt: Teilen, Respekt, Ehrlichkeit und Sauberkeit, gute Gewohnheiten, die mit dem Kind wachsen."}, c:"#4C8C1C",
+   a:[{ar:"المشاركة والتعاون", en:"Sharing and cooperation", de:"Teilen und Zusammenarbeit"},
       {ar:"احترام الآخرين والكبار", en:"Respect for others and elders", de:"Respekt vor anderen und Älteren"},
       {ar:"الصدق والأخلاق الحسنة", en:"Honesty and good manners", de:"Ehrlichkeit und gute Umgangsformen"},
-      {ar:"النظافة الشخصية وغسل اليدين", en:"Personal hygiene and hand washing", de:"Persönliche Hygiene und Händewaschen"}]}
+      {ar:"النظافة الشخصية وغسل اليدين", en:"Personal hygiene and hand washing", de:"Persönliche Hygiene und Händewaschen"}]},
+  {n:{ar:"القرآن", en:"Qur'an", de:"Koran"}, d:{ar:"يبدأ يومنا بأذكار الصباح، ويتعلم الطفل القرآن الكريم حفظاً وتلاوة بالتجويد الميسّر بما يناسب عمره.", en:"Our day begins with the morning azkar, and the child learns the Qur'an, memorizing and reciting with simplified tajweed suited to their age.", de:"Unser Tag beginnt mit den Morgen-Azkar, und das Kind lernt den Koran: Auswendiglernen und Rezitieren mit vereinfachtem Tajwid, passend zum Alter."}, c:"#0F8F7A",
+   a:[{ar:"أذكار الصباح", en:"Morning azkar", de:"Morgen-Azkar"},
+      {ar:"الأذكار اليومية والدعاء", en:"Daily Azkar and supplications", de:"Tägliche Azkar (Gebete) und Bittgebete"},
+      {ar:"حفظ القرآن الكريم", en:"Memorizing the Qur'an", de:"Den Koran auswendig lernen"},
+      {ar:"التلاوة بالتجويد الميسّر بما يناسب عمر الطفل", en:"Recitation with simplified tajweed suited to the child's age", de:"Rezitation mit vereinfachtem Tajwid, passend zum Alter"}]}
 ];
 var DOCS = [
   {ar:"وثيقة ميلاد الطفل أو صورة عن دفتر العائلة", en:"Child's birth certificate or a copy of the family book", de:"Geburtsurkunde des Kindes oder Kopie des Familienbuchs"},
@@ -184,12 +186,12 @@ function renderPetals(){
     var intro = document.createElement("p");
     intro.className = "petal-intro";
     intro.lang = "ar"; intro.dir = "rtl";
-    intro.textContent = "خمسة مجالات تنمو معاً مثل بتلات الزهرة.";
+    intro.textContent = "ستة مجالات تنمو معاً مثل بتلات الزهرة.";
     var introEn = document.createElement("p");
     introEn.className = "petal-intro learn-en";
     introEn.lang = "en";
     introEn.dir = "ltr";
-    introEn.textContent = "Five areas grow together, like the petals of a flower.";
+    introEn.textContent = "Six areas grow together, like the petals of a flower.";
     info.append(intro, introEn);
     return;
   }
@@ -224,7 +226,7 @@ function selectPetal(index){
   renderPetals();
 }
 AREAS.forEach(function(a, i){
-  var rot = i * 72, grp = document.createElementNS(NS, "g");
+  var rot = i * 360 / AREAS.length, grp = document.createElementNS(NS, "g");
   grp.setAttribute("class", "petal" + (a.dk ? " dk" : "")); grp.setAttribute("tabindex", "0"); grp.setAttribute("role", "button"); grp.setAttribute("aria-pressed", "false"); grp.setAttribute("aria-label", a.n.ar + " / " + a.n.en);
   var e = document.createElementNS(NS, "ellipse");
   e.setAttribute("cx", 200); e.setAttribute("cy", 92); e.setAttribute("rx", 46); e.setAttribute("ry", 72); e.setAttribute("fill", a.c);
@@ -255,7 +257,7 @@ pg.ownerSVGElement.addEventListener("click", function(ev){
   var dx = local.x - 200, dy = 170 - local.y, distance = Math.hypot(dx, dy);
   if(distance < 50 || distance > 140) return;
   var angle = Math.atan2(dx, dy) * 180 / Math.PI;
-  var index = Math.round(((angle % 360) + 360) % 360 / 72) % AREAS.length;
+  var index = Math.round(((angle % 360) + 360) % 360 / (360 / AREAS.length)) % AREAS.length;
   selectPetal(index);
 });
 renderPetals();
