@@ -322,3 +322,18 @@ h2,h3{font-weight:800}
 }
 
 .a-card .a-sheet input[type=number]{font-size:.92rem;padding-inline:6px}
+
+/* ===== Settings: grouped sections ===== */
+.a-settings{display:grid;gap:6px}
+.a-set-sec{padding:6px 0 16px;border-bottom:1px solid var(--line)}
+.a-set-sec:last-of-type{border-bottom:0}
+.a-set-sec>h3{margin:4px 0 2px}
+.a-set-sec>.hint{margin:0 0 10px}
+.a-set-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 16px}
+.a-set-field label{display:block;margin-bottom:6px}
+.a-set-field .hint{margin:6px 0 0}
+.a-set-field input::placeholder{color:rgba(160,184,230,.45)}
+.a-set-adv{margin-top:8px;border:1px dashed var(--line);border-radius:14px;padding:4px 14px}
+.a-set-adv summary{cursor:pointer;font-weight:800;padding:10px 0;color:var(--muted)}
+.a-set-adv[open] summary{color:var(--head)}
+.a-settings .a-btn.sun.save:disabled{background:transparent;color:var(--muted);border:1px solid var(--line);opacity:.6;cursor:default;box-shadow:none}

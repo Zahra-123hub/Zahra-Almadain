@@ -67,6 +67,20 @@ var EN_TEXT = {
   "رابط صفحة إنستغرام":"Instagram page URL",
   "البريد الإلكتروني":"Email address",
   "معلومات التواصل والإعلان":"Contact information and announcements",
+  "نص الشريط":"Banner text",
+  "يظهر في أعلى كل صفحات الموقع. اتركه فارغاً لإخفاء الشريط.":"Shown at the top of every page. Leave empty to hide the banner.",
+  "يظهر للزوار كما تكتبه هنا.":"Shown to visitors exactly as typed here.",
+  "رقم الواتساب":"WhatsApp number",
+  "بالصيغة الدولية وأرقام فقط. يُملأ تلقائياً من رقم الهاتف إن تركته فارغاً.":"International format, digits only. Filled in from the phone number if left empty.",
+  "اتركه فارغاً لإخفاء البريد من الموقع.":"Leave empty to hide the email from the website.",
+  "شريط الإعلان":"Announcement banner",
+  "رسالة قصيرة تظهر فوق الموقع، مثل فتح التسجيل أو عطلة رسمية.":"A short message shown above the website, such as open enrolment or a public holiday.",
+  "التواصل وأوقات الدوام":"Contact and opening hours",
+  "هذه البيانات تظهر في الموقع وفي أزرار الاتصال. إن تُرك حقل فارغاً يُستخدم الإعداد الافتراضي للروضة.":"Shown on the website and in the contact buttons. If a field is left empty, the kindergarten's default is used.",
+  "حسابات التواصل الاجتماعي":"Social media",
+  "يجب أن يكون الرابط كاملاً ويبدأ بـ https":"The link must be complete and start with https",
+  "خيارات متقدمة: المحتوى الأصلي للموقع":"Advanced: original website content",
+  "اخفِ الأخبار والصور التي جاءت مع الموقع، حين تنشر أخبارك وصورك الخاصة.":"Hide the news and photos that came with the website once you publish your own.",
   "المحتوى الأصلي للموقع":"Original website content",
   "إخفاء الخبر الافتتاحي الأصلي":"Hide the original opening announcement",
   "إخفاء الصور الأصلية في المعرض":"Hide the original gallery images",
@@ -346,32 +360,54 @@ function tabNews(){
 
 function tabSettings(){
   var s = DATA.settings, msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
-  function fld(id, label, val, type, ph, hint){ return [h("label", {for:id, text:label}), h("input", {type:type || "text", id:id, value:sOf(val, 300), placeholder:ph || "", maxlength:"300"}), hint ? h("p", {class:"hint", text:hint}) : null]; }
+  var save = h("button", {type:"button", class:"a-btn sun save", text:"حفظ الإعدادات", disabled:"disabled"});
+  function changed(){ save.disabled = false; setMsg(msg, "", ""); }
+  function field(id, label, val, type, ph, hint, ltr){
+    var input = h("input", {type:type || "text", id:id, value:sOf(val, 300), placeholder:ph || "", maxlength:"300"});
+    if(ltr) input.dir = "ltr";
+    input.addEventListener("input", changed);
+    return {input:input, node:h("div", {class:"a-set-field"}, [h("label", {for:id, text:label}), input, hint ? h("p", {class:"hint", text:hint}) : null])};
+  }
+  function section(title, hint, fields){
+    return h("section", {class:"a-set-sec"}, [h("h3", {text:title}), hint ? h("p", {class:"hint", text:hint}) : null,
+      h("div", {class:"a-set-grid"}, fields.map(function(f){ return f.node; }))]);
+  }
   var F = {
-    announce: fld("s-ann", "شريط إعلان أعلى الموقع", s.announce, "text", "مثال: التسجيل مفتوح للعام الدراسي الجديد", "اتركه فارغاً لإخفاء الشريط."),
-    phone: fld("s-ph", "رقم الهاتف الظاهر", s.phone, "text", "+963 985 122 704"),
-    whatsapp: fld("s-wa", "رقم الواتساب بالصيغة الدولية، أرقام فقط", s.whatsapp, "text", "963985122704", "مثال: 963985122704"),
-    hours: fld("s-hr", "أوقات الدوام", s.hours, "text", "مثال: من الأحد إلى الخميس، 8:00 إلى 13:00"),
-    facebook: fld("s-fb", "رابط صفحة فيسبوك", s.facebook, "url", "https://www.facebook.com/…"),
-    instagram: fld("s-ig", "رابط صفحة إنستغرام", s.instagram, "url", "https://www.instagram.com/…"),
-    email: fld("s-em", "البريد الإلكتروني", s.email, "email", "")
+    announce: field("s-ann", "نص الشريط", s.announce, "text", "مثال: التسجيل مفتوح للعام الدراسي الجديد", "يظهر في أعلى كل صفحات الموقع. اتركه فارغاً لإخفاء الشريط."),
+    phone: field("s-ph", "رقم الهاتف الظاهر", s.phone, "text", "+963 985 122 704", "يظهر للزوار كما تكتبه هنا.", true),
+    whatsapp: field("s-wa", "رقم الواتساب", s.whatsapp, "text", "963985122704", "بالصيغة الدولية وأرقام فقط. يُملأ تلقائياً من رقم الهاتف إن تركته فارغاً.", true),
+    email: field("s-em", "البريد الإلكتروني", s.email, "email", "info@zahratalmadain.com", "اتركه فارغاً لإخفاء البريد من الموقع.", true),
+    hours: field("s-hr", "أوقات الدوام", s.hours, "text", "من الأحد إلى الخميس، 8:00 إلى 13:00"),
+    facebook: field("s-fb", "رابط صفحة فيسبوك", s.facebook, "url", "https://www.facebook.com/…", "", true),
+    instagram: field("s-ig", "رابط صفحة إنستغرام", s.instagram, "url", "https://www.instagram.com/…", "", true)
   };
-  var hn = h("input", {type:"checkbox"}); hn.checked = !!s.hideDefaultNews;
-  var hg = h("input", {type:"checkbox"}); hg.checked = !!s.hideDefaultGallery;
-  var save = h("button", {type:"button", class:"a-btn sun", text:"حفظ الإعدادات"});
+  // the WhatsApp number follows the phone number until it has been typed by hand
+  var waByHand = !!F.whatsapp.input.value;
+  F.whatsapp.input.addEventListener("input", function(){ waByHand = !!F.whatsapp.input.value; });
+  F.phone.input.addEventListener("input", function(){
+    var digits = F.phone.input.value.replace(/\D/g, "");
+    if(!waByHand) F.whatsapp.input.value = digits.length >= 8 && digits.length <= 15 ? digits : "";
+  });
+  var hn = h("input", {type:"checkbox"}); hn.checked = !!s.hideDefaultNews; hn.addEventListener("change", changed);
+  var hg = h("input", {type:"checkbox"}); hg.checked = !!s.hideDefaultGallery; hg.addEventListener("change", changed);
   save.addEventListener("click", async function(){
     var body = {hideDefaultNews:hn.checked, hideDefaultGallery:hg.checked};
-    Object.keys(F).forEach(function(k){ body[k] = F[k][1].value.trim(); });
+    Object.keys(F).forEach(function(k){ body[k] = F[k].input.value.trim(); });
+    body.whatsapp = body.whatsapp.replace(/\D/g, "");
+    F.whatsapp.input.value = body.whatsapp;
     save.disabled = true;
     try{ DATA.settings = await api("PUT", "/admin/api/settings", body); setMsg(msg, "تم حفظ الإعدادات وطُبّقت على الموقع.", "ok"); }
-    catch(e){ setMsg(msg, errText(e), "err"); }
-    save.disabled = false;
+    catch(e){ setMsg(msg, errText(e), "err"); save.disabled = false; }
   });
   fill = null;
-  return h("div", {class:"a-card"}, [h("h3", {text:"معلومات التواصل والإعلان"})].concat(Object.keys(F).map(function(k){ return F[k]; }), [
-    h("h3", {text:"المحتوى الأصلي للموقع", style:"margin-top:18px"}),
-    h("label", {class:"a-check"}, [hn, "إخفاء الخبر الافتتاحي الأصلي"]), h("label", {class:"a-check"}, [hg, "إخفاء الصور الأصلية في المعرض"]),
-    h("div", {class:"a-row"}, [save]), msg]));
+  return h("div", {class:"a-card a-settings"}, [
+    section("شريط الإعلان", "رسالة قصيرة تظهر فوق الموقع، مثل فتح التسجيل أو عطلة رسمية.", [F.announce]),
+    section("التواصل وأوقات الدوام", "هذه البيانات تظهر في الموقع وفي أزرار الاتصال. إن تُرك حقل فارغاً يُستخدم الإعداد الافتراضي للروضة.", [F.phone, F.whatsapp, F.email, F.hours]),
+    section("حسابات التواصل الاجتماعي", "يجب أن يكون الرابط كاملاً ويبدأ بـ https", [F.facebook, F.instagram]),
+    h("details", {class:"a-set-adv"}, [h("summary", {text:"خيارات متقدمة: المحتوى الأصلي للموقع"}),
+      h("p", {class:"hint", text:"اخفِ الأخبار والصور التي جاءت مع الموقع، حين تنشر أخبارك وصورك الخاصة."}),
+      h("label", {class:"a-check"}, [hn, "إخفاء الخبر الافتتاحي الأصلي"]), h("label", {class:"a-check"}, [hg, "إخفاء الصور الأصلية في المعرض"])]),
+    h("div", {class:"a-row"}, [save]), msg]);
 }
 
 function tabAccounts(){

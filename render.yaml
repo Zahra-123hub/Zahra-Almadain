@@ -19,7 +19,7 @@ services:
       - key: GITHUB_REPO
         value: Zahra-Almadain
       - key: ALLOWED_ORIGINS
-        value: https://zahra-123hub.github.io,http://127.0.0.1:8000,http://localhost:8000
+        value: https://zahratalmadain.com,https://www.zahratalmadain.com,https://zahra-123hub.github.io,http://127.0.0.1:8000,http://localhost:8000
       - key: ADMIN_USERNAME
         value: admin
       - key: DATABASE_URL
@@ -42,4 +42,4 @@ services:
       - key: SMTP_FROM
         sync: false
       - key: PORTAL_BASE_URL
-        value: https://zahra-123hub.github.io/Zahra-Almadain
+        value: https://zahratalmadain.com
