@@ -87,7 +87,29 @@ class Child(Base):
         Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
     class_name: Mapped[str] = mapped_column(String(60), default="", server_default="")
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ChildGuardian(Base):
+    """The father and / or the mother (or another guardian) of a child. A child has one or two of them.
+    `account_id` ties the person to a parent account of the portal, if they have one."""
+
+    __tablename__ = "child_guardians"
+    __table_args__ = (UniqueConstraint("child_id", "relation", name="uq_child_guardian_relation"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True
+    )
+    relation: Mapped[str] = mapped_column(String(10))  # "father" | "mother" | "guardian"
+    name: Mapped[str] = mapped_column(String(120))
+    phone: Mapped[str] = mapped_column(String(40), default="", server_default="")
+    email: Mapped[str] = mapped_column(String(254), default="", server_default="")
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

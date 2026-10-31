@@ -12,13 +12,13 @@ import uuid
 from typing import Annotated
 
 import httpx
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -46,6 +46,7 @@ from app.models import (
     CashCount,
     CashOpening,
     Child,
+    ChildGuardian,
     ExchangeRate,
     Employee,
     FeeCharge,
@@ -53,6 +54,7 @@ from app.models import (
     PeriodLock,
     Role,
     SalaryLine,
+    parent_child_links,
 )
 
 RATE_FEED_URL = "https://open.er-api.com/v6/latest/USD"  # a free public daily rates feed (no key)
@@ -223,6 +225,22 @@ class CashIn(BaseModel):
     opening: Decimal = Money  # money in the cash box when the books start
     start_year: int = Field(ge=2000, le=2100)
     start_month: int = Field(ge=1, le=12)
+
+
+class GuardianIn(BaseModel):
+    id: uuid.UUID | None = None
+    relation: str = Field(pattern="^(father|mother|guardian)$")
+    name: str = Field(min_length=2, max_length=120)
+    phone: str = Field(default="", max_length=40)
+    email: str = Field(default="", max_length=254)
+    account_id: uuid.UUID | None = None  # a parent account of the portal, if this person has one
+
+
+class ChildIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    class_name: str = Field(default="", max_length=60)
+    birth_date: date | None = None
+    guardians: list[GuardianIn] = Field(min_length=1, max_length=2)  # one parent, or both
 
 
 class PeriodIn(BaseModel):
@@ -1272,6 +1290,177 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session.delete(entry)
         session.commit()
         return build_sheet(session, period[0], period[1], period[2], period[3], period[4])
+
+    # ---- children and their parents -----------------------------------------
+
+    def check_guardians(guardians: list[GuardianIn]) -> None:
+        """A child has one or two guardians; never the same role twice (one father, one mother)."""
+        relations = [g.relation for g in guardians]
+        if len(relations) != len(set(relations)):
+            raise HTTPException(422, "لا يمكن إضافة أب ثانٍ أو أم ثانية. أضف أباً وأماً، أو واحداً منهما فقط.")
+        emails = [g.email.strip().lower() for g in guardians if g.email.strip()]
+        if len(emails) != len(set(emails)):
+            raise HTTPException(422, "البريد الإلكتروني نفسه مكرّر للوالدين.")
+        accounts = [g.account_id for g in guardians if g.account_id]
+        if len(accounts) != len(set(accounts)):
+            raise HTTPException(422, "لا يمكن ربط حساب الدخول نفسه بالأب والأم معاً.")
+
+    def parent_account(session: Session, account_id: uuid.UUID) -> Account:
+        account = session.scalar(
+            select(Account).join(Account.roles).where(
+                Account.id == account_id, Account.is_active.is_(True), Role.name == "parent"
+            )
+        )
+        if account is None:
+            raise HTTPException(404, "حساب ولي الأمر غير موجود أو غير مفعّل.")
+        return account
+
+    def link_parent(session: Session, account_id: uuid.UUID, child_id: uuid.UUID) -> None:
+        """The parent account sees this child in the portal."""
+        exists = session.execute(
+            select(parent_child_links.c.account_id).where(
+                parent_child_links.c.account_id == account_id, parent_child_links.c.child_id == child_id
+            )
+        ).first()
+        if exists is None:
+            session.execute(parent_child_links.insert().values(
+                account_id=account_id, child_id=child_id, confirmed_at=datetime.now(timezone.utc)))
+
+    def unlink_parent(session: Session, account_id: uuid.UUID, child_id: uuid.UUID) -> None:
+        session.execute(delete(parent_child_links).where(
+            parent_child_links.c.account_id == account_id, parent_child_links.c.child_id == child_id))
+
+    def child_data(session: Session, child: Child) -> dict[str, Any]:
+        rows = session.scalars(
+            select(ChildGuardian).where(ChildGuardian.child_id == child.id).order_by(ChildGuardian.relation.desc(), ChildGuardian.created_at)
+        ).all()
+        names = {
+            a.id: a.username
+            for a in session.scalars(select(Account).where(Account.id.in_([g.account_id for g in rows if g.account_id]))).all()
+        } if any(g.account_id for g in rows) else {}
+        return {
+            "id": str(child.id), "name": child.display_name, "class_name": child.class_name,
+            "birth_date": child.birth_date.isoformat() if child.birth_date else "",
+            "guardians": [
+                {"id": str(g.id), "relation": g.relation, "name": g.name, "phone": g.phone, "email": g.email,
+                 "account_id": str(g.account_id) if g.account_id else "", "account_username": names.get(g.account_id, "")}
+                for g in rows
+            ],
+        }
+
+    def sync_guardians(session: Session, child: Child, wanted: list[GuardianIn]) -> None:
+        """Makes the stored parents equal to the list: updates the ones that exist, adds new ones, removes the rest."""
+        current = {g.id: g for g in session.scalars(select(ChildGuardian).where(ChildGuardian.child_id == child.id)).all()}
+        by_relation = {g.relation: g for g in current.values()}
+        keep: set[uuid.UUID] = set()
+        for item in wanted:
+            row = current.get(item.id) if item.id else None
+            if row is None:
+                row = by_relation.get(item.relation)  # the same role again: the same person
+            old_account = row.account_id if row is not None else None
+            if item.account_id:
+                parent_account(session, item.account_id)
+            if row is None:
+                row = ChildGuardian(child_id=child.id, relation=item.relation, name=item.name.strip())
+                session.add(row)
+            row.relation, row.name = item.relation, item.name.strip()
+            row.phone, row.email = item.phone.strip(), item.email.strip()
+            row.account_id = item.account_id
+            session.flush()
+            keep.add(row.id)
+            if old_account and old_account != item.account_id:
+                unlink_parent(session, old_account, child.id)
+            if item.account_id:
+                link_parent(session, item.account_id, child.id)
+        for row in current.values():
+            if row.id not in keep:
+                if row.account_id:
+                    unlink_parent(session, row.account_id, child.id)
+                session.delete(row)
+        session.flush()
+
+    def child_by_name(session: Session, name: str, ignore: uuid.UUID | None = None) -> Child | None:
+        query = select(Child).where(func.lower(Child.display_name) == name.strip().lower(), Child.is_active.is_(True))
+        if ignore is not None:
+            query = query.where(Child.id != ignore)
+        return session.scalar(query)
+
+    @router.get("/children")
+    def list_children(
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, Any]]:
+        response.headers["Cache-Control"] = "no-store"
+        children = session.scalars(select(Child).where(Child.is_active.is_(True)).order_by(Child.display_name)).all()
+        return [child_data(session, child) for child in children]
+
+    @router.get("/parent-accounts")
+    def list_parent_accounts(
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, Any]]:
+        """Parent accounts of the portal that can be tied to a father / mother."""
+        response.headers["Cache-Control"] = "no-store"
+        accounts = session.scalars(
+            select(Account).join(Account.roles).where(Role.name == "parent", Account.is_active.is_(True)).order_by(Account.username)
+        ).all()
+        return [{"id": str(a.id), "username": a.username} for a in accounts]
+
+    @router.post("/children", status_code=201)
+    def create_child(
+        payload: ChildIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        check_guardians(payload.guardians)
+        if child_by_name(session, payload.name) is not None:
+            raise HTTPException(409, "يوجد طفل بهذا الاسم.")
+        child = Child(display_name=payload.name.strip(), class_name=payload.class_name.strip(), birth_date=payload.birth_date)
+        session.add(child)
+        session.flush()
+        sync_guardians(session, child, payload.guardians)
+        log(session, actor, "child.create", child.id, f"{len(payload.guardians)} ولي أمر")
+        session.commit()
+        session.refresh(child)
+        return child_data(session, child)
+
+    @router.patch("/children/{child_id}")
+    def update_child(
+        child_id: uuid.UUID,
+        payload: ChildIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
+        if child is None:
+            raise HTTPException(404, "الطفل غير موجود.")
+        check_guardians(payload.guardians)
+        if child_by_name(session, payload.name, ignore=child.id) is not None:
+            raise HTTPException(409, "يوجد طفل بهذا الاسم.")
+        child.display_name, child.class_name = payload.name.strip(), payload.class_name.strip()
+        child.birth_date = payload.birth_date
+        sync_guardians(session, child, payload.guardians)
+        log(session, actor, "child.update", child.id, f"{len(payload.guardians)} ولي أمر")
+        session.commit()
+        session.refresh(child)
+        return child_data(session, child)
+
+    @router.delete("/children/{child_id}", status_code=204)
+    def remove_child(
+        child_id: uuid.UUID,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        """Takes the child off the list; fees, payments and reports of the child stay."""
+        child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
+        if child is None:
+            raise HTTPException(404, "الطفل غير موجود.")
+        child.is_active = False
+        log(session, actor, "child.remove", child.id, "")
+        session.commit()
+        return Response(status_code=204)
 
     # ---- closed months -------------------------------------------------------
 

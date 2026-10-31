@@ -152,14 +152,14 @@ function tabAccounting(){
   var sub = ACC_SUB || "overview";
   var panel = h("div", {});
   var nav = h("div", {class:"a-subnav", role:"tablist"});
-  var SUBS = [["overview","نظرة عامة"], ["fees","اشتراكات الأطفال"], ["salaries","الرواتب"], ["staff","الموظفون"], ["day","الجدول اليومي"], ["week","الجدول الأسبوعي"], ["month","الجدول الشهري"]];
+  var SUBS = [["overview","نظرة عامة"], ["fees","اشتراكات الأطفال"], ["salaries","الرواتب"], ["staff","الموظفون"], ["kids","الأطفال"], ["day","الجدول اليومي"], ["week","الجدول الأسبوعي"], ["month","الجدول الشهري"]];
   function draw(){
     nav.innerHTML = "";
     SUBS.forEach(function(entry){
       nav.appendChild(h("button", {type:"button", role:"tab", "aria-selected":String(sub === entry[0]), text:entry[1], onclick:function(){ sub = ACC_SUB = entry[0]; draw(); }}));
     });
     panel.innerHTML = "";
-    panel.appendChild(sub === "fees" ? tabFees() : sub === "salaries" ? tabSalaries() : sub === "staff" ? tabEmployees() : sub === "month" ? tabSheet("month") : sub === "week" ? tabSheet("week") : sub === "day" ? tabSheet("day") : tabOverview());
+    panel.appendChild(sub === "fees" ? tabFees() : sub === "salaries" ? tabSalaries() : sub === "staff" ? tabEmployees() : sub === "kids" ? tabKids() : sub === "month" ? tabSheet("month") : sub === "week" ? tabSheet("week") : sub === "day" ? tabSheet("day") : tabOverview());
   }
   request("/api/admin/fees/me").then(function(me){ ACC_VIEWER = me; }, function(){});
   accLoadNames();
@@ -826,6 +826,124 @@ function tabSheet(type){
 
 /* ----------------------------------------------------------- saved staff names */
 /* Each saved person can be tied to a platform account (teacher / accountant); the name then belongs to that account. */
+/* ------------------------------------------------------------- children and their parents */
+/* One block for a parent: father / other guardian (the first block) or mother (the second). The block stays empty when the
+   child has only one parent. Returns the node and a getter for the data the server needs (null when the block is empty). */
+function kidParentBlock(title, relations, saved, accounts, uid){
+  saved = saved || {};
+  var relation = relations.length > 1 ? accSelect(relations, saved.relation || relations[0][0]) : null;
+  var name = h("input", {type:"text", maxlength:"120", value:saved.name || "", placeholder:"الاسم الكامل", autocomplete:"off", id:"kid-" + uid + "-n"});
+  var phone = h("input", {type:"tel", maxlength:"40", value:saved.phone || "", placeholder:"رقم الهاتف", dir:"ltr", inputmode:"tel", autocomplete:"off"});
+  var email = h("input", {type:"email", maxlength:"254", value:saved.email || "", placeholder:"البريد الإلكتروني (اختياري)", dir:"ltr", autocomplete:"off"});
+  var account = h("select", {"aria-label":"حساب الدخول"});
+  account.appendChild(new Option("— بلا حساب دخول —", ""));
+  accounts.forEach(function(a){ account.appendChild(new Option(a.username, a.id)); });
+  account.value = saved.account_id || "";
+  var node = h("fieldset", {class:"a-kid-parent"}, [
+    h("legend", {text:title}),
+    h("div", {class:"a-form-grid"}, [].concat(relation ? [accField("الصفة", relation)] : [], [accField("الاسم", name), accField("الهاتف", phone), accField("البريد الإلكتروني", email), accField("حساب بوابة الأهل", account)]))]);
+  function filled(){ return !!(name.value.trim() || phone.value.trim() || email.value.trim() || account.value); }
+  function clear(){ name.value = phone.value = email.value = ""; account.value = ""; }
+  return {
+    node: node, filled: filled, clear: clear,
+    get: function(fallback){
+      if(!filled()) return null;
+      if(!name.value.trim()) throw fail("اكتب اسم " + title + " أو اترك الخانات فارغة.");
+      var out = {relation: relation ? relation.value : relations[0][0], name: name.value.trim(), phone: phone.value.trim(), email: email.value.trim(), account_id: account.value || null};
+      if(saved.id) out.id = saved.id;
+      return out;
+    }
+  };
+}
+function kidPayload(name, cls, birth, blocks){
+  var guardians = blocks.map(function(b){ return b.get(); }).filter(function(g){ return g; });
+  if(!guardians.length) throw fail("أضف ولي أمر واحداً على الأقل: الأب أو الأم (أو الاثنين).");
+  return {name:name.trim(), class_name:cls.trim(), birth_date:birth || null, guardians:guardians};
+}
+function tabKids(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var body = h("div", {});
+  var accounts = [];
+  var RELATIONS_FIRST = [["father", "الأب"], ["guardian", "ولي أمر آخر"]];
+  var name = h("input", {type:"text", maxlength:"120", placeholder:"اسم الطفل الكامل", autocomplete:"off", required:"required"});
+  var cls = h("input", {type:"text", maxlength:"60", placeholder:"الصف / الشعبة (مثال: KG1)", autocomplete:"off"});
+  var birth = h("input", {type:"date", max:localToday()});
+  var firstNew, motherNew, form;
+  function buildNewBlocks(){
+    firstNew = kidParentBlock("الأب", RELATIONS_FIRST, null, accounts, "new1");
+    motherNew = kidParentBlock("الأم", [["mother", "الأم"]], null, accounts, "new2");
+  }
+  function drawForm(){
+    buildNewBlocks();
+    form.innerHTML = "";
+    form.append(h("strong", {text:"بيانات الطفل"}), accField("اسم الطفل", name), accField("الصف", cls), accField("تاريخ الميلاد", birth),
+      h("p", {class:"hint a-wide", text:"أضف الأب والأم، أو واحداً منهما فقط. اترك خانات الآخر فارغة إن لم يكن موجوداً."}),
+      firstNew.node, motherNew.node,
+      h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"＋ حفظ الطفل"})]));
+  }
+  form = h("form", {class:"a-form-grid", style:"margin-top:8px"});
+  form.addEventListener("submit", async function(event){
+    event.preventDefault();
+    try{
+      await request("/api/admin/accounting/children", {method:"POST", body:JSON.stringify(kidPayload(name.value, cls.value, birth.value, [firstNew, motherNew]))});
+      name.value = cls.value = birth.value = "";
+      drawForm();
+      setMsg(msg, "تم حفظ الطفل وولي أمره. سيظهر اسمه في قوائم الاشتراكات.", "ok"); await load();
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  });
+  var search = h("input", {type:"search", placeholder:"ابحث باسم الطفل أو ولي الأمر", "aria-label":"بحث"});
+  search.addEventListener("input", function(){ draw(); });
+  var list = [];
+  function matches(child, word){
+    if(!word) return true;
+    word = word.toLowerCase();
+    return child.name.toLowerCase().indexOf(word) !== -1 || child.guardians.some(function(g){ return (g.name + " " + g.phone).toLowerCase().indexOf(word) !== -1; });
+  }
+  function draw(){
+    body.innerHTML = "";
+    var shown = list.filter(function(child){ return matches(child, search.value.trim()); });
+    if(!list.length){ body.appendChild(h("div", {class:"a-empty", text:"لا يوجد أطفال محفوظون بعد."})); return; }
+    if(!shown.length){ body.appendChild(h("div", {class:"a-empty", text:"لا توجد نتيجة لهذا البحث."})); return; }
+    shown.forEach(function(child){
+      var nameInput = h("input", {type:"text", maxlength:"120", value:child.name, "aria-label":"اسم الطفل"});
+      var clsInput = h("input", {type:"text", maxlength:"60", value:child.class_name, "aria-label":"الصف"});
+      var birthInput = h("input", {type:"date", value:child.birth_date, max:localToday(), "aria-label":"تاريخ الميلاد"});
+      var savedFirst = child.guardians.filter(function(g){ return g.relation !== "mother"; })[0];
+      var savedMother = child.guardians.filter(function(g){ return g.relation === "mother"; })[0];
+      var first = kidParentBlock("الأب", RELATIONS_FIRST, savedFirst, accounts, child.id + "a");
+      var mother = kidParentBlock("الأم", [["mother", "الأم"]], savedMother, accounts, child.id + "b");
+      var count = child.guardians.length;
+      body.appendChild(h("article", {class:"a-child"}, [
+        h("div", {class:"a-child-head"}, [h("span", {class:"a-tag " + (count === 2 ? "sun" : ""), text:count === 2 ? "الأب والأم" : "ولي أمر واحد"})]),
+        h("div", {class:"a-form-grid"}, [accField("اسم الطفل", nameInput), accField("الصف", clsInput), accField("تاريخ الميلاد", birthInput), first.node, mother.node,
+          h("div", {class:"a-row"}, [
+            h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
+              try{
+                await request("/api/admin/accounting/children/" + encodeURIComponent(child.id), {method:"PATCH", body:JSON.stringify(kidPayload(nameInput.value, clsInput.value, birthInput.value, [first, mother]))});
+                setMsg(msg, "تم الحفظ.", "ok"); await load();
+              }catch(error){ setMsg(msg, errText(error), "err"); }
+            }}),
+            twoStep("حذف من القائمة", async function(){
+              await request("/api/admin/accounting/children/" + encodeURIComponent(child.id), {method:"DELETE"});
+              setMsg(msg, "أُزيل الطفل من القائمة (تبقى اشتراكاته ودفعاته القديمة).", "ok"); await load();
+            })])])]));
+    });
+  }
+  async function load(){
+    try{
+      var results = await Promise.all([request("/api/admin/accounting/children"), request("/api/admin/accounting/parent-accounts")]);
+      list = results[0]; accounts = results[1];
+      if(!form.children.length) drawForm();
+      draw();
+    }catch(error){ body.innerHTML = ""; body.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
+  }
+  load();
+  fill = null;
+  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"إضافة طفل"}),
+    h("p", {class:"hint", text:"احفظ اسم كل طفل مرة واحدة مع والده أو والدته أو كليهما. إن ربطتَ ولي الأمر بحسابه في بوابة الأهل رأى تقارير طفله ومنشوراته الخاصة."}),
+    form, msg]), h("div", {class:"a-card"}, [h("h3", {text:"الأطفال وأولياء الأمور"}), search, body])]);
+}
+
 function tabEmployees(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var body = h("div", {});
