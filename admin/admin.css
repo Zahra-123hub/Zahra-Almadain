@@ -376,3 +376,26 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 }
 .a-trail>summary{cursor:pointer;font-weight:800;color:var(--head);padding:10px 0}
 .a-trail[open]>summary{margin-bottom:6px}
+
+/* ===== Phone: compact entry cards (two fields per line) and two-column filters ===== */
+@media(max-width:700px){
+  .a-card .a-sheet tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px;padding:10px 12px 12px}
+  .a-card .a-sheet tbody td{display:flex;flex-direction:column;gap:3px;grid-template-columns:none;padding:2px 0;min-width:0}
+  .a-card .a-sheet tbody td::before{font-size:.76rem;font-weight:700;color:var(--muted)}
+  .a-card .a-sheet tbody td:first-child,.a-card .a-sheet tbody td:nth-child(2),.a-card .a-sheet tbody td:last-child{grid-column:1 / -1}
+  .a-card .a-sheet tbody td input,.a-card .a-sheet tbody td select{width:100%;min-height:42px;font-size:16px;box-sizing:border-box;flex:none;min-width:0}
+  .a-card .a-sheet .a-amount{display:grid;grid-template-columns:1fr;gap:6px}
+  .a-table.compact tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}
+  .a-table.compact tbody td{display:flex;flex-direction:column;gap:2px;grid-template-columns:none;padding:2px 0;min-width:0;word-break:break-word}
+  .a-table.compact tbody td::before{font-size:.76rem;font-weight:700;color:var(--muted)}
+  .a-table.compact tbody td.name,.a-table.compact tbody td:not([data-label]),.a-table.compact tbody td:last-child{grid-column:1 / -1}
+  .a-table.compact tfoot tr{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;padding:10px 12px;margin:6px 0;border-radius:12px;background:var(--bg2)}
+  .a-table.compact tfoot td{display:block;width:auto;padding:0;border:0;background:transparent;color:var(--ink)}
+}
+@media(max-width:620px){
+  .a-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+  .a-form-grid>.a-field:has(>.a-check-field),.a-form-grid>label.a-check-field,.a-form-grid>.a-wide{grid-column:1 / -1}
+  .a-card input:not([type=checkbox]):not([type=radio]),.a-card select,.a-card textarea{font-size:16px;min-height:44px;box-sizing:border-box}
+  .a-field{min-width:0}
+  .a-card select{flex:none;min-width:0}
+}
