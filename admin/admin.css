@@ -238,7 +238,7 @@ h2,h3{font-weight:800}
 
 /* ===== Phone: long buttons wrap, entry tables become cards, compact top bar ===== */
 .a-row .a-btn{white-space:normal;max-width:100%;text-align:center}
-@media(max-width:700px){
+@media(max-width:900px){
   .a-sheet,.a-sheet tbody,.a-sheet tfoot,.a-sheet tr{display:block;width:100%;min-width:0}
   .a-sheet colgroup,.a-sheet thead{display:none}
   .a-sheet tbody tr{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--bg2)}
@@ -258,7 +258,7 @@ h2,h3{font-weight:800}
 }
 
 /* Phone: the read / edit tables (fees, payroll) as cards as well */
-@media(max-width:700px){
+@media(max-width:900px){
   .a-table.compact,.a-table.compact tbody,.a-table.compact tfoot,.a-table.compact tr{display:block;width:100%;min-width:0}
   .a-table.compact thead{display:none}
   .a-table.compact tbody tr{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:14px}
@@ -315,7 +315,7 @@ h2,h3{font-weight:800}
 .a-sheet .a-btn.sun.save:disabled{background:transparent;color:var(--muted);border:1px solid var(--line);opacity:.55;cursor:default;transform:none}
 .a-sheet tr.dirty .a-btn.sun.save{box-shadow:0 4px 12px rgba(253,185,19,.3)}
 .a-card .a-sheet .a-btn.danger{padding:4px 14px;font-size:.8rem;border-radius:999px;min-height:0;line-height:1.5;box-shadow:none}
-@media(max-width:700px){
+@media(max-width:900px){
   .a-sheet tbody tr{border-radius:16px}
   .a-card .a-sheet tbody td input,.a-card .a-sheet tbody td select{border-color:var(--line);background:var(--bg2)}
   .a-sheet .a-btn.sun.save{width:100%}
@@ -378,7 +378,7 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-trail[open]>summary{margin-bottom:6px}
 
 /* ===== Phone: compact entry cards (two fields per line) and two-column filters ===== */
-@media(max-width:700px){
+@media(max-width:900px){
   .a-card .a-sheet tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px;padding:10px 12px 12px}
   .a-card .a-sheet tbody td{display:flex;flex-direction:column;gap:3px;grid-template-columns:none;padding:2px 0;min-width:0}
   .a-card .a-sheet tbody td::before{font-size:.76rem;font-weight:700;color:var(--muted)}
