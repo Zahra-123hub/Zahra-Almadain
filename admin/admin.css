@@ -399,3 +399,13 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
   .a-field{min-width:0}
   .a-card select{flex:none;min-width:0}
 }
+
+/* ===== Children and their parents ===== */
+.a-form-grid>.a-wide{grid-column:1 / -1}
+.a-kid-parent{grid-column:1 / -1;margin:0;padding:10px 14px 14px;border:1px solid var(--line);border-radius:14px;min-width:0}
+.a-kid-parent legend{padding:0 8px;font-weight:800;color:var(--head)}
+.a-kid-parent .a-form-grid{margin:0}
+@media(max-width:620px){
+  .a-kid-parent .a-form-grid{grid-template-columns:1fr}
+  .a-kid-parent input[type=date],.a-child input[type=date]{min-width:0}
+}
