@@ -67,6 +67,22 @@ var EN_TEXT = {
   "رابط صفحة إنستغرام":"Instagram page URL",
   "البريد الإلكتروني":"Email address",
   "معلومات التواصل والإعلان":"Contact information and announcements",
+  "إعدادات الموقع":"Website settings",
+  "ما تغيّره هنا يظهر مباشرة في الموقع بعد الحفظ.":"What you change here appears on the website right after saving.",
+  "هكذا يظهر الشريط":"How the banner looks",
+  "— الشريط مخفي —":"— Banner hidden —",
+  "تراجع عن التغييرات":"Discard changes",
+  "كل التغييرات محفوظة":"All changes are saved",
+  "لديك تغييرات غير محفوظة":"You have unsaved changes",
+  "تحقق من الحقول المعلَّمة قبل الحفظ":"Check the marked fields before saving",
+  "رقم الواتساب غير صالح (من 8 إلى 15 رقماً).":"The WhatsApp number is not valid (8 to 15 digits).",
+  "عنوان البريد غير صالح.":"The email address is not valid.",
+  "رسالة قصيرة تظهر فوق الموقع، مثل فتح التسجيل أو عطلة رسمية. اتركها فارغة لإخفاء الشريط.":"A short message shown above the website, such as open enrolment or a public holiday. Leave empty to hide it.",
+  "تظهر في الموقع وفي أزرار الاتصال. إن تُرك حقل فارغاً يُستخدم الإعداد الافتراضي للروضة.":"Shown on the website and in the contact buttons. If a field is left empty, the kindergarten's default is used.",
+  "الرابط الكامل لصفحة الروضة، ويبدأ بـ https":"The full link to the kindergarten's page, starting with https",
+  "خيارات متقدمة، نادراً ما تحتاجها.":"Advanced options you will rarely need.",
+  "يخفي الخبر الذي جاء مع الموقع، حين تنشر أخبارك الخاصة.":"Hides the news item that came with the website, once you publish your own.",
+  "يخفي الصور الجاهزة، حين ترفع صور الروضة الحقيقية.":"Hides the ready-made photos, once you upload the kindergarten's real ones.",
   "نص الشريط":"Banner text",
   "يظهر في أعلى كل صفحات الموقع. اتركه فارغاً لإخفاء الشريط.":"Shown at the top of every page. Leave empty to hide the banner.",
   "يظهر للزوار كما تكتبه هنا.":"Shown to visitors exactly as typed here.",
@@ -360,27 +376,44 @@ function tabNews(){
 
 function tabSettings(){
   var s = DATA.settings, msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
-  var save = h("button", {type:"button", class:"a-btn sun save", text:"حفظ الإعدادات", disabled:"disabled"});
-  function changed(){ save.disabled = false; setMsg(msg, "", ""); }
-  function field(id, label, val, type, ph, hint, ltr){
-    var input = h("input", {type:type || "text", id:id, value:sOf(val, 300), placeholder:ph || "", maxlength:"300"});
-    if(ltr) input.dir = "ltr";
-    input.addEventListener("input", changed);
-    return {input:input, node:h("div", {class:"a-set-field"}, [h("label", {for:id, text:label}), input, hint ? h("p", {class:"hint", text:hint}) : null])};
-  }
-  function section(title, hint, fields){
-    return h("section", {class:"a-set-sec"}, [h("h3", {text:title}), hint ? h("p", {class:"hint", text:hint}) : null,
-      h("div", {class:"a-set-grid"}, fields.map(function(f){ return f.node; }))]);
-  }
-  var F = {
-    announce: field("s-ann", "نص الشريط", s.announce, "text", "مثال: التسجيل مفتوح للعام الدراسي الجديد", "يظهر في أعلى كل صفحات الموقع. اتركه فارغاً لإخفاء الشريط."),
-    phone: field("s-ph", "رقم الهاتف الظاهر", s.phone, "text", "+963 985 122 704", "يظهر للزوار كما تكتبه هنا.", true),
-    whatsapp: field("s-wa", "رقم الواتساب", s.whatsapp, "text", "963985122704", "بالصيغة الدولية وأرقام فقط. يُملأ تلقائياً من رقم الهاتف إن تركته فارغاً.", true),
-    email: field("s-em", "البريد الإلكتروني", s.email, "email", "info@zahratalmadain.com", "اتركه فارغاً لإخفاء البريد من الموقع.", true),
-    hours: field("s-hr", "أوقات الدوام", s.hours, "text", "من الأحد إلى الخميس، 8:00 إلى 13:00"),
-    facebook: field("s-fb", "رابط صفحة فيسبوك", s.facebook, "url", "https://www.facebook.com/…", "", true),
-    instagram: field("s-ig", "رابط صفحة إنستغرام", s.instagram, "url", "https://www.instagram.com/…", "", true)
+  var ICONS = {
+    banner:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zm13.5 1a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>',
+    contact:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>',
+    social:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l3-3a3 3 0 0 1 4.2 4.2l-2 2a3 3 0 0 1-3.4.6l1.2-1.2a1 1 0 0 0 .8-.3l2-2a1 1 0 0 0-1.4-1.4l-3 3a1 1 0 0 1-1.4.5zm2.8-2.8a1 1 0 0 1 0 1.4l-3 3a3 3 0 0 1-4.2-4.2l2-2a3 3 0 0 1 3.4-.6l-1.2 1.2a1 1 0 0 0-.8.3l-2 2a1 1 0 0 0 1.4 1.4l3-3a1 1 0 0 1 1.4-.5z"/></svg>',
+    adv:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.4h-4L10.7 6a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.3 2.6h4l.3-2.6c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>'
   };
+  var saveBtn = h("button", {type:"button", class:"a-btn sun save", text:"حفظ الإعدادات", disabled:"disabled"});
+  var resetBtn = h("button", {type:"button", class:"a-btn ghost", text:"تراجع عن التغييرات", hidden:"hidden"});
+  var state = h("span", {class:"a-set-state", text:"كل التغييرات محفوظة"});
+  var bar = h("div", {class:"a-set-bar"}, [state, h("div", {class:"a-row", style:"margin:0"}, [resetBtn, saveBtn])]);
+  var fields = [];
+  function field(id, label, key, type, ph, hint, opts){
+    opts = opts || {};
+    var input = h("input", {type:type || "text", id:id, value:sOf(s[key], 300), placeholder:ph || "", maxlength:String(opts.max || 300), autocomplete:"off"});
+    if(opts.ltr) input.dir = "ltr";
+    var err = h("p", {class:"a-set-err", role:"alert", hidden:"hidden"});
+    var f = {key:key, input:input, err:err, check:opts.check, saved:input.value, node:null};
+    f.node = h("div", {class:"a-set-field"}, [h("label", {for:id, text:label}), input, hint ? h("p", {class:"hint", text:hint}) : null, err]);
+    input.addEventListener("input", refresh);
+    fields.push(f);
+    return f;
+  }
+  var urlCheck = function(v){ return !v || /^https:\/\/\S+\.\S+/i.test(v) ? "" : "يجب أن يكون الرابط كاملاً ويبدأ بـ https"; };
+  var F = {
+    announce: field("s-ann", "نص الشريط", "announce", "text", "مثال: التسجيل مفتوح للعام الدراسي الجديد", "", {max:200}),
+    phone: field("s-ph", "رقم الهاتف الظاهر", "phone", "text", "+963 985 122 704", "يظهر للزوار كما تكتبه هنا.", {ltr:true}),
+    whatsapp: field("s-wa", "رقم الواتساب", "whatsapp", "text", "963985122704", "بالصيغة الدولية وأرقام فقط. يُملأ تلقائياً من رقم الهاتف إن تركته فارغاً.", {ltr:true, check:function(v){ var d = v.replace(/\D/g, ""); return !d || (d.length >= 8 && d.length <= 15) ? "" : "رقم الواتساب غير صالح (من 8 إلى 15 رقماً)."; }}),
+    email: field("s-em", "البريد الإلكتروني", "email", "email", "info@zahratalmadain.com", "اتركه فارغاً لإخفاء البريد من الموقع.", {ltr:true, check:function(v){ return !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "" : "عنوان البريد غير صالح."; }}),
+    hours: field("s-hr", "أوقات الدوام", "hours", "text", "من الأحد إلى الخميس، 8:00 إلى 13:00", "", {max:200}),
+    facebook: field("s-fb", "رابط صفحة فيسبوك", "facebook", "url", "https://www.facebook.com/…", "", {ltr:true, check:urlCheck}),
+    instagram: field("s-ig", "رابط صفحة إنستغرام", "instagram", "url", "https://www.instagram.com/…", "", {ltr:true, check:urlCheck})
+  };
+  // live preview of the banner as visitors see it, plus a counter
+  var bannerText = h("span", {class:"a-banner-text"});
+  var banner = h("div", {class:"a-banner-prev"}, [h("small", {text:"هكذا يظهر الشريط"}), bannerText]);
+  var counter = h("span", {class:"a-set-count", dir:"ltr"});
+  F.announce.node.appendChild(counter);
+  F.announce.node.appendChild(banner);
   // the WhatsApp number follows the phone number until it has been typed by hand
   var waByHand = !!F.whatsapp.input.value;
   F.whatsapp.input.addEventListener("input", function(){ waByHand = !!F.whatsapp.input.value; });
@@ -388,26 +421,61 @@ function tabSettings(){
     var digits = F.phone.input.value.replace(/\D/g, "");
     if(!waByHand) F.whatsapp.input.value = digits.length >= 8 && digits.length <= 15 ? digits : "";
   });
-  var hn = h("input", {type:"checkbox"}); hn.checked = !!s.hideDefaultNews; hn.addEventListener("change", changed);
-  var hg = h("input", {type:"checkbox"}); hg.checked = !!s.hideDefaultGallery; hg.addEventListener("change", changed);
-  save.addEventListener("click", async function(){
-    var body = {hideDefaultNews:hn.checked, hideDefaultGallery:hg.checked};
+  function toggle(label, hint, on){
+    var box = h("input", {type:"checkbox", role:"switch"}); box.checked = !!on; box.dataset.saved = box.checked ? "1" : "";
+    box.addEventListener("change", refresh);
+    return {box:box, node:h("label", {class:"a-switch"}, [box, h("span", {class:"track"}), h("span", {class:"txt"}, [h("b", {text:label}), h("small", {text:hint})])])};
+  }
+  var hn = toggle("إخفاء الخبر الافتتاحي الأصلي", "يخفي الخبر الذي جاء مع الموقع، حين تنشر أخبارك الخاصة.", s.hideDefaultNews);
+  var hg = toggle("إخفاء الصور الأصلية في المعرض", "يخفي الصور الجاهزة، حين ترفع صور الروضة الحقيقية.", s.hideDefaultGallery);
+  function section(icon, title, hint, nodes){
+    var ic = h("span", {class:"a-set-ic"}); ic.innerHTML = ICONS[icon];
+    return h("section", {class:"a-card a-set-sec"}, [h("header", {}, [ic, h("div", {}, [h("h3", {text:title}), hint ? h("p", {class:"hint", text:hint}) : null])]), h("div", {class:"a-set-grid"}, nodes)]);
+  }
+  function refresh(){
+    var dirty = hn.box.checked !== !!hn.box.dataset.saved || hg.box.checked !== !!hg.box.dataset.saved, bad = false;
+    fields.forEach(function(f){
+      var v = f.input.value.trim(), problem = f.check ? f.check(v) : "";
+      f.err.hidden = !problem; setUiText(f.err, problem); f.input.classList.toggle("bad", !!problem); f.input.setAttribute("aria-invalid", problem ? "true" : "false");
+      if(problem) bad = true;
+      if(v !== f.saved.trim()) dirty = true;
+    });
+    var text = F.announce.input.value.trim();
+    counter.textContent = text.length + " / 200";
+    setUiText(bannerText, text || "— الشريط مخفي —"); banner.classList.toggle("off", !text);
+    saveBtn.disabled = !dirty || bad; resetBtn.hidden = !dirty;
+    bar.classList.toggle("dirty", dirty);
+    setUiText(state, bad ? "تحقق من الحقول المعلَّمة قبل الحفظ" : dirty ? "لديك تغييرات غير محفوظة" : "كل التغييرات محفوظة");
+    if(dirty) setMsg(msg, "", "");
+  }
+  resetBtn.addEventListener("click", function(){
+    fields.forEach(function(f){ f.input.value = f.saved; });
+    [hn, hg].forEach(function(t){ t.box.checked = !!t.box.dataset.saved; });
+    waByHand = !!F.whatsapp.input.value; refresh();
+  });
+  saveBtn.addEventListener("click", async function(){
+    var body = {hideDefaultNews:hn.box.checked, hideDefaultGallery:hg.box.checked};
     Object.keys(F).forEach(function(k){ body[k] = F[k].input.value.trim(); });
     body.whatsapp = body.whatsapp.replace(/\D/g, "");
     F.whatsapp.input.value = body.whatsapp;
-    save.disabled = true;
-    try{ DATA.settings = await api("PUT", "/admin/api/settings", body); setMsg(msg, "تم حفظ الإعدادات وطُبّقت على الموقع.", "ok"); }
-    catch(e){ setMsg(msg, errText(e), "err"); save.disabled = false; }
+    saveBtn.disabled = true;
+    try{
+      DATA.settings = await api("PUT", "/admin/api/settings", body);
+      fields.forEach(function(f){ f.saved = f.input.value.trim(); });
+      [hn, hg].forEach(function(t){ t.box.dataset.saved = t.box.checked ? "1" : ""; });
+      refresh(); setMsg(msg, "تم حفظ الإعدادات وطُبّقت على الموقع.", "ok");
+    }catch(e){ setMsg(msg, errText(e), "err"); saveBtn.disabled = false; }
   });
   fill = null;
-  return h("div", {class:"a-card a-settings"}, [
-    section("شريط الإعلان", "رسالة قصيرة تظهر فوق الموقع، مثل فتح التسجيل أو عطلة رسمية.", [F.announce]),
-    section("التواصل وأوقات الدوام", "هذه البيانات تظهر في الموقع وفي أزرار الاتصال. إن تُرك حقل فارغاً يُستخدم الإعداد الافتراضي للروضة.", [F.phone, F.whatsapp, F.email, F.hours]),
-    section("حسابات التواصل الاجتماعي", "يجب أن يكون الرابط كاملاً ويبدأ بـ https", [F.facebook, F.instagram]),
-    h("details", {class:"a-set-adv"}, [h("summary", {text:"خيارات متقدمة: المحتوى الأصلي للموقع"}),
-      h("p", {class:"hint", text:"اخفِ الأخبار والصور التي جاءت مع الموقع، حين تنشر أخبارك وصورك الخاصة."}),
-      h("label", {class:"a-check"}, [hn, "إخفاء الخبر الافتتاحي الأصلي"]), h("label", {class:"a-check"}, [hg, "إخفاء الصور الأصلية في المعرض"])]),
-    h("div", {class:"a-row"}, [save]), msg]);
+  var page = h("div", {class:"a-settings"}, [
+    h("div", {class:"a-set-head"}, [h("h2", {text:"إعدادات الموقع"}), h("p", {class:"hint", text:"ما تغيّره هنا يظهر مباشرة في الموقع بعد الحفظ."})]),
+    section("banner", "شريط الإعلان", "رسالة قصيرة تظهر فوق الموقع، مثل فتح التسجيل أو عطلة رسمية. اتركها فارغة لإخفاء الشريط.", [F.announce.node]),
+    section("contact", "التواصل وأوقات الدوام", "تظهر في الموقع وفي أزرار الاتصال. إن تُرك حقل فارغاً يُستخدم الإعداد الافتراضي للروضة.", [F.phone.node, F.whatsapp.node, F.email.node, F.hours.node]),
+    section("social", "حسابات التواصل الاجتماعي", "الرابط الكامل لصفحة الروضة، ويبدأ بـ https", [F.facebook.node, F.instagram.node]),
+    section("adv", "المحتوى الأصلي للموقع", "خيارات متقدمة، نادراً ما تحتاجها.", [hn.node, hg.node]),
+    msg, bar]);
+  setTimeout(refresh, 0);
+  return page;
 }
 
 function tabAccounts(){
