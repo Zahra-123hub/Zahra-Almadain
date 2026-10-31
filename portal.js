@@ -81,6 +81,7 @@
       error: "خطأ",
       noReports: "لا توجد تقارير منشورة بعد.", loading: "جارٍ التحميل…",
       serviceUnavailable: "بوابة الحسابات غير مهيأة بعد. يلزم إعداد قاعدة البيانات وترحيلها قبل تسجيل الدخول.",
+      networkError: "تعذّر الاتصال بالخادم. قد يكون الخادم يستيقظ (حتى دقيقة بعد فترة توقف)، أو أن الاتصال بالإنترنت ضعيف. انتظر قليلاً ثم حاول مرة أخرى.",
       genericError: "تعذر إكمال الطلب. حاول مرة أخرى.",
       title: "عنوان التقرير", body: "ملخص اليوم", child: "الطفل",
       selectChild: "اختاري طفلاً", saveDraft: "حفظ كمسودة", submit: "إرسال للمراجعة",
@@ -156,6 +157,7 @@
       error: "Error",
       noReports: "No published reports yet.", loading: "Loading…",
       serviceUnavailable: "The account portal is not configured yet. A database and migrations are required before sign-in.",
+      networkError: "Could not reach the server. It may be waking up (up to a minute after being idle), or the connection is weak. Wait a moment and try again.",
       genericError: "The request could not be completed. Please try again.",
       title: "Report title", body: "Daily summary", child: "Child",
       selectChild: "Select a child", saveDraft: "Save draft", submit: "Submit for review",
@@ -376,7 +378,7 @@
   function errorMessage(error) {
     var localized = API_ERROR[error.message];
     if (localized) return localized[lang];
-    if (error instanceof TypeError) return t("serviceUnavailable");
+    if (error instanceof TypeError) return t("networkError");
     return error.message || t("genericError");
   }
   function header() {
