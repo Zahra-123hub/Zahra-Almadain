@@ -243,7 +243,7 @@ origins = [
     origin.strip()
     for origin in os.getenv(
         "ALLOWED_ORIGINS",
-        "https://zahra-123hub.github.io,http://127.0.0.1:8000,http://localhost:8000",
+        "https://zahratalmadain.com,https://www.zahratalmadain.com,https://zahra-123hub.github.io,http://127.0.0.1:8000,http://localhost:8000",
     ).split(",")
     if origin.strip()
 ]
@@ -1547,7 +1547,7 @@ def send_registration_code_email(item: RegistrationRequest, code: str) -> bool:
     if not host or not sender:
         return False
     base_url = os.getenv(
-        "PORTAL_BASE_URL", "https://zahra-123hub.github.io/Zahra-Almadain"
+        "PORTAL_BASE_URL", "https://zahratalmadain.com"
     ).rstrip("/")
     link = f"{base_url}/login/?code={quote(code)}"
     message = EmailMessage()
