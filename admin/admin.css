@@ -323,17 +323,42 @@ h2,h3{font-weight:800}
 
 .a-card .a-sheet input[type=number]{font-size:.92rem;padding-inline:6px}
 
-/* ===== Settings: grouped sections ===== */
-.a-settings{display:grid;gap:6px}
-.a-set-sec{padding:6px 0 16px;border-bottom:1px solid var(--line)}
-.a-set-sec:last-of-type{border-bottom:0}
-.a-set-sec>h3{margin:4px 0 2px}
-.a-set-sec>.hint{margin:0 0 10px}
-.a-set-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 16px}
-.a-set-field label{display:block;margin-bottom:6px}
-.a-set-field .hint{margin:6px 0 0}
-.a-set-field input::placeholder{color:rgba(160,184,230,.45)}
-.a-set-adv{margin-top:8px;border:1px dashed var(--line);border-radius:14px;padding:4px 14px}
-.a-set-adv summary{cursor:pointer;font-weight:800;padding:10px 0;color:var(--muted)}
-.a-set-adv[open] summary{color:var(--head)}
-.a-settings .a-btn.sun.save:disabled{background:transparent;color:var(--muted);border:1px solid var(--line);opacity:.6;cursor:default;box-shadow:none}
+/* ===== Settings: professional layout ===== */
+.a-settings{display:grid;gap:16px;max-width:900px;margin:0 auto;padding-bottom:84px}
+.a-set-head h2{margin:0 0 4px;font-size:1.5rem;color:var(--head)}
+.a-set-head .hint{margin:0}
+.a-set-sec{margin:0}
+.a-set-sec>header{display:flex;gap:14px;align-items:center;margin-bottom:16px}
+.a-set-sec>header h3{margin:0 0 2px}
+.a-set-sec>header .hint{margin:0;line-height:1.6}
+.a-set-ic{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:rgba(253,185,19,.14);color:var(--sun)}
+.a-set-ic svg{width:22px;height:22px;fill:currentColor}
+.a-set-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px 18px}
+.a-set-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.a-card .a-set-field label{margin:0;font-weight:800}
+.a-set-field .hint{margin:0;font-size:.86rem}
+.a-set-field input::placeholder{color:rgba(160,184,230,.42)}
+.a-set-field input.bad{border-color:#ff8a86;box-shadow:0 0 0 3px rgba(224,64,61,.18)}
+.a-set-err{margin:0;color:#ff8a86;font-size:.88rem;font-weight:700}
+.a-set-count{align-self:flex-end;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.a-banner-prev{display:flex;flex-direction:column;gap:6px;margin-top:4px;padding:10px 14px;border-radius:14px;background:var(--bg2);border:1px dashed var(--line)}
+.a-banner-prev small{color:var(--muted);font-size:.78rem}
+.a-banner-text{background:var(--sun);color:#1a2a52;font-weight:800;text-align:center;padding:8px 14px;border-radius:10px;line-height:1.5;word-break:break-word}
+.a-banner-prev.off .a-banner-text{background:transparent;color:var(--muted);font-weight:600}
+.a-card .a-switch{display:flex;align-items:center;gap:14px;cursor:pointer;padding:12px 14px;border:1px solid var(--line);border-radius:14px;margin:0;font-weight:400}
+.a-card .a-switch input{position:absolute;opacity:0;width:1px;height:1px}
+.a-card .a-switch .track{flex:none;position:relative;width:46px;height:26px;border-radius:999px;background:rgba(160,184,230,.28);transition:background .2s}
+.a-card .a-switch .track::after{content:"";position:absolute;top:3px;inset-inline-start:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s}
+.a-card .a-switch input:checked+.track{background:#7DC243}
+html[dir=rtl] .a-card .a-switch input:checked+.track::after{transform:translateX(-20px)}
+html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:translateX(20px)}
+.a-card .a-switch input:focus-visible+.track{outline:3px solid var(--sun);outline-offset:2px}
+.a-card .a-switch .txt{display:flex;flex-direction:column;gap:2px}
+.a-card .a-switch .txt b{font-weight:800}
+.a-card .a-switch .txt small{color:var(--muted)}
+.a-set-bar{position:sticky;bottom:12px;z-index:5;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 12px 30px rgba(8,20,48,.35)}
+.a-set-bar.dirty{border-color:var(--sun)}
+.a-set-state{color:var(--muted);font-weight:700}
+.a-set-bar.dirty .a-set-state{color:var(--sun)}
+.a-set-bar .a-btn.sun.save:disabled{background:transparent;color:var(--muted);border:1px solid var(--line);opacity:.6;cursor:default;box-shadow:none}
+@media(max-width:620px){.a-set-sec>header{align-items:flex-start}.a-set-bar{bottom:6px}.a-set-bar .a-row,.a-set-bar .a-btn{width:100%}}
