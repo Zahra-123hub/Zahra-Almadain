@@ -362,3 +362,9 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-set-bar.dirty .a-set-state{color:var(--sun)}
 .a-set-bar .a-btn.sun.save:disabled{background:transparent;color:var(--muted);border:1px solid var(--line);opacity:.6;cursor:default;box-shadow:none}
 @media(max-width:620px){.a-set-sec>header{align-items:flex-start}.a-set-bar{bottom:6px}.a-set-bar .a-row,.a-set-bar .a-btn{width:100%}}
+
+/* ===== Closed months, refunds, locked sheets ===== */
+.a-card.is-locked .a-table-wrap{opacity:.72}
+.a-tag.refund{background:rgba(224,64,61,.16);color:#ff8a86;border-color:transparent;font-weight:800}
+.a-pay-line strong.refund{color:#ff8a86}
+.a-refund-form{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
