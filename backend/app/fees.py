@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable
 
@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_session
-from app.models import Child, ExchangeRate, FeeAuditLog, FeeCharge, FeePayment
+from app.models import Child, ExchangeRate, FeeAuditLog, FeeCharge, FeePayment, PeriodLock
 
 CURRENCIES = ("SYP", "USD")  # the Syrian pound is the main currency and always comes first
 CENT = Decimal("0.01")
@@ -204,6 +204,7 @@ def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
             {
                 "id": str(p.id),
                 "amount": str(money(p.amount)),
+                "refund": money(p.amount) < 0,
                 "paid_on": p.paid_on.isoformat() if p.paid_on else None,
                 "receipt_no": p.receipt_no or "",
                 "note": p.note,
@@ -213,6 +214,38 @@ def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
             for p in payments
         ],
     }
+
+
+def months_between(start: date, end: date) -> list[tuple[int, int]]:
+    """Every (year, month) that a range of days touches."""
+    months: list[tuple[int, int]] = []
+    day = date(start.year, start.month, 1)
+    while day <= end:
+        months.append((day.year, day.month))
+        day = date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+    return months
+
+
+def ensure_open(session: Session, *months: tuple[int, int] | None) -> None:
+    """Refuses a change that falls into a closed month. Corrections belong in an open period as their own rows."""
+    wanted = {m for m in months if m is not None}
+    if not wanted:
+        return
+    closed = session.scalars(
+        select(PeriodLock).where(PeriodLock.year.in_({y for y, _ in wanted}))
+    ).all()
+    hit = sorted((lock.year, lock.month) for lock in closed if (lock.year, lock.month) in wanted)
+    if hit:
+        year, month = hit[0]
+        raise HTTPException(
+            423,
+            f"شهر {month}/{year} مغلق ولا يمكن تعديله. سجّل التصحيح كسطر جديد في فترة مفتوحة، "
+            "أو يعيد المدير فتح الشهر مع ذكر السبب.",
+        )
+
+
+def month_of(day: date | None) -> tuple[int, int] | None:
+    return None if day is None else (day.year, day.month)
 
 
 def log(session: Session, actor: FeesActor, action: str, entity_id: Any, details: str) -> None:
@@ -384,6 +417,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                 log(session, actor, "child.create", child.id, f"{class_name or '-'}")
             elif class_name and child.class_name != class_name:
                 child.class_name = class_name
+        ensure_open(session, (payload.year, payload.month), month_of(payload.payment.paid_on if payload.payment else None))
         charge = FeeCharge(
             child_id=child.id,
             year=payload.year,
@@ -433,6 +467,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, int]:
         """Create the same charge for every active child that has none for that month/currency."""
+        ensure_open(session, (payload.year, payload.month))
         query = select(Child).where(Child.is_active.is_(True))
         if payload.class_name:
             query = query.where(Child.class_name == payload.class_name)
@@ -474,6 +509,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         charge = get_charge(session, charge_id)
+        ensure_open(session, (charge.year, charge.month))
         if money(payload.amount) < paid_amount(charge):
             raise HTTPException(422, "الرسم المطلوب لا يمكن أن يكون أقل من المبلغ المدفوع.")
         old = charge.amount
@@ -503,6 +539,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> Response:
         charge = get_charge(session, charge_id)
+        ensure_open(session, (charge.year, charge.month))
         if active_payments(charge):
             raise HTTPException(409, "لا يمكن حذف رسم عليه دفعات. احذف الدفعات أولاً.")
         log(session, actor, "charge.delete", charge.id, f"{charge.month}/{charge.year} {charge.currency}")
@@ -523,9 +560,11 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(422, "مبلغ الدفعة يجب أن يكون أكبر من صفر.")
         if payload.paid_on is None:
             raise HTTPException(422, "تاريخ الدفع مطلوب.")
+        ensure_open(session, month_of(payload.paid_on))
         receipt = (payload.receipt_no or "").strip() or None
         check_receipt(session, receipt, None)
         check_not_over(charge, amount)
+        check_not_double_click(session, charge, amount, payload.paid_on, payload.payer_name.strip(), actor)
         payment = FeePayment(
             charge_id=charge.id,
             amount=amount,
@@ -543,6 +582,54 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             session.rollback()
             raise HTTPException(409, "رقم الإيصال مستخدم من قبل.") from exc
         log(session, actor, "payment.create", payment.id, f"{amount} {charge.currency} إيصال {receipt or '-'}")
+        session.commit()
+        session.refresh(charge)
+        return charge_row(charge, session.get(Child, charge.child_id))
+
+    def check_not_double_click(
+        session: Session, charge: FeeCharge, amount: Decimal, paid_on: date | None, payer: str, actor: FeesActor
+    ) -> None:
+        """The same payment typed twice within seconds (a double click) is refused instead of booked twice."""
+        since = datetime.now(timezone.utc) - timedelta(seconds=20)
+        twin = session.scalar(
+            select(FeePayment.id).where(
+                FeePayment.charge_id == charge.id, FeePayment.deleted_at.is_(None),
+                FeePayment.amount == amount, FeePayment.paid_on == paid_on, FeePayment.payer_name == payer,
+                FeePayment.created_by_name == actor.name[:80],
+                FeePayment.created_at >= since.replace(tzinfo=None),
+            )
+        )
+        if twin is not None:
+            raise HTTPException(409, "سُجّلت الدفعة نفسها قبل لحظات. إن كانت دفعة ثانية فعلاً، انتظر قليلاً ثم أعد المحاولة.")
+
+    @router.post("/charges/{charge_id}/refunds", status_code=201)
+    def add_refund(
+        charge_id: uuid.UUID,
+        payload: PaymentIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Money handed back to the parents. Booked as its own negative payment; the original payment stays untouched."""
+        charge = get_charge(session, charge_id)
+        amount = money(payload.amount)
+        if amount <= 0:
+            raise HTTPException(422, "مبلغ الاسترداد يجب أن يكون أكبر من صفر.")
+        if payload.paid_on is None:
+            raise HTTPException(422, "تاريخ الاسترداد مطلوب.")
+        ensure_open(session, month_of(payload.paid_on))
+        if amount > paid_amount(charge):
+            raise HTTPException(422, f"المبلغ أكبر من المدفوع ({paid_amount(charge)} {charge.currency}).")
+        if not payload.note.strip():
+            raise HTTPException(422, "اكتب سبب الاسترداد في الملاحظة.")
+        check_not_double_click(session, charge, -amount, payload.paid_on, payload.payer_name.strip(), actor)
+        refund = FeePayment(
+            charge_id=charge.id, amount=-amount, paid_on=payload.paid_on, receipt_no=None,
+            note=payload.note.strip(), payer_name=payload.payer_name.strip(),
+            created_by_id=actor.account_id, created_by_name=actor.name[:80],
+        )
+        charge.payments.append(refund)
+        session.flush()
+        log(session, actor, "payment.refund", refund.id, f"{amount} {charge.currency} — {payload.note.strip()[:200]}")
         session.commit()
         session.refresh(charge)
         return charge_row(charge, session.get(Child, charge.child_id))
@@ -571,6 +658,9 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(422, "مبلغ الدفعة يجب أن يكون أكبر من صفر.")
         if payload.paid_on is None and payment.paid_on is not None:
             raise HTTPException(422, "تاريخ الدفع مطلوب.")  # a known date cannot be removed again
+        if money(payment.amount) < 0:
+            raise HTTPException(422, "لا يمكن تعديل عملية استرداد. احذفها وسجّلها من جديد.")
+        ensure_open(session, month_of(payment.paid_on), month_of(payload.paid_on), None if payment.paid_on else (charge.year, charge.month))
         receipt = (payload.receipt_no or "").strip() or None
         check_receipt(session, receipt, payment.id)
         check_not_over(charge, amount, ignore=payment)
@@ -598,6 +688,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         payment = get_payment(session, payment_id)
         charge = get_charge(session, payment.charge_id)
+        ensure_open(session, month_of(payment.paid_on) or (charge.year, charge.month))
         payment.deleted_at = datetime.now(timezone.utc)  # soft delete: kept for the audit trail
         log(session, actor, "payment.delete", payment.id, f"{payment.amount} إيصال {payment.receipt_no or '-'}")
         session.commit()
