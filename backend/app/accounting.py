@@ -6,6 +6,7 @@ Fees themselves live in app.fees. Everything here is only reachable through the 
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from typing import Annotated
@@ -30,8 +31,11 @@ from app.fees import (
     RateBook,
     active_payments,
     convert,
+    ensure_open,
     log,
     money,
+    month_of,
+    months_between,
     paid_amount,
     rate_text,
     remaining_amount,
@@ -39,12 +43,14 @@ from app.fees import (
 from app.models import (
     Account,
     AccountingEntry,
+    CashCount,
     CashOpening,
     Child,
     ExchangeRate,
     Employee,
     FeeCharge,
     FeePayment,
+    PeriodLock,
     Role,
     SalaryLine,
 )
@@ -217,6 +223,19 @@ class CashIn(BaseModel):
     opening: Decimal = Money  # money in the cash box when the books start
     start_year: int = Field(ge=2000, le=2100)
     start_month: int = Field(ge=1, le=12)
+
+
+class PeriodIn(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+    note: str = Field(default="", max_length=500)
+
+
+class CashCountIn(BaseModel):
+    currency: str = Field(pattern="^(USD|SYP)$")
+    counted_on: date
+    counted_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    note: str = Field(default="", max_length=500)
 
 
 class EntryIn(BaseModel):
@@ -575,6 +594,13 @@ def sheet_rate(session: Session, end: date) -> tuple[Decimal, date, str, bool] |
     return found[0], found[1], "auto" if row.created_by == AUTO_RATE else "manual", False
 
 
+def is_locked(session: Session, start: date, end: date) -> bool:
+    """True when any month the range touches has been closed."""
+    wanted = set(months_between(start, end))
+    locks = session.scalars(select(PeriodLock).where(PeriodLock.year.in_({y for y, _ in wanted}))).all()
+    return any((lock.year, lock.month) in wanted for lock in locks)
+
+
 def unified_sheet(session: Session, period_type: str, year: int, month: int, week_start: date | None) -> dict[str, Any]:
     """One sheet with both currencies: every item has one line per currency that has something in it (a blank line in
     pounds when it has nothing), then the totals per currency, the same totals converted into the other currency,
@@ -650,6 +676,7 @@ def unified_sheet(session: Session, period_type: str, year: int, month: int, wee
         "period_type": period_type, "year": year, "month": month, "start": start.isoformat(), "end": end.isoformat(),
         "items": items, "totals": totals, "balance": balance, "converted": converted,
         "capital_set": any(cashes[code]["configured"] for code in CURRENCIES),
+        "locked": is_locked(session, start, end),
     }
 
 
@@ -919,6 +946,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, int]:
         """One payroll row per employee with a saved salary (in that currency) that has none for the month."""
+        ensure_open(session, (payload.year, payload.month))
         created = skipped = 0
         employees = session.scalars(
             select(Employee).where(
@@ -954,6 +982,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         check_net(payload.base, payload.bonus, payload.advance, payload.deduction)
+        ensure_open(session, (payload.year, payload.month), month_of(payload.paid_on))
         employee = resolve_employee(session, actor, payload)
         if employee.salary is None and money(payload.base) > 0:
             # the first salary typed for a person is remembered with them, so next month it can be filled in by itself
@@ -990,6 +1019,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         line = get_line(session, line_id)
         sent = payload.model_fields_set  # a field that was not sent stays as it is (null clears it)
+        ensure_open(session, (line.year, line.month), month_of(line.paid_on), month_of(payload.paid_on) if "paid_on" in sent else None)
         amounts = ("base", "bonus", "advance", "deduction")
         merged = {name: (getattr(payload, name) if name in sent else getattr(line, name)) for name in amounts}
         check_net(merged["base"], merged["bonus"], merged["advance"], merged["deduction"])
@@ -1045,7 +1075,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> Response:
         line = get_line(session, line_id)
-        log(session, actor, "salary.delete", line.id, f"{line.month}/{line.year} {line.currency}")
+        ensure_open(session, (line.year, line.month), month_of(line.paid_on))
+        log(session, actor, "salary.delete", line.id, f"{line.month}/{line.year} {line.currency} {line.base}")
         session.delete(line)
         session.commit()
         return Response(status_code=204)
@@ -1105,13 +1136,23 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     ) -> dict[str, Any]:
         """Sets the money the kindergarten had at the start of a month; the balance is counted from there."""
         row = session.scalar(select(CashOpening).where(CashOpening.currency == payload.currency))
+        earliest = min((payload.start_year, payload.start_month), (row.start_year, row.start_month) if row else (9999, 12))
+        newest_lock = session.scalar(
+            select(PeriodLock).where(
+                or_(PeriodLock.year > earliest[0], and_(PeriodLock.year == earliest[0], PeriodLock.month >= earliest[1]))
+            ).order_by(PeriodLock.year.desc(), PeriodLock.month.desc())
+        )
+        if newest_lock is not None:
+            raise HTTPException(423, "لا يمكن تغيير رأس المال بعد إغلاق شهر يقع في الفترة المتأثرة. يعيد المدير فتح الشهر أولاً.")
+        before = "" if row is None else f"{money(row.amount)} من {row.start_month}/{row.start_year} → "
         if row is None:
             row = CashOpening(currency=payload.currency)
             session.add(row)
         row.amount = money(payload.opening)
         row.start_year, row.start_month = payload.start_year, payload.start_month
         row.updated_by = actor.name[:80]
-        log(session, actor, "cash.opening", payload.currency, f"{payload.start_month}/{payload.start_year}")
+        log(session, actor, "cash.opening", payload.currency,
+            f"{before}{money(payload.opening)} من {payload.start_month}/{payload.start_year}")
         session.commit()
         return cash_report(session, payload.currency, date.today())
 
@@ -1137,7 +1178,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
-        start, _ = sheet_range(payload.period_type, payload.year, payload.month, payload.week_start)
+        start, end = sheet_range(payload.period_type, payload.year, payload.month, payload.week_start)
+        ensure_open(session, *months_between(start, end))
         year = sheet_year(payload.period_type, payload.year, start)
         standard = {key for key, _label, _kind in STANDARD_ITEMS}
         if payload.item_key != "custom" and payload.item_key not in standard:
@@ -1169,6 +1211,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                 currency=payload.currency, item_key=payload.item_key,
             )
             session.add(entry)
+        before = "" if created else f"{money(entry.income)}/{money(entry.expense)} «{entry.details[:60]}»"
         entry.item_label = payload.item_label.strip()
         entry.details = payload.details.strip()
         entry.note = payload.note.strip()
@@ -1205,8 +1248,9 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                 )
             ).all():
                 session.delete(extra)
+        after = f"{money(payload.income)}/{money(payload.expense)}"
         log(session, actor, "entry.create" if created else "entry.update", entry.id,
-            f"{payload.period_type} {payload.item_key} {payload.currency}")
+            f"{payload.period_type} {payload.item_key} {payload.currency} " + (after if created else f"{before} → {after}"))
         session.commit()
         data = build_sheet(session, payload.period_type, payload.year, payload.month, payload.week_start, payload.currency)
         return data
@@ -1222,10 +1266,136 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         if entry is None:
             raise HTTPException(404, "السطر غير موجود.")
         period = (entry.period_type, entry.year, entry.month, entry.week_start, entry.currency)
-        log(session, actor, "entry.delete", entry.id, f"{entry.period_type} {entry.item_key} {entry.currency}")
+        ensure_open(session, *months_between(*sheet_range(entry.period_type, entry.year, entry.month, entry.week_start)))
+        log(session, actor, "entry.delete", entry.id,
+            f"{entry.period_type} {entry.item_key} {entry.currency} {money(entry.income)}/{money(entry.expense)} «{entry.details[:60]}»")
         session.delete(entry)
         session.commit()
         return build_sheet(session, period[0], period[1], period[2], period[3], period[4])
+
+    # ---- closed months -------------------------------------------------------
+
+    def lock_row(lock: PeriodLock) -> dict[str, Any]:
+        try:
+            snapshot = json.loads(lock.snapshot) if lock.snapshot else {}
+        except ValueError:
+            snapshot = {}
+        return {
+            "year": lock.year, "month": lock.month, "closed_by": lock.closed_by, "note": lock.note,
+            "closed_at": lock.closed_at.isoformat() if lock.closed_at else "", "snapshot": snapshot,
+        }
+
+    @router.get("/periods")
+    def list_periods(
+        response: Response,
+        year: int | None = None,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "no-store"
+        query = select(PeriodLock).order_by(PeriodLock.year, PeriodLock.month)
+        if year:
+            query = query.where(PeriodLock.year == year)
+        return {"locks": [lock_row(lock) for lock in session.scalars(query).all()]}
+
+    @router.post("/periods/close", status_code=201)
+    def close_period(
+        payload: PeriodIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Closes a finished month: from now on nothing dated in it can be added, changed or removed."""
+        _first, last = sheet_range("month", payload.year, payload.month, None)
+        if last >= date.today():
+            raise HTTPException(422, "لا يمكن إغلاق شهر لم ينتهِ بعد.")
+        if session.scalar(select(PeriodLock.id).where(PeriodLock.year == payload.year, PeriodLock.month == payload.month)):
+            raise HTTPException(409, "هذا الشهر مغلق بالفعل.")
+        snapshot: dict[str, Any] = {}
+        for code in CURRENCIES:
+            totals = Ledger.load(session, code).sheet("month", payload.year, payload.month, None)["totals"]
+            snapshot[code] = {"income": totals["income"], "expense": totals["expense"]}
+        lock = PeriodLock(
+            year=payload.year, month=payload.month, closed_by=actor.name[:80], note=payload.note.strip(),
+            snapshot=json.dumps(snapshot),
+        )
+        session.add(lock)
+        try:
+            session.flush()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(409, "هذا الشهر مغلق بالفعل.") from exc
+        log(session, actor, "period.close", f"{payload.month}/{payload.year}", payload.note.strip()[:300])
+        session.commit()
+        session.refresh(lock)
+        return lock_row(lock)
+
+    @router.post("/periods/reopen")
+    def reopen_period(
+        payload: PeriodIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Only the admin can open a closed month again, and has to say why."""
+        if actor.role != "admin":
+            raise HTTPException(403, "إعادة فتح شهر مغلق للمدير فقط.")
+        if len(payload.note.strip()) < 5:
+            raise HTTPException(422, "اكتب سبب إعادة فتح الشهر (5 أحرف على الأقل).")
+        lock = session.scalar(select(PeriodLock).where(PeriodLock.year == payload.year, PeriodLock.month == payload.month))
+        if lock is None:
+            raise HTTPException(404, "هذا الشهر غير مغلق.")
+        log(session, actor, "period.reopen", f"{payload.month}/{payload.year}", payload.note.strip()[:300])
+        session.delete(lock)
+        session.commit()
+        return {"locks": [lock_row(row) for row in session.scalars(select(PeriodLock).order_by(PeriodLock.year, PeriodLock.month)).all()]}
+
+    # ---- cash reconciliation ---------------------------------------------------
+
+    def count_row(row: CashCount) -> dict[str, Any]:
+        return {
+            "id": str(row.id), "currency": row.currency, "counted_on": row.counted_on.isoformat(),
+            "counted_amount": str(money(row.counted_amount)), "book_amount": str(money(row.book_amount)),
+            "difference": str(money(row.difference)), "note": row.note, "counted_by": row.counted_by,
+        }
+
+    @router.get("/cash/counts")
+    def list_counts(
+        response: Response,
+        limit: int = 50,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, Any]]:
+        response.headers["Cache-Control"] = "no-store"
+        rows = session.scalars(
+            select(CashCount).order_by(CashCount.counted_on.desc(), CashCount.created_at.desc()).limit(min(max(limit, 1), 200))
+        ).all()
+        return [count_row(row) for row in rows]
+
+    @router.post("/cash/counts", status_code=201)
+    def add_count(
+        payload: CashCountIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """The accountant counts the cash box; the system compares it with the books at the end of that day.
+        The result is kept as it is (never edited) so a difference can always be traced."""
+        if payload.counted_on > date.today():
+            raise HTTPException(422, "لا يمكن إجراء الجرد بتاريخ مستقبلي.")
+        balance = unified_sheet(session, "day", payload.counted_on.year, payload.counted_on.month, payload.counted_on)["balance"]
+        entry = None if balance is None else balance.get(payload.currency)
+        if entry is None:
+            raise HTTPException(409, "أدخل رأس المال أولاً (أو اختر تاريخاً بعد بدء الحسابات).")
+        book = money(entry["closing"])
+        counted = money(payload.counted_amount)
+        row = CashCount(
+            currency=payload.currency, counted_on=payload.counted_on, counted_amount=counted, book_amount=book,
+            difference=counted - book, note=payload.note.strip(), counted_by=actor.name[:80],
+        )
+        session.add(row)
+        log(session, actor, "cash.count", payload.currency,
+            f"{payload.counted_on.isoformat()} محسوب {counted} دفتر {book} فرق {counted - book}")
+        session.commit()
+        session.refresh(row)
+        return count_row(row)
 
     # ---- exchange rate (only used to convert what is typed in a form when its currency is switched) ----
 

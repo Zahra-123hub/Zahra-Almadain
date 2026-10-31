@@ -406,6 +406,39 @@ class CashOpening(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
+class PeriodLock(Base):
+    """A closed accounting month: nothing dated in it can be added, changed or removed any more
+    (only the admin can reopen it, with a reason). Corrections go into an open period as their own rows."""
+
+    __tablename__ = "period_locks"
+    __table_args__ = (UniqueConstraint("year", "month", name="uq_period_lock"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    month: Mapped[int] = mapped_column(Integer)
+    closed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    closed_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    # what the books said when the month was closed ({"SYP": {"income": ..., "expense": ...}, ...}) as JSON text
+    snapshot: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+
+
+class CashCount(Base):
+    """A counted cash box compared with what the books say (the reconciliation). Never edited afterwards."""
+
+    __tablename__ = "cash_counts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    currency: Mapped[str] = mapped_column(String(3), index=True)
+    counted_on: Mapped[date] = mapped_column(Date, index=True)
+    counted_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    book_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    difference: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # counted - book
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    counted_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class FeeAuditLog(Base):
     __tablename__ = "fee_audit_log"
 
