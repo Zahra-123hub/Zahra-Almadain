@@ -286,7 +286,8 @@ function tabOverview(){
       cash.configured ? "" : h("p", {class:"a-review-note", text:"لم تحدّد رصيد البداية بعد، لذلك يبدأ الحساب من صفر عند أول شهر فيه بيانات. اضغط «تعديل رصيد البداية» وأدخل المبلغ الموجود في الصندوق عند بدء العمل بالنظام."}),
       h("p", {class:"hint", text:"الرصيد = رصيد البداية + كل الواردات − كل المصروفات، من شهر البداية حتى نهاية الشهر الحالي. الواردات تأتي تلقائياً من الاشتراكات المدفوعة، والمصروفات من الرواتب ومن الجداول. الراتب الذي لم يُسلَّم بعد يُخصم في شهره."}),
       h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تعديل رصيد البداية", onclick:function(){ form.hidden = !form.hidden; }})]),
-      form, cashMsg, h("h4", {text:"الرصيد شهراً بشهر"}), trail]);
+      form, cashMsg,
+      h("details", Object.assign({class:"a-trail"}, window.innerWidth > 700 ? {open:"open"} : {}), [h("summary", {text:"الرصيد شهراً بشهر"}), trail])]);
   }
 
   /* Closed months: the accountant closes a finished month, only the admin can open it again (with a reason). */

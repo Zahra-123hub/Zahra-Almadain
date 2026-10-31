@@ -368,3 +368,11 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-tag.refund{background:rgba(224,64,61,.16);color:#ff8a86;border-color:transparent;font-weight:800}
 .a-pay-line strong.refund{color:#ff8a86}
 .a-refund-form{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+
+/* ===== Phone: every tab visible, long lists folded ===== */
+@media(max-width:620px){
+  .a-tabs{flex-wrap:wrap;overflow:visible;gap:4px 4px;padding-top:6px}
+  .a-tabs button{padding:8px 12px;font-size:.92rem;border-radius:12px}
+}
+.a-trail>summary{cursor:pointer;font-weight:800;color:var(--head);padding:10px 0}
+.a-trail[open]>summary{margin-bottom:6px}
