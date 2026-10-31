@@ -170,6 +170,14 @@ function tabAccounting(){
 var ACC_SUB = "";
 
 /* ------------------------------------------------------------- overview */
+var ACC_ACTION_LABEL = {
+  "payment.create":"دفعة", "payment.update":"تعديل دفعة", "payment.delete":"حذف دفعة", "payment.refund":"استرداد",
+  "charge.create":"رسم جديد", "charge.update":"تعديل رسم", "charge.delete":"حذف رسم", "charge.generate":"توليد رسوم",
+  "salary.create":"راتب جديد", "salary.update":"تعديل راتب", "salary.delete":"حذف راتب", "salary.generate":"توليد رواتب",
+  "entry.create":"سطر جدول", "entry.update":"تعديل سطر", "entry.delete":"حذف سطر",
+  "cash.opening":"رأس المال", "cash.count":"جرد الصندوق", "period.close":"إغلاق شهر", "period.reopen":"إعادة فتح شهر", "rate.set":"سعر صرف"
+};
+
 function tabOverview(){
   var now = new Date();
   var year = h("input", {type:"number", min:"2000", max:"2100", value:String(now.getFullYear())});
@@ -202,8 +210,15 @@ function tabOverview(){
     try{
       var data = await request("/api/admin/accounting/overview?year=" + encodeURIComponent(year.value));
       var review = data.review || {fees:0, salaries:0};
-      var cash = {};
+      var cash = {}, locks = [], counts = [], recent = [], unpaidSalaries = null;
       try{ cash = await request("/api/admin/accounting/cash"); }catch(e){ /* the rest of the overview still works */ }
+      try{ locks = (await request("/api/admin/accounting/periods?year=" + encodeURIComponent(year.value))).locks; }catch(e){ /* optional */ }
+      try{ counts = await request("/api/admin/accounting/cash/counts?limit=40"); }catch(e){ /* optional */ }
+      try{ recent = (await request("/api/admin/fees/audit?limit=8")); }catch(e){ /* optional */ }
+      try{
+        var today = new Date(), pay = await request("/api/admin/accounting/salaries?year=" + today.getFullYear() + "&month=" + (today.getMonth() + 1));
+        unpaidSalaries = pay.rows.filter(function(r){ return r.currency === currencySel.value && !r.paid_on; }).length;
+      }catch(e){ /* optional */ }
       if(review.fees || review.salaries){
         body.appendChild(h("div", {class:"a-card a-review-note"}, [h("strong", {text:"يوجد " + review.fees + " سطر اشتراكات و" + review.salaries + " سطر رواتب يحتاج إلى مراجعة."}),
           h("p", {class:"hint", text:"الأسطر المميّزة بالأصفر مستوردة من الأوراق وفيها خانة غير واضحة. افتحها وصحّحها ثم اضغط «تمت المراجعة»."})]));
@@ -226,7 +241,8 @@ function tabOverview(){
           h("h3", {text:"بـ" + ACC_CURRENCY_NAME[code]}),
           h("div", {class:"a-kpis"}, [
             kpi("المطلوب", money(tot.required)), kpi("المدفوع", money(tot.paid)), kpi("المتبقي", money(tot.remaining), tot.remaining > 0 ? "due" : ""),
-            kpi("أطفال عليهم متبقي", String(info.children_open)), kpi("الواردات (الجدول الشهري)", money(yIncome)), kpi("المصروفات (الجدول الشهري)", money(yExpense))
+            kpi("أطفال عليهم متبقي", String(info.children_open)), kpi("الواردات (الجدول الشهري)", money(yIncome)), kpi("المصروفات (الجدول الشهري)", money(yExpense)),
+            unpaidSalaries === null ? "" : kpi("رواتب لم تُدفع هذا الشهر", String(unpaidSalaries), unpaidSalaries > 0 ? "due" : "good")
           ]),
           h("h4", {text:"الاشتراكات حسب الصف والشهر"}),
           h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table"}, [
@@ -236,6 +252,9 @@ function tabOverview(){
           h("p", {class:"hint", text:"أخضر: واردات · أحمر: مصروفات (من الجدول الشهري، الأرقام 1–12 هي الأشهر)"}),
           chart(info.series)
         ]));
+        body.appendChild(closingCard(code, locks));
+        body.appendChild(countCard(code, counts));
+        body.appendChild(recentCard(recent));
       });
     }catch(error){ body.appendChild(h("p", {class:"a-msg err", text:errText(error)})); }
   }
@@ -268,6 +287,86 @@ function tabOverview(){
       h("p", {class:"hint", text:"الرصيد = رصيد البداية + كل الواردات − كل المصروفات، من شهر البداية حتى نهاية الشهر الحالي. الواردات تأتي تلقائياً من الاشتراكات المدفوعة، والمصروفات من الرواتب ومن الجداول. الراتب الذي لم يُسلَّم بعد يُخصم في شهره."}),
       h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تعديل رصيد البداية", onclick:function(){ form.hidden = !form.hidden; }})]),
       form, cashMsg, h("h4", {text:"الرصيد شهراً بشهر"}), trail]);
+  }
+
+  /* Closed months: the accountant closes a finished month, only the admin can open it again (with a reason). */
+  function closingCard(code, locks){
+    var isAdminUser = typeof TEACHER_MODE !== "undefined" && !TEACHER_MODE && !ACCOUNTANT_MODE;
+    var byMonth = {};
+    locks.forEach(function(lock){ byMonth[lock.month] = lock; });
+    var yearNo = Number(year.value), now = new Date(), cardMsg = h("div", {class:"a-msg", role:"status"});
+    var rows = [];
+    for(var m = 1; m <= 12; m++){
+      (function(m){
+        var lock = byMonth[m], finished = new Date(yearNo, m, 1) <= now, cells = [h("td", {class:"name", text:MONTHS_AR[m - 1]})], action = "";
+        if(lock){
+          var snap = lock.snapshot && lock.snapshot[code] ? lock.snapshot[code] : null;
+          cells.push(h("td", {}, [h("span", {class:"a-badge paid", text:"مغلق"}), h("small", {class:"hint", text:" " + lock.closed_by + " · " + String(lock.closed_at).slice(0, 10)})]));
+          cells.push(h("td", {class:"num", text:snap ? money(snap.income) : "—"}), h("td", {class:"num", text:snap ? money(snap.expense) : "—"}));
+          if(isAdminUser) action = h("button", {type:"button", class:"a-btn ghost", text:"إعادة فتح", onclick:async function(){
+            var why = window.prompt("اذكر سبب إعادة فتح " + MONTHS_AR[m - 1] + " " + yearNo + " (5 أحرف على الأقل):");
+            if(why === null) return;
+            try{ await request("/api/admin/accounting/periods/reopen", {method:"POST", body:JSON.stringify({year:yearNo, month:m, note:why})}); setMsg(cardMsg, "أُعيد فتح الشهر.", "ok"); await load(); }
+            catch(error){ setMsg(cardMsg, errText(error), "err"); }
+          }});
+        }else{
+          cells.push(h("td", {}, [h("span", {class:"a-badge " + (finished ? "partial" : "open"), text:finished ? "مفتوح" : "لم ينتهِ بعد"})]), h("td", {class:"num", text:"—"}), h("td", {class:"num", text:"—"}));
+          if(finished) action = h("button", {type:"button", class:"a-btn sun", text:"إغلاق الشهر", onclick:async function(){
+            if(!window.confirm("بعد الإغلاق لا يمكن إضافة أو تعديل أو حذف أي دفعة أو راتب أو سطر مؤرّخ في " + MONTHS_AR[m - 1] + " " + yearNo + ". التصحيحات تُسجَّل كأسطر جديدة في شهر مفتوح. المتابعة؟")) return;
+            var note = window.prompt("ملاحظة الإغلاق (اختياري):", "") || "";
+            try{ await request("/api/admin/accounting/periods/close", {method:"POST", body:JSON.stringify({year:yearNo, month:m, note:note})}); setMsg(cardMsg, "أُغلق الشهر.", "ok"); await load(); }
+            catch(error){ setMsg(cardMsg, errText(error), "err"); }
+          }});
+        }
+        cells.push(h("td", {}, [action]));
+        rows.push(h("tr", {}, cells));
+      })(m);
+    }
+    return h("div", {class:"a-card"}, [h("h3", {text:"إغلاق الأشهر"}),
+      h("p", {class:"hint", text:"بعد إغلاق الشهر تُحفظ أرقامه ولا يمكن تغيير أي حركة مؤرّخة فيه. يسجَّل التصحيح اللاحق كسطر جديد في فترة مفتوحة، ولا يعيد فتح الشهر إلا المدير مع ذكر السبب."}),
+      h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+        h("thead", {}, [h("tr", {}, ["الشهر", "الحالة", "الوارد (" + code + ")", "الصادر (" + code + ")", ""].map(function(t){ return h("th", {text:t}); }))]),
+        h("tbody", {}, rows)]))]), cardMsg]);
+  }
+
+  /* Cash count (reconciliation): the counted money against what the books say at the end of that day. */
+  function countCard(code, counts){
+    var day = h("input", {type:"date", value:localToday(), max:localToday(), required:"required"});
+    var amount = accNumber("", {required:"required", "aria-label":"المبلغ المعدود"});
+    var note = h("input", {type:"text", maxlength:"500", placeholder:"مثال: جرد نهاية الأسبوع"});
+    var cardMsg = h("div", {class:"a-msg", role:"status"});
+    var form = h("form", {class:"a-form-grid"}, [accField("تاريخ الجرد", day), accField("المبلغ الموجود فعلاً في الصندوق (" + code + ")", amount), accField("ملاحظة", note),
+      h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"تسجيل الجرد"})])]);
+    form.addEventListener("submit", async function(event){
+      event.preventDefault();
+      try{
+        var done = await request("/api/admin/accounting/cash/counts", {method:"POST", body:JSON.stringify({currency:code, counted_on:day.value, counted_amount:amount.value || "0", note:note.value.trim()})});
+        var diff = Number(done.difference);
+        setMsg(cardMsg, diff === 0 ? "الصندوق مطابق للدفاتر." : "الفرق: " + money(done.difference) + " " + code + (diff < 0 ? " (نقص في الصندوق)" : " (زيادة في الصندوق)"), diff === 0 ? "ok" : "err");
+        await load();
+      }catch(error){ setMsg(cardMsg, errText(error), "err"); }
+    });
+    var mine = counts.filter(function(row){ return row.currency === code; }).slice(0, 10);
+    var table = mine.length ? h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+      h("thead", {}, [h("tr", {}, ["التاريخ", "المعدود", "حسب الدفاتر", "الفرق", "بواسطة", "ملاحظة"].map(function(t){ return h("th", {text:t}); }))]),
+      h("tbody", {}, mine.map(function(row){
+        return h("tr", {}, [h("td", {class:"name", dir:"ltr", text:row.counted_on}), h("td", {class:"num", text:money(row.counted_amount)}), h("td", {class:"num", text:money(row.book_amount)}),
+          h("td", {class:"num strong" + (Number(row.difference) !== 0 ? " due" : ""), text:money(row.difference)}), h("td", {text:row.counted_by}), h("td", {dir:"auto", text:row.note})]);
+      }))]))]) : h("p", {class:"hint", text:"لم يُسجَّل أي جرد بهذه العملة بعد."});
+    return h("div", {class:"a-card"}, [h("h3", {text:"جرد الصندوق"}),
+      h("p", {class:"hint", text:"عدّ النقود الموجودة فعلاً واكتب المبلغ: يقارنه النظام برصيد الدفاتر في نهاية ذلك اليوم ويحفظ الفرق ولا يمكن تعديله بعدها. يتطلب أن يكون رأس المال مُدخلاً."}),
+      form, cardMsg, table]);
+  }
+
+  /* What needs attention and what happened last. */
+  function recentCard(items){
+    if(!items.length) return "";
+    return h("div", {class:"a-card"}, [h("h3", {text:"آخر العمليات"}),
+      h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+        h("thead", {}, [h("tr", {}, ["الوقت", "المستخدم", "العملية", "التفاصيل"].map(function(t){ return h("th", {text:t}); }))]),
+        h("tbody", {}, items.map(function(row){
+          return h("tr", {}, [h("td", {dir:"ltr", text:String(row.at).replace("T", " ").slice(0, 16)}), h("td", {text:row.actor}), h("td", {text:ACC_ACTION_LABEL[row.action] || row.action}), h("td", {dir:"auto", text:row.details})]);
+        }))]))])]);
   }
   function kpi(label, value, cls){ return h("div", {class:"a-kpi " + (cls || "")}, [h("span", {text:label}), h("strong", {text:value})]); }
   load();
@@ -562,14 +661,23 @@ function tabSheet(type){
     [details, note, person, income, expense, amount, kindSel, currencySel].forEach(function(el){ if(el){ el.addEventListener("input", markChanged); el.addEventListener("change", markChanged); } });
     return row;
   }
+  function lockSheet(card){
+    if(!data.locked) return card;
+    card.classList.add("is-locked");
+    card.insertBefore(h("div", {class:"a-review-note", role:"alert"}, [h("strong", {text:"هذه الفترة تقع في شهر مغلق ولا يمكن تعديلها."}),
+      h("p", {class:"hint", text:"سجّل أي تصحيح كسطر جديد في فترة مفتوحة. ولا يعيد فتح الشهر إلا المدير من «نظرة عامة»."})]), card.children[1] || null);
+    Array.prototype.forEach.call(card.querySelectorAll("input, select, button, textarea"), function(el){ el.disabled = true; });
+    return card;
+  }
   function sheetCard(){
     var tbody = h("tbody", {});
     data.items.forEach(function(item){ item.lines.forEach(function(line, index){ tbody.appendChild(lineRow(item, line, index === 0)); }); });
     var widths = isWeek ? [14, 11, 12, 11, 16, 16, 9, 11] : [18, 13, 14, 12, 19, 12, 12];
-    return h("div", {class:"a-card"}, [h("h3", {text:(isDay ? "اليوم" : isWeek ? "الأسبوع" : "الشهر") + " — ليرة ودولار معاً"}),
+    var card = h("div", {class:"a-card"}, [h("h3", {text:(isDay ? "اليوم" : isWeek ? "الأسبوع" : "الشهر") + " — ليرة ودولار معاً"}),
       h("p", {class:"hint", text:"لكل سطر عملته. غيّر العملة في السطر فيتحوّل المبلغ المكتوب تلقائياً بسعر اليوم، ثم اضغط «حفظ» لينتقل السطر إلى دفتر العملة الأخرى."}),
       h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("colgroup", {}, widths.map(function(w){ return h("col", {style:"width:" + w + "%"}); })),
         h("thead", {}, [h("tr", {}, HEADS.map(function(t){ return h("th", {text:t}); }))]), tbody])]), customRowForm()]);
+    return lockSheet(card);
   }
   function customRowForm(){
     var label = h("input", {type:"text", maxlength:"120", placeholder:"اسم البند"});

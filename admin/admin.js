@@ -67,6 +67,11 @@ var EN_TEXT = {
   "رابط صفحة إنستغرام":"Instagram page URL",
   "البريد الإلكتروني":"Email address",
   "معلومات التواصل والإعلان":"Contact information and announcements",
+  "استرداد":"Refund", "تسجيل استرداد للأهل":"Record a refund to the parents", "تسجيل الاسترداد":"Record refund", "السبب":"Reason", "سُلّم إلى":"Handed to",
+  "تاريخ الاسترداد":"Refund date", "سبب الاسترداد":"Reason for the refund", "لمن سُلّم المبلغ":"Who received the money",
+  "إغلاق الأشهر":"Closing months", "إغلاق الشهر":"Close month", "إعادة فتح":"Reopen", "مغلق":"Closed", "مفتوح":"Open", "لم ينتهِ بعد":"Not finished yet",
+  "جرد الصندوق":"Cash count", "تسجيل الجرد":"Record count", "تاريخ الجرد":"Count date", "آخر العمليات":"Latest activity",
+  "رواتب لم تُدفع هذا الشهر":"Salaries not paid this month",
   "إعدادات الموقع":"Website settings",
   "ما تغيّره هنا يظهر مباشرة في الموقع بعد الحفظ.":"What you change here appears on the website right after saving.",
   "هكذا يظهر الشريط":"How the banner looks",
@@ -1039,6 +1044,7 @@ function tabFees(){
     }
     box.appendChild(list);
     box.appendChild(paymentForm(row, null));
+    if(Number(row.paid) > 0) box.appendChild(refundForm(row));
     var amount = numberInput(row.amount);
     var cls = h("input", {type:"text", maxlength:"60", value:row.class_name});
     box.appendChild(h("div", {class:"a-form-grid"}, [
@@ -1063,12 +1069,13 @@ function tabFees(){
       line.innerHTML = "";
       line.append(
         h("span", {class:"a-tag", dir:"ltr", text:p.paid_on || "—"}),
-        h("strong", {text:money(p.amount) + " " + row.currency}),
+        p.refund ? h("span", {class:"a-tag refund", text:"استرداد"}) : "",
+        h("strong", {class:p.refund ? "refund" : "", text:money(p.amount) + " " + row.currency}),
         p.receipt_no ? h("span", {class:"a-tag", text:"إيصال " + p.receipt_no}) : "",
         p.payer_name ? h("span", {class:"a-tag sun", text:"دفعها: " + p.payer_name}) : h("span", {class:"hint", text:"الدافع غير مذكور"}),
         p.note ? h("span", {class:"hint", dir:"auto", text:p.note}) : "",
         p.created_by ? h("span", {class:"hint", text:"سجّلها: " + p.created_by}) : "",
-        h("button", {type:"button", class:"a-btn ghost", text:"تعديل", onclick:function(){ line.innerHTML = ""; line.appendChild(paymentForm(row, p, show)); }}),
+        p.refund ? "" : h("button", {type:"button", class:"a-btn ghost", text:"تعديل", onclick:function(){ line.innerHTML = ""; line.appendChild(paymentForm(row, p, show)); }}),
         twoStep("حذف", async function(){
           await request("/api/admin/fees/payments/" + encodeURIComponent(p.id), {method:"DELETE"}); setMsg(msg, "تم حذف الدفعة.", "ok"); await load();
         })
@@ -1076,6 +1083,27 @@ function tabFees(){
     }
     show();
     return line;
+  }
+  /* Money handed back to the parents: its own booking, the original payment stays. A reason is required. */
+  function refundForm(row){
+    var amount = numberInput("", {required:"required", placeholder:"حتى " + money(row.paid)});
+    var date = h("input", {type:"date", value:localToday(), required:"required"});
+    var reason = h("input", {type:"text", maxlength:"500", required:"required", placeholder:"سبب الاسترداد"});
+    var payer = h("input", {type:"text", maxlength:"120", placeholder:"لمن سُلّم المبلغ", autocomplete:"off", list:"acc-payers"});
+    var form = h("form", {class:"a-form-grid a-pay-form a-refund-form"}, [
+      h("strong", {text:"تسجيل استرداد للأهل"}),
+      field("المبلغ (" + row.currency + ")", amount), field("تاريخ الاسترداد", date), field("السبب", reason), field("سُلّم إلى", payer),
+      h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn ghost", text:"تسجيل الاسترداد"})])
+    ]);
+    form.addEventListener("submit", async function(event){
+      event.preventDefault();
+      if(!window.confirm("سيُسجَّل استرداد " + money(amount.value) + " " + row.currency + " كحركة مستقلة، وتبقى الدفعة الأصلية كما هي. المتابعة؟")) return;
+      try{
+        await request("/api/admin/fees/charges/" + encodeURIComponent(row.id) + "/refunds", {method:"POST", body:JSON.stringify({amount:amount.value, paid_on:date.value, note:reason.value.trim(), payer_name:payer.value.trim()})});
+        setMsg(msg, "تم تسجيل الاسترداد.", "ok"); await load();
+      }catch(error){ setMsg(msg, errText(error), "err"); }
+    });
+    return form;
   }
   function paymentForm(row, existing, cancel){
     var amount = numberInput(existing ? existing.amount : "", {required:"required", placeholder:existing ? "" : "المتبقي " + money(row.remaining)});
