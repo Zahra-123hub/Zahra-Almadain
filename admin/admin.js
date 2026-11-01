@@ -296,6 +296,40 @@ var EN_TEXT = {
   "إضافة طفل":"Child added",
   "تعديل طفل":"Child changed",
   "حذف طفل":"Child removed",
+  "الزوّار":"Visitors",
+  "آخر 7 أيام":"Last 7 days",
+  "آخر 30 يوماً":"Last 30 days",
+  "آخر 90 يوماً":"Last 90 days",
+  "آخر سنة":"Last year",
+  "الفترة":"Period",
+  "هاتف":"Phone",
+  "كمبيوتر":"Computer",
+  "لوحي":"Tablet",
+  "الزيارات":"Visits",
+  "زيارات اليوم":"Visits today",
+  "زوّار اليوم":"Visitors today",
+  "زيارات آخر 7 أيام":"Visits in the last 7 days",
+  "زوّار آخر 7 أيام":"Visitors in the last 7 days",
+  "زيارات الفترة":"Visits in the period",
+  "زوّار الفترة":"Visitors in the period",
+  "الأزرق: زيارات. الأخضر: زوّار مختلفون في اليوم. الزائر يُعدّ مرة واحدة في اليوم، وعدد زوّار الفترة هو مجموع أيامها.":"Blue: visits. Green: different visitors per day. A visitor counts once a day, and the visitors of a period are the sum of its days.",
+  "أكثر الصفحات":"Most visited pages",
+  "الصفحة":"Page",
+  "لا توجد زيارات بعد.":"No visits yet.",
+  "من أين جاؤوا":"Where they came from",
+  "الموقع":"Website",
+  "مباشرة (رابط أو بلا مصدر)":"Direct (a link or no source)",
+  "لا توجد بيانات.":"No data.",
+  "الأجهزة":"Devices",
+  "اللغات":"Languages",
+  "اللغة":"Language",
+  "من دخل إلى المنصة":"Who signed in to the platform",
+  "الحساب":"Account",
+  "النوع":"Type",
+  "مرات الدخول":"Sign-ins",
+  "آخر دخول":"Last sign-in",
+  "لم يسجّل أحد الدخول في هذه الفترة.":"Nobody signed in during this period.",
+  "زوّار الموقع العام مجهولون: يُعدّون ولا تُعرف أسماؤهم، ولا يُحفظ عنوانهم ولا اسم متصفحهم (بصمة تتغيّر كل يوم). الروبوتات لا تُحسب، ولا تُعدّ زيارات صفحات الدخول والإدارة. الأسماء تظهر فقط لمن سجّل الدخول إلى البوابات.":"Visitors of the public site are anonymous: they are counted, their names are not known, and neither their address nor their browser name is kept (a fingerprint that changes every day). Robots are not counted, and visits to the sign-in and admin pages are not counted. Names appear only for people who signed in to the portals.",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -780,6 +814,62 @@ async function downloadFile(path, filename){
   setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
 }
 function sizeText(bytes){ return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.ceil(bytes / 1024)) + " KB"; }
+
+/* Visitors of the public site (anonymous, counted) and the people who signed in to the portals (with their names). */
+function tabVisitors(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var body = h("div", {});
+  var days = accSelect([["7", "آخر 7 أيام"], ["30", "آخر 30 يوماً"], ["90", "آخر 90 يوماً"], ["365", "آخر سنة"]], "30");
+  var ROLES = {teacher:"معلمة", accountant:"محاسب", parent:"ولي أمر", admin:"مدير", manager:"إدارة"};
+  var DEVICES = {mobile:"هاتف", desktop:"كمبيوتر", tablet:"لوحي"};
+  function kpi(label, value, cls){ return h("div", {class:"a-kpi " + (cls || "")}, [h("span", {text:label}), h("strong", {text:String(value)})]); }
+  function chart(series){
+    var max = Math.max.apply(null, series.map(function(s){ return s.views; }).concat([1]));
+    var W = 720, H = 200, base = H - 26, band = (W - 20) / series.length, bar = Math.max(2, Math.min(18, band / 2 - 1));
+    var svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="الزيارات اليومية" style="width:100%;height:auto;direction:ltr">'];
+    series.forEach(function(s, i){
+      var x = 10 + i * band, hv = Math.round(s.views / max * (base - 12)), hu = Math.round(s.visitors / max * (base - 12));
+      svg.push('<rect x="' + x + '" y="' + (base - hv) + '" width="' + bar + '" height="' + hv + '" rx="2" fill="#2D5FC4"><title>' + esc(s.day) + " — " + s.views + '</title></rect>');
+      svg.push('<rect x="' + (x + bar + 1) + '" y="' + (base - hu) + '" width="' + bar + '" height="' + hu + '" rx="2" fill="#7DC243"><title>' + esc(s.day) + " — " + s.visitors + '</title></rect>');
+    });
+    svg.push('<line x1="6" y1="' + base + '" x2="' + (W - 6) + '" y2="' + base + '" stroke="currentColor" opacity=".35"/>');
+    if(series.length){ svg.push('<text x="10" y="' + (H - 8) + '" font-size="11" fill="currentColor">' + esc(series[0].day) + '</text><text x="' + (W - 10) + '" y="' + (H - 8) + '" font-size="11" text-anchor="end" fill="currentColor">' + esc(series[series.length - 1].day) + '</text>'); }
+    svg.push("</svg>");
+    var box = document.createElement("div");
+    box.innerHTML = svg.join("");
+    return box;
+  }
+  function table(heads, rows, empty){
+    if(!rows.length) return h("div", {class:"a-empty", text:empty});
+    return h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+      h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), h("tbody", {}, rows)]))]);
+  }
+  async function load(){
+    body.innerHTML = "";
+    try{
+      var d = await request("/api/admin/platform/visits?days=" + days.value);
+      body.appendChild(h("div", {class:"a-card"}, [h("h3", {text:"الزيارات"}),
+        h("div", {class:"a-kpis"}, [kpi("زيارات اليوم", d.today.views, "good"), kpi("زوّار اليوم", d.today.visitors), kpi("زيارات آخر 7 أيام", d.week.views), kpi("زوّار آخر 7 أيام", d.week.visitors),
+          kpi("زيارات الفترة", d.period.views), kpi("زوّار الفترة", d.period.visitors)]),
+        h("p", {class:"hint", text:"الأزرق: زيارات. الأخضر: زوّار مختلفون في اليوم. الزائر يُعدّ مرة واحدة في اليوم، وعدد زوّار الفترة هو مجموع أيامها."}), chart(d.series)]));
+      body.appendChild(h("div", {class:"a-card"}, [h("h3", {text:"أكثر الصفحات"}), table(["الصفحة", "الزيارات"], d.pages.map(function(p){ return h("tr", {}, [h("td", {class:"name", dir:"ltr", text:p.path}), h("td", {class:"num", text:String(p.views)})]); }), "لا توجد زيارات بعد."),
+        h("h4", {text:"من أين جاؤوا"}), table(["الموقع", "الزيارات"], d.sources.map(function(p){ return h("tr", {}, [h("td", {class:"name", dir:"ltr", text:p.host || uiText("مباشرة (رابط أو بلا مصدر)")}), h("td", {class:"num", text:String(p.views)})]); }), "لا توجد بيانات."),
+        h("h4", {text:"الأجهزة"}), h("div", {class:"a-kpis"}, Object.keys(DEVICES).map(function(key){ return kpi(DEVICES[key], d.devices[key] || 0); })),
+        h("h4", {text:"اللغات"}), table(["اللغة", "الزيارات"], d.languages.map(function(p){ return h("tr", {}, [h("td", {class:"name", dir:"ltr", text:p.lang || "—"}), h("td", {class:"num", text:String(p.views)})]); }), "لا توجد بيانات.")]));
+      body.appendChild(h("div", {class:"a-card"}, [h("h3", {text:"من دخل إلى المنصة"}),
+        h("p", {class:"hint", text:"أسماء الحسابات التي سجّلت الدخول إلى البوابات في هذه الفترة (معلمات، أولياء أمور، محاسبون...). الآن: " + d.signed_in_recently + " حساب دخل خلال آخر 30 دقيقة."}),
+        table(["الحساب", "النوع", "مرات الدخول", "آخر دخول"], d.sign_ins.map(function(p){
+          return h("tr", {}, [h("td", {class:"name", text:p.username}), h("td", {text:p.roles.map(function(r){ return ROLES[r] || r; }).join(" + ") || "—"}), h("td", {class:"num", text:String(p.times)}), h("td", {dir:"ltr", text:accWhen(p.last_at)})]);
+        }), "لم يسجّل أحد الدخول في هذه الفترة.")]));
+    }catch(error){ setMsg(msg, errText(error), "err"); }
+  }
+  days.addEventListener("change", load);
+  load();
+  fill = null;
+  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"الزوّار"}),
+    h("p", {class:"hint", text:"زوّار الموقع العام مجهولون: يُعدّون ولا تُعرف أسماؤهم، ولا يُحفظ عنوانهم ولا اسم متصفحهم (بصمة تتغيّر كل يوم). الروبوتات لا تُحسب، ولا تُعدّ زيارات صفحات الدخول والإدارة. الأسماء تظهر فقط لمن سجّل الدخول إلى البوابات."}),
+    accField("الفترة", days), msg]), body]);
+}
 
 /* The system log: who did what in the money area (every change of fees, payments, payroll, closings). Read only, with filters. */
 function tabLog(){
@@ -1608,7 +1698,7 @@ function tabFees(){
   return h("section", {}, [filterCard, addForm, genForm, tables, resetBox]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
   .filter(function(t){
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
     return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && t[0] === "fees");
@@ -1638,7 +1728,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
   adminName().then(function(name){
     var hello = document.getElementById("a-hello");
     if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }

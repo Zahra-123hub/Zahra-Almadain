@@ -21,6 +21,20 @@ var ASSETS = {LOGO: "images/logo.png?v=2", POSTER: "images/poster.jpg"};
 
 var DYN = {settings:{}, gallery:[], news:[]};
 var API_BASE = (window.ZM_API_BASE || CONFIG.apiBase).replace(/\/+$/, "");
+/* Counting the visitors: one beacon per browser tab and visit, with no name and no address (the server keeps neither).
+   Not sent when the browser asks not to be tracked or while the site is opened on the developer's own computer. */
+(function(){
+  try{
+    if(navigator.doNotTrack === "1" || window.doNotTrack === "1") return;
+    if(/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
+    if(sessionStorage.getItem("zm-visit")) return;
+    sessionStorage.setItem("zm-visit", "1");
+    var body = JSON.stringify({path: location.pathname, referrer: document.referrer, lang: document.documentElement.lang || ""});
+    if(!(navigator.sendBeacon && navigator.sendBeacon(API_BASE + "/api/track", new Blob([body], {type: "text/plain"})))){
+      fetch(API_BASE + "/api/track", {method: "POST", body: body, headers: {"Content-Type": "text/plain"}, keepalive: true}).catch(function(){});
+    }
+  }catch(e){ /* counting must never disturb the page */ }
+})();
 var L = "ar";
 function tr(ar, en, de){ return L === "ar" ? ar : (L === "de" ? de : en); }
 function T(o){ return o[L] || o.en || o.ar; }
