@@ -8,6 +8,7 @@ the same tables as the sheets, so the screens, the exports and this list can nev
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Callable
@@ -245,6 +246,28 @@ def build_router(guard: Callable) -> APIRouter:
             "year": year, "month": month, "locked": facts["locked"], "ended": facts["ended"], "steps": steps, "next": upcoming,
             "close": close_check(facts),
         }
+
+    @router.get("/history")
+    def history(
+        response: Response,
+        kind: str,
+        id: uuid.UUID,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, str]]:
+        """Everything that was done to one row (a sheet row, a salary line or a fee line with its payments), newest first.
+        Everyone who works on the accounting sees every step of the row (who did what), so two people on one row understand each other."""
+        response.headers["Cache-Control"] = "no-store"
+        if kind not in ("entry", "salary", "charge"):
+            raise HTTPException(422, "نوع غير معروف.")
+        ids = [str(id)]
+        if kind == "charge":
+            ids += [str(payment_id) for payment_id in session.scalars(select(FeePayment.id).where(FeePayment.charge_id == id)).all()]
+        query = select(FeeAuditLog).where(FeeAuditLog.entity_id.in_(ids)).order_by(FeeAuditLog.at.desc()).limit(100)
+        return [
+            {"at": row.at.isoformat() if row.at else "", "actor": row.actor_name, "action": row.action, "details": row.details}
+            for row in session.scalars(query).all()
+        ]
 
     @router.get("/week-check")
     def week_check(

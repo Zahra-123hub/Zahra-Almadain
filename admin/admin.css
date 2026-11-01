@@ -469,3 +469,9 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-toast.err{background:#a02420}
 .a-reset{border-color:var(--red)}
 .a-reset .a-check-field{display:flex;align-items:center;gap:10px;margin:6px 0}
+/* who changed what */
+.a-who{display:block;margin-top:4px;color:var(--muted);font-size:.82rem}
+.a-history{display:grid;gap:6px;margin-top:10px;padding:10px 12px;border:1px dashed var(--line);border-radius:12px}
+.a-history-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--line)}
+.a-history-line:first-of-type{border-top:0}
+.a-history-row td{background:#17408f0d;padding:10px 12px!important}

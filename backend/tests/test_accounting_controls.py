@@ -47,7 +47,7 @@ class ControlsBase(unittest.TestCase):
         with Session(self.engine) as session:
             roles = {n: Role(name=n) for n in ("admin", "teacher", "parent", "accountant", "manager")}
             session.add_all(roles.values())
-            for username, role in (("acc", "accountant"), ("teacher1", "teacher"), ("parent1", "parent"), ("mgr0", "manager")):
+            for username, role in (("acc", "accountant"), ("acc2", "accountant"), ("teacher1", "teacher"), ("parent1", "parent"), ("mgr0", "manager")):
                 session.add(Account(username=username, password_hash=main.PASSWORD_HASHER.hash(PASSWORD), roles=[roles[role]]))
             session.add(Child(display_name="Amal", class_name="KG1"))
             session.commit()
@@ -58,6 +58,7 @@ class ControlsBase(unittest.TestCase):
             ).json()["access_token"]}
 
         self.acc, self.teacher, self.parent, self.mgr = token("acc"), token("teacher1"), token("parent1"), token("mgr0")
+        self.acc2 = token("acc2")  # a second accountant
         self.admin = {"Authorization": "Bearer " + self.client.post(
             "/api/auth/login", json={"username": "legacy-admin", "password": "Qx9edbcb5679ea-9"}
         ).json()["access_token"]}

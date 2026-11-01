@@ -271,6 +271,31 @@ var EN_TEXT = {
   "لا توجد رواتب لطباعتها في هذه الفترة.":"There are no salaries to print in this period.",
   "تصفير الجداول للمدير فقط.":"Only the administrator can zero tables.",
   "جزء غير معروف.":"Unknown part.",
+  "سجل هذا السطر":"History of this row",
+  "لا توجد عمليات مسجّلة لهذا السطر.":"No actions are logged for this row.",
+  "جارٍ التحميل…":"Loading…",
+  "السجل":"History",
+  "كل الأشخاص":"Everybody",
+  "كل العمليات":"All actions",
+  "الشخص":"Person",
+  "العملية":"Action",
+  "من تاريخ":"From",
+  "إلى تاريخ":"To",
+  "ابحث في التفاصيل":"Search the details",
+  "لا توجد عمليات بهذه الشروط.":"No actions match.",
+  "سجل العمليات":"Action log",
+  "تصدير Excel":"Export to Excel",
+  "من فعل ماذا ومتى. السجل للقراءة فقط. يرى المدير عمليات الجميع ويرى المحاسب عملياته هو.":"Who did what and when. The log is read only. The administrator sees everybody's actions; an accountant sees their own.",
+  "حدّث الصفحة لترى آخر نسخة؛ إن حفظتَ مرة أخرى حلّت تعديلاتك محلّ تعديله.":"Refresh to see the latest version; if you save again your changes replace theirs.",
+  "تصفير جدول":"Table zeroed",
+  "مراجعة رسم":"Fee reviewed",
+  "مراجعة راتب":"Salary reviewed",
+  "إضافة موظف":"Employee added",
+  "تعديل موظف":"Employee changed",
+  "حذف موظف":"Employee removed",
+  "إضافة طفل":"Child added",
+  "تعديل طفل":"Child changed",
+  "حذف طفل":"Child removed",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -756,32 +781,10 @@ async function downloadFile(path, filename){
 }
 function sizeText(bytes){ return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.ceil(bytes / 1024)) + " KB"; }
 
-/* The system log: who did what in the money area (every change of fees, payments, payroll, closings). Read only. */
+/* The system log: who did what in the money area (every change of fees, payments, payroll, closings). Read only, with filters. */
 function tabLog(){
-  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
-  var body = h("div", {});
-  var search = h("input", {type:"search", placeholder:"ابحث في السجل (المستخدم، العملية، التفاصيل)", "aria-label":"بحث"});
-  var rows = [];
-  var labels = typeof ACC_ACTION_LABEL !== "undefined" ? ACC_ACTION_LABEL : {};
-  function draw(){
-    body.innerHTML = "";
-    var word = search.value.trim().toLowerCase();
-    var shown = rows.filter(function(row){ return !word || (row.actor + " " + (labels[row.action] || row.action) + " " + row.details).toLowerCase().indexOf(word) !== -1; });
-    if(!shown.length){ body.appendChild(h("div", {class:"a-empty", text:rows.length ? "لا توجد نتيجة لهذا البحث." : "لا توجد عمليات مسجّلة بعد."})); return; }
-    body.appendChild(paginate(shown, 25, function(part){
-      return h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
-        h("thead", {}, [h("tr", {}, ["الوقت", "المستخدم", "العملية", "التفاصيل"].map(function(t){ return h("th", {text:t}); }))]),
-        h("tbody", {}, part.map(function(row){
-          return h("tr", {}, [h("td", {dir:"ltr", text:String(row.at).replace("T", " ").slice(0, 16)}), h("td", {text:row.actor}), h("td", {text:labels[row.action] || row.action}), h("td", {dir:"auto", text:row.details})]);
-        }))]))]);
-    }));
-  }
-  search.addEventListener("input", draw);
-  request("/api/admin/fees/audit?limit=500").then(function(list){ rows = list; draw(); }).catch(function(error){ setMsg(msg, errText(error), "err"); });
   fill = null;
-  var exportButton = h("button", {type:"button", class:"a-btn ghost", text:"تصدير Excel", onclick:function(){ downloadFile("/api/admin/fees/audit.xlsx", "system-log.xlsx").catch(function(error){ setMsg(msg, errText(error), "err"); }); }});
-  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"سجل النظام"}),
-    h("p", {class:"hint", text:"آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله."}), h("div", {class:"a-row"}, [h("label", {class:"a-field", style:"flex:1 1 260px"}, [h("span", {text:"بحث"}), search]), exportButton]), msg, body])]);
+  return h("section", {}, [accLogCard({title:"سجل النظام"})]);
 }
 
 /* The private files that teachers uploaded: who uses how much room, download and delete. */
@@ -1395,7 +1398,7 @@ function tabFees(){
     var detailGrid = (h("div", {class:"a-form-grid"}, [
       field("تعديل الرسم المطلوب", amount),
       h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"حفظ الرسم", onclick:async function(){
-        try{ await request("/api/admin/fees/charges/" + encodeURIComponent(row.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})}); setMsg(msg, "تم تعديل الرسم.", "ok"); await load(); }
+        try{ await request("/api/admin/fees/charges/" + encodeURIComponent(row.id), {method:"PATCH", body:JSON.stringify({amount:amount.value, expected_version:row.version})}); setMsg(msg, "تم تعديل الرسم.", "ok"); await load(); }
         catch(error){ setMsg(msg, errText(error), "err"); }
       }})]),
       field("الصف / الشعبة", cls),
@@ -1407,6 +1410,8 @@ function tabFees(){
       })])
     ]));
     box.appendChild(detailGrid);
+    box.appendChild(h("small", {class:"hint a-who", text:accWhoText(row)}));
+    box.appendChild(accHistoryPanel("charge", row.id));
     if(!canEditChild){  // the class of a child belongs to the management
       detailGrid.removeChild(detailGrid.children[2]);
       var classButtons = detailGrid.children[2];
@@ -1492,7 +1497,7 @@ function tabFees(){
     var save = h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
       try{
         if(canEditChild && name.value.trim().length < 2){ setMsg(msg, "اكتب اسم الطفل (حرفان على الأقل).", "err"); return; }
-        if(amount.value !== "") await request("/api/admin/fees/charges/" + encodeURIComponent(r.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})});
+        if(amount.value !== "") await request("/api/admin/fees/charges/" + encodeURIComponent(r.id), {method:"PATCH", body:JSON.stringify({amount:amount.value, expected_version:r.version})});
         if(canEditChild) await request("/api/admin/fees/children/" + encodeURIComponent(r.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value.trim(), display_name:name.value.trim()})});
         setMsg(msg, "تم حفظ التصحيح. اضغط «تمت المراجعة» بعد التأكد من السطر.", "ok"); await load();
       }catch(error){ setMsg(msg, errText(error), "err"); }

@@ -285,6 +285,9 @@ class FeeCharge(Base):
     source: Mapped[str] = mapped_column(String(120), default="", server_default="")
     note: Mapped[str] = mapped_column(String(500), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
+    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     payments: Mapped[list[FeePayment]] = relationship(
         back_populates="charge", cascade="all, delete-orphan", lazy="selectin",
         order_by="FeePayment.paid_on",
@@ -372,6 +375,9 @@ class SalaryLine(Base):
     paid_by: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the salary out
     recorded_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
+    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     employee: Mapped[Employee] = relationship(lazy="joined")
 
 
@@ -402,6 +408,9 @@ class AccountingEntry(Base):
     entered_by: Mapped[str] = mapped_column(String(80), default="", server_default="")  # who typed the row in
     receipt_no: Mapped[str] = mapped_column(String(60), default="", server_default="")  # number written on the paper receipt
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
+    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
 
 
 class EntryReceipt(Base):

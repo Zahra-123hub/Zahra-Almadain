@@ -370,3 +370,111 @@ class WorkflowTests(ControlsBase):
         self.assertEqual(self.close().status_code, 201)
         self.assertEqual(self.reset_part(["fees"]).status_code, 423)  # a closed month stays as it was
         self.assertEqual(len(self.client.get(F + "?year=2026&month=1", headers=self.acc).json()["rows"]), 1)
+
+    # ---- two accountants on the same work ----
+    def line_of(self, day, key):
+        return [line for item in self.sheet(day)["items"] if item["key"] == key for line in item["lines"]][0]
+
+    def save_as(self, headers, day, key, expense, expected=None, **extra):
+        body = {"period_type": "day", "year": int(day[:4]), "week_start": day, "currency": "SYP", "item_key": key, "income": "0", "expense": expense, **extra}
+        if expected is not None:
+            body["expected_version"] = expected
+        return self.client.put(A + "/entries", headers=headers, json=body)
+
+    def test_a_row_says_who_changed_it_last_and_when(self):
+        self.save_as(self.acc, "2026-01-12", "operating", "40")
+        line = self.line_of("2026-01-12", "operating")
+        self.assertEqual((line["version"], line["updated_by"]), (1, "acc"))
+        self.assertTrue(line["updated_at"])
+        self.save_as(self.acc2, "2026-01-12", "operating", "55")
+        line = self.line_of("2026-01-12", "operating")
+        self.assertEqual((line["version"], line["updated_by"], line["expense"]), (2, "acc2", "55.00"))
+        self.assertEqual(self.line_of("2026-01-12", "activities")["version"], 0)  # a row that does not exist yet
+
+    def test_the_second_save_on_an_old_copy_of_a_row_is_refused_and_says_who(self):
+        self.save_as(self.acc, "2026-01-12", "operating", "40")
+        seen = self.line_of("2026-01-12", "operating")["version"]  # both accountants have this copy open
+        self.assertEqual(self.save_as(self.acc2, "2026-01-12", "operating", "50", expected=seen).status_code, 200)
+        late = self.save_as(self.acc, "2026-01-12", "operating", "60", expected=seen)
+        self.assertEqual(late.status_code, 409, late.text)
+        self.assertIn("acc2", late.json()["detail"])  # who changed it
+        self.assertIn("50.00", late.json()["detail"])  # and what it says now
+        self.assertEqual(self.line_of("2026-01-12", "operating")["expense"], "50.00")  # nothing was overwritten
+        again = self.save_as(self.acc, "2026-01-12", "operating", "60", expected=self.line_of("2026-01-12", "operating")["version"])
+        self.assertEqual(again.status_code, 200)  # after reading the new state the save works
+        self.assertEqual(self.line_of("2026-01-12", "operating")["expense"], "60.00")
+
+    def test_two_people_creating_the_same_row_at_once_are_noticed(self):
+        self.assertEqual(self.save_as(self.acc, "2026-01-12", "purchases", "10", expected=0).status_code, 200)
+        second = self.save_as(self.acc2, "2026-01-12", "purchases", "20", expected=0)  # saw an empty row
+        self.assertEqual(second.status_code, 409, second.text)
+        self.assertEqual(self.line_of("2026-01-12", "purchases")["expense"], "10.00")
+        # a caller that does not ask for the check still works (older screens)
+        self.assertEqual(self.save_as(self.acc2, "2026-01-12", "purchases", "20").status_code, 200)
+        # a row that was deleted meanwhile
+        row_id = self.line_of("2026-01-12", "purchases")["id"]
+        self.client.delete(f"{A}/entries/{row_id}", headers=self.acc)
+        self.assertEqual(self.save_as(self.acc2, "2026-01-12", "purchases", "30", expected=5).status_code, 409)
+
+    def test_salary_lines_and_fee_lines_are_protected_the_same_way(self):
+        self.hire("Rima")
+        made = self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Rima", "year": 2026, "month": 1, "currency": "SYP", "base": "500"}).json()
+        seen = made["version"]
+        self.assertEqual(self.client.patch(f"{A}/salaries/{made['id']}", headers=self.acc2, json={"base": "600", "expected_version": seen}).status_code, 200)
+        late = self.client.patch(f"{A}/salaries/{made['id']}", headers=self.acc, json={"base": "700", "expected_version": seen})
+        self.assertEqual(late.status_code, 409, late.text)
+        self.assertIn("acc2", late.json()["detail"])
+        row = [r for r in self.client.get(f"{A}/salaries?year=2026&month=1", headers=self.acc).json()["rows"]][0]
+        self.assertEqual((row["base"], row["updated_by"], row["version"]), ("600.00", "acc2", seen + 1))
+        charge = self.charge(month=1, amount="1000")
+        self.assertEqual(self.client.patch(f"{F}/charges/{charge['id']}", headers=self.acc2, json={"amount": "1100", "expected_version": charge["version"]}).status_code, 200)
+        late = self.client.patch(f"{F}/charges/{charge['id']}", headers=self.acc, json={"amount": "1200", "expected_version": charge["version"]})
+        self.assertEqual(late.status_code, 409)
+        self.assertIn("acc2", late.json()["detail"])
+        self.assertEqual(self.client.patch(f"{F}/charges/{charge['id']}", headers=self.acc, json={"amount": "1200"}).status_code, 200)  # no check asked
+
+    # ---- who did what ----
+    def test_the_history_of_a_row_shows_every_person(self):
+        self.save_as(self.acc, "2026-01-12", "operating", "40")
+        self.save_as(self.acc2, "2026-01-12", "operating", "55")
+        row_id = self.line_of("2026-01-12", "operating")["id"]
+        for headers in (self.acc, self.acc2, self.admin):
+            steps = self.client.get(f"{A}/history?kind=entry&id={row_id}", headers=headers).json()
+            self.assertEqual([(s["actor"], s["action"]) for s in steps], [("acc2", "entry.update"), ("acc", "entry.create")])
+        self.assertIn("40.00", steps[0]["details"])
+        for headers in (self.teacher, self.parent, self.mgr):
+            self.assertEqual(self.client.get(f"{A}/history?kind=entry&id={row_id}", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get(f"{A}/history?kind=wrong&id={row_id}", headers=self.acc).status_code, 422)
+        # a fee line shows its payments too
+        charge = self.charge(month=1, amount="1000")
+        self.pay(charge, "300", "2026-01-10")
+        kinds = [s["action"] for s in self.client.get(f"{A}/history?kind=charge&id={charge['id']}", headers=self.acc).json()]
+        self.assertEqual(sorted(kinds), ["charge.create", "payment.create"])
+
+    def test_the_log_can_be_filtered_and_an_accountant_sees_only_their_own_work(self):
+        self.save_as(self.acc, "2026-01-12", "operating", "40")
+        self.save_as(self.acc2, "2026-01-13", "purchases", "15")
+        self.client.put(A + "/rates", headers=self.acc2, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
+        L = "/api/admin/fees/audit"
+        mine = self.client.get(L, headers=self.acc).json()
+        self.assertEqual({row["actor"] for row in mine}, {"acc"})
+        self.assertEqual({row["actor"] for row in self.client.get(L, headers=self.acc2).json()}, {"acc2"})
+        self.assertEqual({row["actor"] for row in self.client.get(L + "?actor_name=acc2", headers=self.acc).json()}, {"acc"})  # asking for somebody else changes nothing
+        everyone = self.client.get(L, headers=self.admin).json()
+        self.assertEqual({row["actor"] for row in everyone}, {"acc", "acc2"})
+        self.assertEqual({row["actor"] for row in self.client.get(L + "?actor_name=acc2", headers=self.admin).json()}, {"acc2"})
+        self.assertEqual({row["action"] for row in self.client.get(L + "?action=rate.set", headers=self.admin).json()}, {"rate.set"})
+        self.assertEqual(len(self.client.get(L + "?q=purchases", headers=self.admin).json()), 1)
+        from datetime import date
+
+        today = date.today().isoformat()
+        self.assertEqual(len(self.client.get(f"{L}?date_from={today}&date_to={today}", headers=self.admin).json()), len(everyone))
+        self.assertEqual(self.client.get(f"{L}?date_to=2000-01-01", headers=self.admin).json(), [])
+        self.assertEqual(self.client.get(L + "/actors", headers=self.admin).json(), ["acc", "acc2"])
+        self.assertEqual(self.client.get(L + "/actors", headers=self.acc).json(), ["acc"])
+        for headers in (self.teacher, self.parent, self.mgr):
+            self.assertEqual(self.client.get(L, headers=headers).status_code, 403)
+        from openpyxl import load_workbook
+
+        book = load_workbook(io.BytesIO(self.client.get(L + ".xlsx?actor_name=acc2", headers=self.acc).content)).active
+        self.assertEqual({row[1].value for row in book.iter_rows(min_row=2)}, {"acc"})  # the export obeys the same rule

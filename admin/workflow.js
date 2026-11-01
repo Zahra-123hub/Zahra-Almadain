@@ -207,6 +207,96 @@ function tabBasics(){
   return h("section", {}, [msg, body]);
 }
 
+/* ------------------------------------------------------------------ who did what */
+/* A time from the server (UTC) shown on the local clock. */
+function accWhen(iso){
+  if(!iso) return "";
+  var text = String(iso);
+  var date = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(text) ? text : text + "Z");
+  if(isNaN(date.getTime())) return text.replace("T", " ").slice(0, 16);
+  function two(n){ return String(n).padStart(2, "0"); }
+  return date.getFullYear() + "-" + two(date.getMonth() + 1) + "-" + two(date.getDate()) + " " + two(date.getHours()) + ":" + two(date.getMinutes());
+}
+/* "Last changed by Rima, 2026-01-12 14:32": a row of a sheet, a salary line or a fee line says who touched it last. */
+function accWhoText(row){
+  var who = row.updated_by || row.entered_by || row.recorded_by || "";
+  if(!who) return "";
+  return (accEnglish() ? "Last change: " : "آخر تعديل: ") + who + (row.updated_at ? " · " + accWhen(row.updated_at) : "");
+}
+/* Everything that was done to one row, newest first. */
+function accHistoryPanel(kind, id){
+  var box = h("div", {class:"a-history"});
+  var list = h("div", {});
+  box.appendChild(h("strong", {text:"سجل هذا السطر"}));
+  box.appendChild(list);
+  list.appendChild(h("small", {class:"hint", text:"جارٍ التحميل…"}));
+  var labels = typeof ACC_ACTION_LABEL !== "undefined" ? ACC_ACTION_LABEL : {};
+  request("/api/admin/accounting/history?kind=" + kind + "&id=" + encodeURIComponent(id)).then(function(rows){
+    list.innerHTML = "";
+    if(!rows.length){ list.appendChild(h("small", {class:"hint", text:"لا توجد عمليات مسجّلة لهذا السطر."})); return; }
+    rows.forEach(function(row){
+      list.appendChild(h("div", {class:"a-history-line"}, [h("span", {class:"a-tag", dir:"ltr", text:accWhen(row.at)}), h("strong", {text:row.actor}),
+        h("span", {text:labels[row.action] || row.action}), h("small", {class:"hint", dir:"auto", text:row.details})]));
+    });
+  }).catch(function(error){ list.innerHTML = ""; list.appendChild(h("small", {class:"a-row-error", text:errText(error)})); });
+  return box;
+}
+/* The log with filters. The administrator can look at anybody; an accountant sees their own work only (the server decides). */
+function accLogCard(opts){
+  opts = opts || {};
+  var labels = typeof ACC_ACTION_LABEL !== "undefined" ? ACC_ACTION_LABEL : {};
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var person = h("select", {"aria-label":"الشخص"});
+  person.appendChild(new Option("كل الأشخاص", ""));
+  var action = h("select", {"aria-label":"العملية"});
+  action.appendChild(new Option("كل العمليات", ""));
+  Object.keys(labels).forEach(function(key){ action.appendChild(new Option(uiText(labels[key]), key)); });
+  var from = h("input", {type:"date", "aria-label":"من تاريخ"});
+  var to = h("input", {type:"date", "aria-label":"إلى تاريخ"});
+  var search = h("input", {type:"search", placeholder:"ابحث في التفاصيل", "aria-label":"بحث"});
+  var body = h("div", {});
+  var rows = [];
+  function query(){
+    var parts = [];
+    if(person.value) parts.push("actor_name=" + encodeURIComponent(person.value));
+    if(action.value) parts.push("action=" + encodeURIComponent(action.value));
+    if(from.value) parts.push("date_from=" + from.value);
+    if(to.value) parts.push("date_to=" + to.value);
+    if(search.value.trim()) parts.push("q=" + encodeURIComponent(search.value.trim()));
+    return parts.join("&");
+  }
+  function draw(){
+    body.innerHTML = "";
+    if(!rows.length){ body.appendChild(h("div", {class:"a-empty", text:"لا توجد عمليات بهذه الشروط."})); return; }
+    body.appendChild(paginate(rows, 25, function(part){
+      return h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+        h("thead", {}, [h("tr", {}, ["الوقت", "المستخدم", "العملية", "التفاصيل"].map(function(t){ return h("th", {text:t}); }))]),
+        h("tbody", {}, part.map(function(row){
+          return h("tr", {}, [h("td", {dir:"ltr", text:accWhen(row.at)}), h("td", {text:row.actor}), h("td", {text:labels[row.action] || row.action}), h("td", {dir:"auto", text:row.details})]);
+        }))]))]);
+    }));
+  }
+  function load(){
+    request("/api/admin/fees/audit?limit=500" + (query() ? "&" + query() : "")).then(function(list){ rows = list; draw(); })
+      .catch(function(error){ setMsg(msg, errText(error), "err"); });
+  }
+  request("/api/admin/fees/audit/actors").then(function(names){
+    names.forEach(function(name){ person.appendChild(new Option(name, name)); });
+    if(names.length === 1){ person.value = names[0]; person.disabled = true; }  // an accountant looks at their own work only
+  }, function(){});
+  [person, action, from, to].forEach(function(el){ el.addEventListener("change", load); });
+  var timer = 0;
+  search.addEventListener("input", function(){ clearTimeout(timer); timer = setTimeout(load, 350); });
+  var exportButton = h("button", {type:"button", class:"a-btn ghost", text:"تصدير Excel", onclick:function(){
+    downloadFile("/api/admin/fees/audit.xlsx" + (query() ? "?" + query() : ""), "system-log.xlsx").catch(function(error){ setMsg(msg, errText(error), "err"); });
+  }});
+  load();
+  return h("div", {class:"a-card"}, [h("h3", {text:opts.title || "سجل العمليات"}),
+    h("p", {class:"hint", text:"من فعل ماذا ومتى. السجل للقراءة فقط. يرى المدير عمليات الجميع ويرى المحاسب عملياته هو."}),
+    h("div", {class:"a-form-grid"}, [accField("الشخص", person), accField("العملية", action), accField("من تاريخ", from), accField("إلى تاريخ", to), accField("بحث", search)]),
+    h("div", {class:"a-row"}, [exportButton]), msg, body]);
+}
+
 /* ------------------------------------------------------------------ zero a table on purpose (administrator only) */
 /* `opts.period()` gives {year, month}; `opts.scopes` the parts that can be emptied; `opts.onDone` reloads the screen. */
 function accResetCard(opts){
@@ -432,7 +522,7 @@ function tabArchive(){
   fill = null;
   return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"أرشيف الأشهر"}),
     h("p", {class:"hint", text:"لكل شهر ملف Excel كامل: الملخص والاشتراكات والرواتب والحركات مع عدد الإيصالات وجرد الصندوق. كل تصدير يُسجَّل باسم من أجراه وتاريخه. أفضل وقت للتصدير بعد إغلاق الشهر."}),
-    accField("السنة", year), msg, body, logBox]), quickCard]);
+    accField("السنة", year), msg, body, logBox]), quickCard, accLogCard({title:"سجل العمليات"})]);
 }
 
 /* ------------------------------------------------------------------ receipts of one row of a sheet */

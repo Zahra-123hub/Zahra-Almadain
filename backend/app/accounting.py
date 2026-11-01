@@ -33,6 +33,7 @@ from app.fees import (
     active_payments,
     convert,
     xlsx_response,
+    check_version,
     ensure_open,
     log,
     money,
@@ -41,6 +42,7 @@ from app.fees import (
     paid_amount,
     rate_text,
     remaining_amount,
+    touch,
 )
 from app.models import (
     Account,
@@ -231,6 +233,7 @@ class SalaryUpdate(BaseModel):
     deduction: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     paid_on: date | None = None
     paid_by: str | None = Field(default=None, max_length=120)
+    expected_version: int | None = Field(default=None, ge=0, le=1_000_000_000)  # the version the caller saw: refuse when somebody changed the line since
 
 
 class RateIn(BaseModel):
@@ -305,6 +308,7 @@ class EntryIn(BaseModel):
     manual: bool = True
     person: str = Field(default="", max_length=120)  # who spent / received the money
     receipt_no: str | None = Field(default=None, max_length=60)  # number of the paper receipt (left as it is when not sent)
+    expected_version: int | None = Field(default=None, ge=0, le=1_000_000_000)  # the version of the row the caller saw (0 = no row): refuse when it changed since
     replaces: uuid.UUID | None = None  # the row in the other currency this one takes over (the row changed its currency)
 
 
@@ -332,6 +336,9 @@ def salary_row(line: SalaryLine) -> dict[str, Any]:
         "paid_on": line.paid_on.isoformat() if line.paid_on else None,
         "paid_by": line.paid_by,
         "recorded_by": line.recorded_by,
+        "version": line.version or 1,
+        "updated_by": line.updated_by or line.recorded_by,
+        "updated_at": (line.updated_at or line.created_at).isoformat() if (line.updated_at or line.created_at) else None,
         "needs_review": line.needs_review,
         "raw_text": line.raw_text,
         "source": line.source,
@@ -520,6 +527,9 @@ class Ledger:
                     "note": entry.note if entry else "",
                     "person": entry.person if entry else "",
                     "entered_by": entry.entered_by if entry else "",
+                    "version": (entry.version or 1) if entry else 0,
+                    "updated_by": (entry.updated_by or entry.entered_by) if entry else "",
+                    "updated_at": ((entry.updated_at or entry.created_at).isoformat() if (entry.updated_at or entry.created_at) else None) if entry else None,
                     "income": str(income),
                     "expense": str(expense),
                     "auto": key in AUTO_ITEMS,
@@ -535,6 +545,8 @@ class Ledger:
                     "kind": "expense" if money(entry.expense) > 0 or money(entry.income) == 0 else "income",
                     "custom": True, "rolled": False, "details": entry.details, "note": entry.note,
                     "person": entry.person, "entered_by": entry.entered_by,
+                    "version": entry.version or 1, "updated_by": entry.updated_by or entry.entered_by,
+                    "updated_at": (entry.updated_at or entry.created_at).isoformat() if (entry.updated_at or entry.created_at) else None,
                     "income": str(money(entry.income)), "expense": str(money(entry.expense)),
                     "auto": False, "auto_income": "0.00", "auto_expense": "0.00", "manual": True,
                 }
@@ -1115,6 +1127,7 @@ def build_router(
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         line = get_line(session, line_id)
+        check_version(line, payload.expected_version, f"{line.base} {line.currency}")
         sent = payload.model_fields_set  # a field that was not sent stays as it is (null clears it)
         ensure_open(session, (line.year, line.month), month_of(line.paid_on), month_of(payload.paid_on) if "paid_on" in sent else None)
         amounts = ("base", "bonus", "advance", "deduction")
@@ -1147,6 +1160,7 @@ def build_router(
         if payload.job_title is not None:
             line.employee.job_title = payload.job_title.strip()
         line.recorded_by = actor.name[:80]
+        touch(line, actor.name)
         log(session, actor, "salary.update", line.id, f"{line.month}/{line.year} {line.currency} {before}{line.base}")
         session.commit()
         session.refresh(line)
@@ -1297,6 +1311,10 @@ def build_router(
                     else (AccountingEntry.week_start == start),
                 ).order_by(AccountingEntry.created_at.desc())
             )
+        if entry is not None:
+            check_version(entry, payload.expected_version, f"{money(entry.income)}/{money(entry.expense)} «{entry.details[:40]}»")
+        else:
+            check_version(None, payload.expected_version)
         created = entry is None
         if payload.replaces is not None and not created and entry.id != payload.replaces:
             raise HTTPException(409, "يوجد سطر بالعملة المختارة لهذا البند؛ عدّله هناك بدلاً من نقل هذا السطر.")
@@ -1316,6 +1334,10 @@ def build_router(
         if payload.receipt_no is not None:
             entry.receipt_no = payload.receipt_no.strip()
         entry.entered_by = actor.name[:80]
+        if created:
+            entry.updated_at, entry.updated_by = datetime.now(timezone.utc), actor.name[:80]
+        else:
+            touch(entry, actor.name)
         entry.income, entry.expense = money(payload.income), money(payload.expense)
         entry.manual = payload.manual
         if payload.manual and payload.item_key in AUTO_ITEMS:

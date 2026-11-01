@@ -36,6 +36,15 @@ The administrator keeps all rights.
 - The accountant and the administrator see the same steps. The rights differ as before (reopening a month, resetting the data and the
   system log tab are for the administrator only).
 
+## Several people on the same work
+
+Every accountant works with their own account, so every step is written down with the person and the time.
+
+- **Who changed a row last**: every sheet row, salary line and fee line shows `Last change: name, time`. The button `History` shows every step done to that row by everybody (for a fee line also its payments).
+- **Conflicts**: when two people have the same row open and both save, the second save is refused (409) with the name of the first person, the time and the value that is saved now. What the second person typed stays in the row; after refreshing, a new save replaces the other's change on purpose. A row that two people create at the same time is noticed the same way.
+- **The log** (`/api/admin/fees/audit`, the tab `سجل النظام` and the archive step) can be filtered by person, action, dates and text and exported to Excel. The administrator sees everybody's actions; an accountant sees only their own. The history of one row is open to everyone who works on the accounting.
+- Migration `0022_row_versions` adds `version`, `updated_at` and `updated_by` to fee lines, salary lines and sheet rows.
+
 ## Receipts
 
 Every expense row can carry the number of the paper receipt and up to five files (PDF, JPG, PNG, WEBP; 3 MB each; the first bytes of the file must match
