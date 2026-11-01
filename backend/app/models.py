@@ -165,6 +165,8 @@ class DailyReport(Base):
     title: Mapped[str] = mapped_column(String(120))
     body: Mapped[str] = mapped_column(String(3000))
     language: Mapped[str] = mapped_column(String(35), default="ar", server_default="ar")
+    activities: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    meals: Mapped[str] = mapped_column(String(500), default="", server_default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -525,3 +527,33 @@ class Permission(Base):
     roles: Mapped[list[Role]] = relationship(
         secondary=role_permissions, back_populates="permissions"
     )
+
+
+class Notification(Base):
+    """A short message for one account. `kind` and `subject` are translated by the portal; no private text is stored."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(30))
+    subject: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    view: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    read_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+
+
+class Announcement(Base):
+    """A notice from the management that every parent and teacher sees on their start page."""
+
+    __tablename__ = "announcements"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(String(2000), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)

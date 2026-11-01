@@ -27,11 +27,12 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, fees, security
+from app import accounting, community, fees, security
 from app.database import get_engine, get_session
 from app.models import (
     Account,
     Child,
+    ChildGuardian,
     DailyReport,
     AccountingEntry,
     CashOpening,
@@ -330,12 +331,16 @@ class DailyReportRequest(BaseModel):
     child_id: uuid.UUID
     title: str = Field(min_length=1, max_length=120)
     body: str = Field(min_length=1, max_length=3000)
+    activities: str = Field(default="", max_length=1000)
+    meals: str = Field(default="", max_length=500)
     submit_for_review: bool = False
 
 
 class DailyReportUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     body: str = Field(min_length=1, max_length=3000)
+    activities: str = Field(default="", max_length=1000)
+    meals: str = Field(default="", max_length=500)
     submit_for_review: bool = False
 
 
@@ -487,6 +492,18 @@ def require_admin(
     session: Session | None = Depends(optional_session),
 ) -> str:
     """The server admin (env credentials) or any platform account holding the admin role."""
+    return admin_like(authorization, session, ("admin",))
+
+
+def require_manage(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> str:
+    """Like require_admin, but a platform account with the manager role may also act (children, groups, requests, notices)."""
+    return admin_like(authorization, session, ("admin", "manager"))
+
+
+def admin_like(authorization: str | None, session: Session | None, allowed_roles: tuple[str, ...]) -> str:
     secret = os.getenv("SESSION_SECRET", "")
     if not secret:
         raise HTTPException(503, "لم يتم إعداد جلسات المسؤول على الخادم.")
@@ -513,7 +530,7 @@ def require_admin(
             .options(selectinload(Account.roles))
             .where(Account.id == account_id, Account.is_active.is_(True), Account.approval_status == "active")
         )
-        if portal_session is not None and account is not None and any(r.name == "admin" for r in account.roles):
+        if portal_session is not None and account is not None and any(r.name in allowed_roles for r in account.roles):
             return account.username
     raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
 
@@ -756,6 +773,7 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
 
 app.include_router(fees.build_router(require_fees_user))
 app.include_router(accounting.build_router(require_fees_user))
+app.include_router(community.build_router(get_platform_principal, require_platform_role, require_manage, MAX_TEACHER_CONTENT_BYTES))
 
 
 @app.get("/healthz")
@@ -1632,7 +1650,7 @@ def create_registration_request(
 @app.get("/api/admin/platform/registration-requests")
 def list_registration_requests(
     response: Response,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
     response.headers["Cache-Control"] = "no-store"
@@ -1726,7 +1744,7 @@ def delete_registration_request(
 def reissue_registration_code(
     request_id: uuid.UUID,
     response: Response,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
@@ -1769,7 +1787,7 @@ def decide_registration_request(
     request_id: uuid.UUID,
     payload: RegistrationDecision,
     response: Response,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
@@ -1980,12 +1998,18 @@ def list_platform_children(
     return [{"id": str(child.id), "display_name": child.display_name} for child in children]
 
 
+def child_name(session: Session, child_id: uuid.UUID | None) -> str:
+    return (session.scalar(select(Child.display_name).where(Child.id == child_id)) or "") if child_id else ""
+
+
 def report_data(report: DailyReport) -> dict[str, Any]:
     return {
         "id": str(report.id),
         "child_id": str(report.child_id),
         "title": report.title,
         "body": report.body,
+        "activities": report.activities,
+        "meals": report.meals,
         "language": report.language,
         "status": report.status,
         "created_at": report.created_at.isoformat() if report.created_at else None,
@@ -2104,7 +2128,7 @@ def assign_teacher_to_child(
 @app.get("/api/admin/platform/children")
 def admin_list_children(
     response: Response,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
     response.headers["Cache-Control"] = "no-store"
@@ -2121,12 +2145,20 @@ def admin_list_children(
             Account, Account.id == parent_child_links.c.account_id
         )
     ).all()
+    guardians: dict[uuid.UUID, list[ChildGuardian]] = {}
+    for guardian in session.scalars(select(ChildGuardian)).all():
+        guardians.setdefault(guardian.child_id, []).append(guardian)
     result = []
     for child in children:
         result.append(
             {
                 "id": str(child.id),
                 "display_name": child.display_name,
+                "class_name": child.class_name,
+                "guardians": [
+                    {"relation": g.relation, "name": g.name, "has_account": g.account_id is not None}
+                    for g in guardians.get(child.id, [])
+                ],
                 "teachers": [
                     {"id": str(row[1]), "username": row[2]}
                     for row in teacher_rows
@@ -2143,7 +2175,7 @@ def admin_list_children(
 def admin_assign_teacher(
     child_id: uuid.UUID,
     payload: TeacherAssignmentRequest,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> dict[str, bool]:
     child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
@@ -2176,7 +2208,7 @@ def admin_assign_teacher(
 def admin_unassign_teacher(
     child_id: uuid.UUID,
     teacher_id: uuid.UUID,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> Response:
     session.execute(
@@ -2197,7 +2229,7 @@ class ParentAssignmentRequest(BaseModel):
 def admin_link_parent(
     child_id: uuid.UUID,
     payload: ParentAssignmentRequest,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> dict[str, bool]:
     """Link an existing parent account to a child so the parent sees that child's reports and private posts."""
@@ -2228,7 +2260,7 @@ def admin_link_parent(
 def admin_unlink_parent(
     child_id: uuid.UUID,
     parent_id: uuid.UUID,
-    _username: str = Depends(require_admin),
+    _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> Response:
     session.execute(
@@ -2573,10 +2605,14 @@ def create_teacher_report(
         author_id=principal.account.id,
         title=title,
         body=body,
+        activities=payload.activities.strip(),
+        meals=payload.meals.strip(),
         language=principal.account.preferred_language,
         status="submitted" if payload.submit_for_review else "draft",
     )
     session.add(report)
+    if payload.submit_for_review:
+        community.notify(session, community.accounts_with_role(session, "manager", "admin"), "report_submitted", child_name(session, payload.child_id), "review")
     session.commit()
     session.refresh(report)
     return report_data(report)
@@ -2605,9 +2641,13 @@ def update_teacher_report(
         raise HTTPException(422, "Report title and text are required.")
     report.title = title
     report.body = body
+    report.activities = payload.activities.strip()
+    report.meals = payload.meals.strip()
     report.language = principal.account.preferred_language
     report.status = "submitted" if payload.submit_for_review else "draft"
     report.published_at = None
+    if payload.submit_for_review:
+        community.notify(session, community.accounts_with_role(session, "manager", "admin"), "report_submitted", child_name(session, report.child_id), "review")
     session.commit()
     session.refresh(report)
     return report_data(report)
@@ -2646,6 +2686,9 @@ def update_report_status(
     report.status = payload.status
     if payload.status == "published":
         report.published_at = datetime.now(timezone.utc)
+        community.notify(session, community.parents_of(session, report.child_id), "report_published", child_name(session, report.child_id), "reports")
+    elif payload.status == "rejected":
+        community.notify(session, [report.author_id], "report_returned", child_name(session, report.child_id), "reports")
     session.commit()
     session.refresh(report)
     response.headers["Cache-Control"] = "no-store"
@@ -2783,6 +2826,11 @@ async def create_teacher_post(
     post = TeacherPost(author_id=principal.account.id, scope=scope, child_id=child_id, title=title, body=body)
     session.add(post)
     session.flush()
+    community.notify(
+        session,
+        community.accounts_with_role(session, "parent") if scope == "general" else community.parents_of(session, child_id),
+        "post_new", title, "posts",
+    )
     for filename, media_type, contents in prepared:
         session.add(TeacherContent(
             owner_id=principal.account.id, post_id=post.id, category="post_attachment",
