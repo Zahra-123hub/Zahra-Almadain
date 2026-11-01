@@ -351,11 +351,12 @@ function ageStr(y, m){
   if(L === "ar"){
     if(y > 0) p.push(y + " " + arUnit(y, "سنة", "سنتان", "سنوات"));
     if(m > 0) p.push(m + " " + arUnit(m, "شهر", "شهران", "أشهر", "شهراً"));
-    return p.join(" و") || "0";
+    return p.join(" و") || "أقل من شهر";
   }
-  if(L === "de"){ if(y > 0) p.push(y + (y === 1 ? " Jahr" : " Jahre")); if(m > 0) p.push(m + (m === 1 ? " Monat" : " Monate")); return p.join(" und ") || "0"; }
-  if(y > 0) p.push(y + (y === 1 ? " year" : " years")); if(m > 0) p.push(m + (m === 1 ? " month" : " months")); return p.join(" and ") || "0";
+  if(L === "de"){ if(y > 0) p.push(y + (y === 1 ? " Jahr" : " Jahre")); if(m > 0) p.push(m + (m === 1 ? " Monat" : " Monate")); return p.join(" und ") || "unter 1 Monat"; }
+  if(y > 0) p.push(y + (y === 1 ? " year" : " years")); if(m > 0) p.push(m + (m === 1 ? " month" : " months")); return p.join(" and ") || "under 1 month";
 }
+function arYears(n){ return n === 2 ? "سنتين" : n + " " + (n === 1 ? "سنة" : n <= 10 ? "سنوات" : "سنة"); }
 function ageInfo(str){
   var b = parseD(str); if(!b) return null;
   var now = new Date(), t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -370,8 +371,8 @@ function ageInfo(str){
   }
   if(y < min){
     var s = fmtD(new Date(b.getFullYear() + min, b.getMonth(), b.getDate()));
-    return {cls:"wait", ok:false, short:tr("العمر: " + a + ". يبلغ " + min + " سنوات بتاريخ " + s + ".", "Age: " + a + ". Turns " + min + " on " + s + ".", "Alter: " + a + ". Wird am " + s + " " + min + " Jahre alt."),
-      full:tr("عمر طفلك: " + a + ". يبلغ " + min + " سنوات بتاريخ " + s + ". تواصل معنا لنخبرك بالموعد المناسب.", "Your child is " + a + " old and turns " + min + " on " + s + ". Contact us and we will tell you the right time.", "Ihr Kind ist " + a + " alt und wird am " + s + " " + min + " Jahre alt. Melden Sie sich, wir nennen Ihnen den passenden Zeitpunkt.")};
+    return {cls:"wait", ok:false, short:tr("العمر: " + a + ". يبلغ " + arYears(min) + " بتاريخ " + s + ".", "Age: " + a + ". Turns " + min + " on " + s + ".", "Alter: " + a + ". Wird am " + s + " " + min + " Jahre alt."),
+      full:tr("عمر طفلك: " + a + ". يبلغ " + arYears(min) + " بتاريخ " + s + ". تواصل معنا لنخبرك بالموعد المناسب.", "Your child is " + a + " old and turns " + min + " on " + s + ". Contact us and we will tell you the right time.", "Ihr Kind ist " + a + " alt und wird am " + s + " " + min + " Jahre alt. Melden Sie sich, wir nennen Ihnen den passenden Zeitpunkt.")};
   }
   return {cls:"no", ok:false, short:tr("العمر: " + a + ". أعلى من الفئة المعتادة.", "Age: " + a + ". Above our usual range.", "Alter: " + a + ". Über unserem üblichen Alter."),
     full:tr("عمر طفلك: " + a + ". هذا أعلى من الفئة المعتادة. تواصل معنا لنرى الخيارات.", "Your child is " + a + " old. This is above our usual age range. Contact us and we will look at the options.", "Ihr Kind ist " + a + " alt. Das liegt über unserem üblichen Alter. Melden Sie sich, wir prüfen die Möglichkeiten.")};
