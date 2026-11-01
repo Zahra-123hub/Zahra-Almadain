@@ -18,7 +18,7 @@ each call is authorised again by the server (`require_platform_role`, `require_m
 
 - **Parent**: only the children linked to the account (`parent_child_links`). Published reports (with activities and meals), posts for everybody or
   for their child, notifications, the names of the other guardians of the child (no phone or e-mail), the notices of the management.
-- **Teacher**: only the children assigned to them (`teacher_child_links`). Report editor (draft, attachments, submit for review, status and a hint
+- **Teacher**: every child the management has saved (no assignment step; a child appears for all teachers at once, and a removed child disappears). Report editor (draft, attachments, submit for review, status and a hint
   whether parents can see it), posts with a preview, teaching material with the storage meter (250 MB), notifications.
 - **Management**: adds, changes and removes the children (with father / mother and their portal account) and the employees (with salary and account); numbers, children with group, teachers and parent accounts (assign and remove), groups (rename), registration requests
   (approve with a one-time code, reject), approval of reports, notices for parents and teachers.

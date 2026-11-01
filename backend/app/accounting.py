@@ -58,7 +58,6 @@ from app.models import (
     Role,
     SalaryLine,
     parent_child_links,
-    teacher_child_links,
 )
 
 RATE_FEED_URL = "https://open.er-api.com/v6/latest/USD"  # a free public daily rates feed (no key)
@@ -268,8 +267,6 @@ class ChildIn(BaseModel):
     class_name: str = Field(default="", max_length=60)
     birth_date: date | None = None
     guardians: list[GuardianIn] = Field(min_length=1, max_length=2)  # one parent, or both
-    # the teachers who work with this child (they see the child in their portal); left out = nothing changes
-    teacher_ids: list[uuid.UUID] | None = Field(default=None, max_length=40)
 
 
 class PeriodIn(BaseModel):
@@ -1508,33 +1505,7 @@ def build_router(
                  "account_id": str(g.account_id) if g.account_id else "", "account_username": names.get(g.account_id, "")}
                 for g in rows
             ],
-            "teachers": [
-                {"id": str(account_id), "username": username}
-                for account_id, username in session.execute(
-                    select(Account.id, Account.username)
-                    .join(teacher_child_links, teacher_child_links.c.account_id == Account.id)
-                    .where(teacher_child_links.c.child_id == child.id)
-                    .order_by(Account.username)
-                ).all()
-            ],
         }
-
-    def sync_teachers(session: Session, child: Child, wanted: list[uuid.UUID] | None) -> None:
-        """Makes the teachers of the child exactly the wanted ones (only active teacher accounts count)."""
-        if wanted is None:
-            return
-        wanted_ids = set(wanted)
-        if wanted_ids:
-            found = set(session.scalars(
-                select(Account.id).join(Account.roles).where(Account.id.in_(wanted_ids), Account.is_active.is_(True), Role.name == "teacher")
-            ).all())
-            if found != wanted_ids:
-                raise HTTPException(404, "حساب المعلمة غير موجود أو غير مفعّل.")
-        current = set(session.scalars(select(teacher_child_links.c.account_id).where(teacher_child_links.c.child_id == child.id)).all())
-        for account_id in current - wanted_ids:
-            session.execute(delete(teacher_child_links).where(teacher_child_links.c.account_id == account_id, teacher_child_links.c.child_id == child.id))
-        for account_id in wanted_ids - current:
-            session.execute(teacher_child_links.insert().values(account_id=account_id, child_id=child.id, assigned_at=datetime.now(timezone.utc)))
 
     def sync_guardians(session: Session, child: Child, wanted: list[GuardianIn]) -> None:
         """Makes the stored parents equal to the list: updates the ones that exist, adds new ones, removes the rest."""
@@ -1609,7 +1580,6 @@ def build_router(
         session.add(child)
         session.flush()
         sync_guardians(session, child, payload.guardians)
-        sync_teachers(session, child, payload.teacher_ids)
         log(session, actor, "child.create", child.id, f"{len(payload.guardians)} ولي أمر")
         session.commit()
         session.refresh(child)
@@ -1631,7 +1601,6 @@ def build_router(
         child.display_name, child.class_name = payload.name.strip(), payload.class_name.strip()
         child.birth_date = payload.birth_date
         sync_guardians(session, child, payload.guardians)
-        sync_teachers(session, child, payload.teacher_ids)
         log(session, actor, "child.update", child.id, f"{len(payload.guardians)} ولي أمر")
         session.commit()
         session.refresh(child)
