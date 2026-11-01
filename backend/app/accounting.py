@@ -747,7 +747,15 @@ def unified_sheet(session: Session, period_type: str, year: int, month: int, wee
     }
 
 
-def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
+def build_router(
+    guard: Callable[..., FeesActor],
+    manage_guard: Callable[..., FeesActor] | None = None,
+    read_guard: Callable[..., FeesActor] | None = None,
+) -> APIRouter:
+    """`guard`: accountant or admin. `manage_guard`: who may add, change and remove children and employees (the management).
+    `read_guard`: who may read those lists."""
+    manage_guard = manage_guard or guard
+    read_guard = read_guard or guard
     router = APIRouter(prefix="/api/admin/accounting")
 
     # ---- employees ----------------------------------------------------------
@@ -796,7 +804,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.get("/employees")
     def list_employees(
         response: Response,
-        _actor: FeesActor = Depends(guard),
+        _actor: FeesActor = Depends(read_guard),
         session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
@@ -810,7 +818,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.get("/staff-accounts")
     def staff_accounts(
         response: Response,
-        _actor: FeesActor = Depends(guard),
+        _actor: FeesActor = Depends(read_guard),
         session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         """Teacher and accountant accounts a saved person can be tied to (names only, no personal data)."""
@@ -834,7 +842,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.post("/employees", status_code=201)
     def create_employee(
         payload: EmployeeIn,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         existing = employee_by_name(session, payload.name, include_removed=True)
@@ -870,7 +878,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     def update_employee(
         employee_id: uuid.UUID,
         payload: EmployeeIn,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         employee = session.get(Employee, employee_id)
@@ -916,7 +924,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.delete("/employees/{employee_id}", status_code=204)
     def remove_employee(
         employee_id: uuid.UUID,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> Response:
         """Takes the person off the list of saved names; old salary rows keep the name."""
@@ -987,18 +995,10 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         name = payload.employee_name.strip()
         if len(name) < 2:
             raise HTTPException(422, "اكتب اسم الموظف أو اختره من القائمة.")
-        employee = employee_by_name(session, name, include_removed=True)
+        employee = employee_by_name(session, name, include_removed=False)
         if employee is None:
-            employee = Employee(name=name, job_title=payload.job_title.strip())
-            session.add(employee)
-            session.flush()
-            log(session, actor, "employee.create", employee.id, "")
-        else:
-            if not employee.is_active:  # the same person again: bring the old record back
-                employee.is_active = True
-                log(session, actor, "employee.reactivate", employee.id, "")
-            if payload.job_title.strip():
-                employee.job_title = payload.job_title.strip()
+            # adding an employee is the work of the management: the accountant only picks people that are already saved
+            raise HTTPException(404, "الموظف «" + name[:60] + "» غير مسجّل. تضيفه الإدارة أولاً من بوابة الإدارة، ثم اختره من القائمة.")
         return employee
 
     def check_net(base: Decimal | None, bonus: Decimal | None, advance: Decimal | None, deduction: Decimal | None) -> None:
@@ -1547,7 +1547,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.get("/children")
     def list_children(
         response: Response,
-        _actor: FeesActor = Depends(guard),
+        _actor: FeesActor = Depends(read_guard),
         session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
@@ -1557,7 +1557,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.get("/parent-accounts")
     def list_parent_accounts(
         response: Response,
-        _actor: FeesActor = Depends(guard),
+        _actor: FeesActor = Depends(read_guard),
         session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         """Parent accounts of the portal that can be tied to a father / mother."""
@@ -1570,7 +1570,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.post("/children", status_code=201)
     def create_child(
         payload: ChildIn,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         check_guardians(payload.guardians)
@@ -1589,7 +1589,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     def update_child(
         child_id: uuid.UUID,
         payload: ChildIn,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
@@ -1609,7 +1609,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     @router.delete("/children/{child_id}", status_code=204)
     def remove_child(
         child_id: uuid.UUID,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> Response:
         """Takes the child off the list; fees, payments and reports of the child stay."""

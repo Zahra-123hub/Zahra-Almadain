@@ -317,7 +317,8 @@ def log(session: Session, actor: FeesActor, action: str, entity_id: Any, details
     )
 
 
-def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
+def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., FeesActor] | None = None) -> APIRouter:
+    manage_guard = manage_guard or guard
     """All fee routes are protected by `guard` (accountant or admin only)."""
     router = APIRouter(prefix="/api/admin/fees")
 
@@ -440,7 +441,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     def set_child_class(
         child_id: uuid.UUID,
         payload: ChildClassIn,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, str]:
         child = session.get(Child, child_id)
@@ -487,12 +488,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
                 )
             )
             if child is None:
-                child = Child(display_name=name, class_name=class_name)
-                session.add(child)
-                session.flush()
-                log(session, actor, "child.create", child.id, f"{class_name or '-'}")
-            elif class_name and child.class_name != class_name:
-                child.class_name = class_name
+                # adding a child is the work of the management: the accountant only picks children that are already saved
+                raise HTTPException(404, "الطفل «" + name[:60] + "» غير مسجّل. تضيفه الإدارة أولاً من بوابة الإدارة، ثم اختره من القائمة.")
         ensure_open(session, (payload.year, payload.month), month_of(payload.payment.paid_on if payload.payment else None))
         charge = FeeCharge(
             child_id=child.id,

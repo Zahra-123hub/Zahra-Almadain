@@ -99,6 +99,7 @@ class WorkflowTests(ControlsBase):
     def test_salaries_and_cash_count_statuses(self):
         self.capital()
         self.assertEqual(self.status("staff")["status"], "pending")
+        self.hire("Rima")
         salary = self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Rima", "year": 2026, "month": 1, "currency": "SYP", "base": "500"})
         self.assertEqual(salary.status_code, 201, salary.text)
         self.assertEqual((self.status("staff")["status"], self.status("payroll")["status"]), ("done", "pending"))
@@ -118,6 +119,7 @@ class WorkflowTests(ControlsBase):
         charge = self.charge(month=1, amount="1000")
         self.pay(charge, "1000", "2026-01-10")
         self.entry("2026-01-12", "operating", expense="40", receipt_no="R-1")
+        self.hire("Rima")
         salary = self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Rima", "year": 2026, "month": 1, "currency": "SYP", "base": "500", "paid_on": "2026-01-28"})
         self.assertEqual(salary.status_code, 201)
         book = self.count("1", "2026-01-30").json()["book_amount"]
@@ -148,6 +150,7 @@ class WorkflowTests(ControlsBase):
     def test_warnings_are_listed_but_do_not_block(self):
         self.capital()
         self.entry("2026-01-12", "operating", expense="40")
+        self.hire("Rima")
         self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Rima", "year": 2026, "month": 1, "currency": "SYP", "base": "500"})
         warnings = {w["kind"]: w["count"] for w in self.flow()["close"]["warnings"]}
         self.assertEqual(warnings, {"missing_receipts": 1, "unpaid_salaries": 1, "no_cash_count": 1})
@@ -280,3 +283,36 @@ class WorkflowTests(ControlsBase):
         self.assertEqual(self.status("basics")["status"], "in_progress")  # no rate yet, no feed
         with patch("app.accounting.fetch_online_rate", return_value=Decimal("12200")):
             self.assertEqual(self.status("basics")["status"], "done")
+
+    # ---- people belong to the management ----
+    def test_employees_are_added_by_the_management_and_only_read_by_the_accountant(self):
+        E = A + "/employees"
+        for headers in (self.acc, self.teacher, self.parent):
+            self.assertEqual(self.client.post(E, headers=headers, json={"name": "Hana"}).status_code, 403)
+        self.assertEqual(self.client.post(E, headers=self.mgr, json={"name": "Hana", "job_title": "Teacher", "salary": "300", "salary_currency": "SYP"}).status_code, 201)
+        self.assertEqual(self.client.post(E, headers=self.admin, json={"name": "Dina"}).status_code, 201)
+        listing = self.client.get(E, headers=self.acc).json()  # the accountant still sees the names
+        self.assertEqual(sorted(p["name"] for p in listing), ["Dina", "Hana"])
+        for headers in (self.teacher, self.parent):
+            self.assertEqual(self.client.get(E, headers=headers).status_code, 403)
+        person = next(p for p in listing if p["name"] == "Hana")
+        self.assertEqual(self.client.patch(f"{E}/{person['id']}", headers=self.acc, json={"name": "Hana", "salary": "999"}).status_code, 403)
+        self.assertEqual(self.client.delete(f"{E}/{person['id']}", headers=self.acc).status_code, 403)
+        self.assertEqual(self.client.patch(f"{E}/{person['id']}", headers=self.mgr, json={"name": "Hana", "salary": "400"}).status_code, 200)
+        # the accountant picks a saved person for a salary line; an unknown name is refused (nobody is created by it)
+        ok = self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "hana", "year": 2026, "month": 1, "currency": "SYP", "base": "400"})
+        self.assertEqual(ok.status_code, 201, ok.text)
+        unknown = self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Nobody", "year": 2026, "month": 1, "currency": "SYP", "base": "1"})
+        self.assertEqual(unknown.status_code, 404)
+        self.assertEqual(sorted(p["name"] for p in self.client.get(E, headers=self.acc).json()), ["Dina", "Hana"])
+        # a person that was removed comes back only through the management
+        self.client.delete(f"{E}/{person['id']}", headers=self.mgr)
+        again = self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Hana", "year": 2026, "month": 2, "currency": "SYP", "base": "1"})
+        self.assertEqual(again.status_code, 404)
+
+    def test_a_child_that_is_not_saved_cannot_get_a_fee_by_typing_the_name(self):
+        made = self.client.post(F + "/charges", headers=self.acc, json={"child_name": "Typed Only", "year": 2026, "month": 1, "amount": "10", "currency": "SYP"})
+        self.assertEqual(made.status_code, 404, made.text)
+        self.assertNotIn("Typed Only", [c["display_name"] for c in self.client.get(F + "/children", headers=self.acc).json()])
+        self.enroll("Typed Only")
+        self.assertEqual(self.client.post(F + "/charges", headers=self.acc, json={"child_name": "typed only", "year": 2026, "month": 1, "amount": "10", "currency": "SYP"}).status_code, 201)

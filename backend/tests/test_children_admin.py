@@ -19,7 +19,7 @@ def mother(**extra):
 
 class ChildrenTests(ControlsBase):
     def make(self, name="سلمى", guardians=None, headers=None, **extra):
-        return self.client.post(A + "/children", headers=headers or self.acc, json={
+        return self.client.post(A + "/children", headers=headers or self.mgr, json={
             "name": name, "class_name": "KG1", "birth_date": "2021-05-04",
             "guardians": [father(), mother()] if guardians is None else guardians, **extra})
 
@@ -67,13 +67,20 @@ class ChildrenTests(ControlsBase):
         self.assertEqual(self.make(name="  سلمى ").status_code, 409)
         self.assertEqual(self.make(name="Amal").status_code, 409)  # the child that already exists in the fees list
 
-    def test_only_accountant_and_admin_add_children(self):
-        for headers in (self.teacher, self.parent):
+    def test_only_management_and_admin_add_children_the_accountant_may_only_read(self):
+        for headers in (self.teacher, self.parent, self.acc):
             self.assertEqual(self.make(headers=headers).status_code, 403)
+        for headers in (self.teacher, self.parent):
             self.assertEqual(self.client.get(A + "/children", headers=headers).status_code, 403)
             self.assertEqual(self.client.get(A + "/parent-accounts", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get(A + "/children", headers=self.acc).status_code, 200)  # the accountant still sees the names
+        self.assertEqual(self.client.get(A + "/parent-accounts", headers=self.acc).status_code, 200)
         self.assertEqual(self.client.get(A + "/children").status_code, 401)
-        self.assertEqual(self.make(headers=self.admin).status_code, 201)
+        self.assertEqual(self.make(headers=self.mgr).status_code, 201)
+        self.assertEqual(self.make(name="Omar", headers=self.admin).status_code, 201)
+        child = self.client.get(A + "/children", headers=self.acc).json()[0]["id"]
+        self.assertEqual(self.client.patch(f"{A}/children/{child}", headers=self.acc, json={"name": "x", "guardians": [father()]}).status_code, 403)
+        self.assertEqual(self.client.delete(f"{A}/children/{child}", headers=self.acc).status_code, 403)
 
     # ---- the portal account of a parent ----
     def test_a_parent_account_is_tied_to_the_child(self):
@@ -106,12 +113,12 @@ class ChildrenTests(ControlsBase):
         child = self.make(guardians=[father()]).json()
         body = {"name": "سلمى", "class_name": "KG2", "birth_date": "2021-05-04",
                 "guardians": [{"id": child["guardians"][0]["id"], **father()}, mother(account_id=account)]}
-        two = self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=body)
+        two = self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=body)
         self.assertEqual(two.status_code, 200, two.text)
         self.assertEqual((two.json()["class_name"], len(two.json()["guardians"])), ("KG2", 2))
         self.assertEqual(self.links(), {(account, child["id"])})
         body["guardians"] = [{"id": child["guardians"][0]["id"], **father(phone="0999")}]
-        one = self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=body).json()
+        one = self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=body).json()
         self.assertEqual([(g["relation"], g["phone"]) for g in one["guardians"]], [("father", "0999")])
         self.assertEqual(self.links(), set())  # the mother is gone, so is her access
         with Session(self.engine) as session:
@@ -121,29 +128,29 @@ class ChildrenTests(ControlsBase):
         first, second = self.parent_account("one"), self.parent_account("two")
         child = self.make(guardians=[father(account_id=first)]).json()
         body = {"name": "سلمى", "class_name": "", "guardians": [{"id": child["guardians"][0]["id"], **father(account_id=second)}]}
-        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=body).status_code, 200)
+        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=body).status_code, 200)
         self.assertEqual(self.links(), {(second, child["id"])})
         body["guardians"] = [father()]  # no account any more
-        self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=body)
+        self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=body)
         self.assertEqual(self.links(), set())
 
     def test_an_update_cannot_leave_a_child_without_parents_or_clash_with_another_child(self):
         child = self.make().json()
         base = {"name": "سلمى", "class_name": "", "guardians": []}
-        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=base).status_code, 422)
+        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=base).status_code, 422)
         base["guardians"] = [father()]
         base["name"] = "Amal"
-        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=base).status_code, 409)
+        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=base).status_code, 409)
         base["name"] = "سلمى"
-        self.assertEqual(self.client.patch(f"{A}/children/{uuid.uuid4()}", headers=self.acc, json=base).status_code, 404)
-        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.teacher, json=base).status_code, 403)
+        self.assertEqual(self.client.patch(f"{A}/children/{uuid.uuid4()}", headers=self.mgr, json=base).status_code, 404)
+        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=base).status_code, 403)
 
     def test_removing_a_child_keeps_the_fees(self):
         child = self.make(name="Amal2").json()
         charge = self.charge(month=2)  # the fee list of the existing child Amal
-        self.assertEqual(self.client.delete(f"{A}/children/{child['id']}", headers=self.acc).status_code, 204)
+        self.assertEqual(self.client.delete(f"{A}/children/{child['id']}", headers=self.mgr).status_code, 204)
         self.assertNotIn("Amal2", [c["name"] for c in self.client.get(A + "/children", headers=self.acc).json()])
-        self.assertEqual(self.client.delete(f"{A}/children/{child['id']}", headers=self.acc).status_code, 404)
+        self.assertEqual(self.client.delete(f"{A}/children/{child['id']}", headers=self.mgr).status_code, 404)
         self.assertEqual(self.client.get("/api/admin/fees?year=2026&month=2", headers=self.acc).json()["rows"][0]["id"], charge["id"])
         self.assertEqual(self.make(name="Amal2").status_code, 201)  # the name is free again
 

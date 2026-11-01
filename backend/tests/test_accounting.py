@@ -129,9 +129,9 @@ class AccountingApiTests(unittest.TestCase):
         main.app.dependency_overrides[main.optional_session] = override
         self.client = TestClient(main.app)
         with Session(self.engine) as session:
-            roles = {n: Role(name=n) for n in ("admin", "teacher", "parent", "accountant")}
+            roles = {n: Role(name=n) for n in ("admin", "teacher", "parent", "accountant", "manager")}
             session.add_all(roles.values())
-            for username, role in (("acc", "accountant"), ("teacher1", "teacher"), ("parent1", "parent")):
+            for username, role in (("acc", "accountant"), ("teacher1", "teacher"), ("parent1", "parent"), ("mgr0", "manager")):
                 session.add(Account(username=username, password_hash=main.PASSWORD_HASHER.hash("Qx5a6ba62b7e4b-9"), roles=[roles[role]]))
             session.add(Child(display_name="Amal", class_name="KG1"))
             session.commit()
@@ -142,6 +142,7 @@ class AccountingApiTests(unittest.TestCase):
             ).json()["access_token"]}
 
         self.acc = token("acc")
+        self.mgr = token("mgr0")
         self.teacher = token("teacher1")
         self.parent = token("parent1")
         self.legacy = {"Authorization": "Bearer " + self.client.post(
@@ -156,7 +157,22 @@ class AccountingApiTests(unittest.TestCase):
         self.feed.stop()
         self.env.stop()
 
+    # ---- people are the work of the management ----
+    def hire(self, name, job="teacher", **extra):
+        """Adds an employee the way the management does (the accountant can no longer add people)."""
+        made = self.client.post("/api/admin/accounting/employees", headers=self.mgr, json={"name": name, "job_title": job, **extra})
+        self.assertIn(made.status_code, (201, 409), made.text)
+        return made
+
+    def enroll(self, name, class_name="KG1"):
+        """Adds a child with a father, the way the management does."""
+        made = self.client.post("/api/admin/accounting/children", headers=self.mgr, json={
+            "name": name, "class_name": class_name, "guardians": [{"relation": "father", "name": "Father of " + name}]})
+        self.assertEqual(made.status_code, 201, made.text)
+        return made.json()
+
     def salary(self, name="Rima", base="1000", currency="SYP", month=10, **extra):
+        self.hire(name)  # the management saved the person first
         return self.client.post(
             "/api/admin/accounting/salaries", headers=self.acc,
             json={"employee_name": name, "job_title": "teacher", "year": 2026, "month": month,
@@ -188,8 +204,11 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self.salary("Rima", "1000").status_code, 409)  # same employee/month/currency
         self.assertEqual(self.salary("Neg", "100", advance="200").status_code, 422)  # negative net
         self.assertEqual(self.salary("Bad", "-5").status_code, 422)
+        # a name the management has not saved is refused: the accountant picks people, the management adds them
+        ghost = self.client.post("/api/admin/accounting/salaries", headers=self.acc, json={"employee_name": "Ghost", "year": 2026, "month": 10, "currency": "SYP", "base": "10"})
+        self.assertEqual(ghost.status_code, 404, ghost.text)
         with Session(self.engine) as session:
-            self.assertEqual(len(session.scalars(select(Employee)).all()), 2)  # Rima reused; rejected rows create nobody
+            self.assertEqual(sorted(e.name for e in session.scalars(select(Employee)).all()), ["Bad", "Dina", "Neg", "Rima"])  # Rima reused, nobody created by the salary rows
 
     # ---- corrections after the accounting review ----
     A = "/api/admin/accounting"
@@ -234,7 +253,7 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self.client.patch(f"/api/admin/fees/payments/{payment_id}", headers=self.acc, json={"amount": "300", "paid_on": None}).status_code, 422)
 
     def test_salaries_count_when_paid_out_unpaid_ones_in_their_own_month(self):
-        self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Rima", "salary": "500", "salary_currency": "SYP"})
+        self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Rima", "salary": "500", "salary_currency": "SYP"})
         self.client.post(self.A + "/salaries/generate", headers=self.acc, json={"year": 2026, "month": 11, "currency": "SYP"})
         self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=11, currency="SYP"), "salaries")["expense"], "500.00")
         self.assertEqual(self._row(self._sheet(period_type="week", year=2026, currency="SYP", week_start="2026-11-02"), "salaries")["expense"], "0.00")
@@ -282,9 +301,10 @@ class AccountingApiTests(unittest.TestCase):
         renamed = self.client.patch(f"{self.A}/salaries/{first['id']}", headers=self.acc, json={"employee_name": "Rima S.", "base": "1000"})
         self.assertEqual(renamed.json()["employee_name"], "Rima S.")
         child = self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]
-        self.assertEqual(self.client.patch(f"/api/admin/fees/children/{child['id']}", headers=self.acc, json={"class_name": "KG1", "display_name": ""}).status_code, 422)
+        self.assertEqual(self.client.patch(f"/api/admin/fees/children/{child['id']}", headers=self.mgr, json={"class_name": "KG1", "display_name": ""}).status_code, 422)
+        self.enroll("Bashar")
         self.client.post("/api/admin/fees/charges", headers=self.acc, json={"child_name": "Bashar", "year": 2026, "month": 10, "amount": "1", "currency": "SYP"})
-        self.assertEqual(self.client.patch(f"/api/admin/fees/children/{child['id']}", headers=self.acc, json={"class_name": "KG1", "display_name": "bashar"}).status_code, 409)
+        self.assertEqual(self.client.patch(f"/api/admin/fees/children/{child['id']}", headers=self.mgr, json={"class_name": "KG1", "display_name": "bashar"}).status_code, 409)
         self.assertEqual(self.client.get("/api/admin/fees/children", headers=self.acc).json()[0]["display_name"], "Amal")
 
     def test_week_and_day_sheets_take_the_year_from_their_date(self):
@@ -324,43 +344,43 @@ class AccountingApiTests(unittest.TestCase):
     def test_a_removed_person_who_is_saved_again_keeps_history_salary_and_account(self):
         acc = self.client.get(self.A + "/staff-accounts", headers=self.acc).json()
         teacher_account = next(a for a in acc if a["username"] == "teacher1")["id"]
-        first = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Rima Saleh", "job_title": "Teacher", "salary": "500", "salary_currency": "SYP", "account_id": teacher_account}).json()
+        first = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Rima Saleh", "job_title": "Teacher", "salary": "500", "salary_currency": "SYP", "account_id": teacher_account}).json()
         self.salary("Rima Saleh", "500")
-        self.client.delete(f"{self.A}/employees/{first['id']}", headers=self.acc)
-        again = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "rima saleh", "job_title": "Head teacher"})
+        self.client.delete(f"{self.A}/employees/{first['id']}", headers=self.mgr)
+        again = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "rima saleh", "job_title": "Head teacher"})
         self.assertEqual(again.status_code, 201)
         self.assertEqual((again.json()["id"], again.json()["salary"], again.json()["account_id"]), (first["id"], "500.00", teacher_account))
         self.assertEqual(again.json()["job_title"], "Head teacher")
-        people = self.client.get(self.A + "/employees", headers=self.acc).json()
+        people = self.client.get(self.A + "/employees", headers=self.mgr).json()
         self.assertEqual([p["name"] for p in people], ["Rima Saleh"])  # one person, not two
         rows = self.client.get(self.A + "/salaries?year=2026", headers=self.acc).json()["rows"]
         self.assertEqual([(r["employee_name"], r["job_title"]) for r in rows], [("Rima Saleh", "Head teacher")])
         # a salary row typed by name for a removed person brings the same record back, too
-        self.client.delete(f"{self.A}/employees/{first['id']}", headers=self.acc)
+        self.client.delete(f"{self.A}/employees/{first['id']}", headers=self.mgr)
         self.assertEqual(self.salary("RIMA SALEH", "500", month=11).status_code, 201)
-        self.assertEqual(len(self.client.get(self.A + "/employees", headers=self.acc).json()), 1)
+        self.assertEqual(len(self.client.get(self.A + "/employees", headers=self.mgr).json()), 1)
         with Session(self.engine) as session:
             self.assertEqual(len(session.scalars(select(Employee)).all()), 1)
 
     def test_an_account_given_up_by_a_removed_person_can_be_linked_again(self):
         account_id = next(a for a in self.client.get(self.A + "/staff-accounts", headers=self.acc).json() if a["username"] == "teacher1")["id"]
-        old = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Old Name", "account_id": account_id}).json()
-        self.client.delete(f"{self.A}/employees/{old['id']}", headers=self.acc)
-        new = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "New Name", "account_id": account_id})
+        old = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Old Name", "account_id": account_id}).json()
+        self.client.delete(f"{self.A}/employees/{old['id']}", headers=self.mgr)
+        new = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "New Name", "account_id": account_id})
         self.assertEqual(new.status_code, 201)
         self.assertEqual(new.json()["account_id"], account_id)
         # an active person still holds an account against everyone else
-        other = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Third Person", "account_id": account_id})
+        other = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Third Person", "account_id": account_id})
         self.assertEqual(other.status_code, 409)
 
     def test_changing_the_saved_salary_updates_open_payroll_rows_only(self):
-        person = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Rima", "salary": "500", "salary_currency": "SYP"}).json()
+        person = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Rima", "salary": "500", "salary_currency": "SYP"}).json()
         for month in (9, 10, 11):
             self.client.post(self.A + "/salaries/generate", headers=self.acc, json={"year": 2026, "month": month, "currency": "SYP"})
         rows = {r["month"]: r for r in self.client.get(self.A + "/salaries?year=2026", headers=self.acc).json()["rows"]}
         self.client.patch(f"{self.A}/salaries/{rows[9]['id']}", headers=self.acc, json={"paid_on": "2026-09-28"})  # paid out
         self.client.patch(f"{self.A}/salaries/{rows[10]['id']}", headers=self.acc, json={"base": "520"})  # corrected by hand
-        result = self.client.patch(f"{self.A}/employees/{person['id']}", headers=self.acc, json={"name": "Rima", "salary": "600", "salary_currency": "SYP"}).json()
+        result = self.client.patch(f"{self.A}/employees/{person['id']}", headers=self.mgr, json={"name": "Rima", "salary": "600", "salary_currency": "SYP"}).json()
         self.assertEqual(result["updated_salary_rows"], 1)
         now = {r["month"]: r["base"] for r in self.client.get(self.A + "/salaries?year=2026", headers=self.acc).json()["rows"]}
         self.assertEqual(now, {9: "500.00", 10: "520.00", 11: "600.00"})
@@ -371,22 +391,22 @@ class AccountingApiTests(unittest.TestCase):
 
     def test_the_first_salary_typed_for_a_person_is_remembered_with_them(self):
         self.salary("Dina", "750", month=10)
-        saved = next(p for p in self.client.get(self.A + "/employees", headers=self.acc).json() if p["name"] == "Dina")
+        saved = next(p for p in self.client.get(self.A + "/employees", headers=self.mgr).json() if p["name"] == "Dina")
         self.assertEqual((saved["salary"], saved["salary_currency"]), ("750.00", "SYP"))
         self.client.post(self.A + "/salaries/generate", headers=self.acc, json={"year": 2026, "month": 11, "currency": "SYP"})
         self.assertEqual([r["base"] for r in self.client.get(self.A + "/salaries?year=2026&month=11", headers=self.acc).json()["rows"]], ["750.00"])
         # a later row with another amount does not overwrite what was saved for the person
         self.salary("Dina", "999", month=12)
-        saved = next(p for p in self.client.get(self.A + "/employees", headers=self.acc).json() if p["name"] == "Dina")
+        saved = next(p for p in self.client.get(self.A + "/employees", headers=self.mgr).json() if p["name"] == "Dina")
         self.assertEqual(saved["salary"], "750.00")
 
     def test_an_account_created_with_a_removed_persons_name_takes_that_person_back(self):
-        person = self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Hana Ali", "salary": "300"}).json()
-        self.client.delete(f"{self.A}/employees/{person['id']}", headers=self.acc)
+        person = self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Hana Ali", "salary": "300"}).json()
+        self.client.delete(f"{self.A}/employees/{person['id']}", headers=self.mgr)
         created = self.client.post("/api/admin/platform/teacher-accounts", headers=self.legacy, json={
             "username": "hana-teacher", "role": "teacher", "full_name": "Hana Ali", "job_title": "Teacher", "password": "Qx1d3f5h7j9l-9"})
         self.assertEqual(created.status_code, 201)
-        people = self.client.get(self.A + "/employees", headers=self.acc).json()
+        people = self.client.get(self.A + "/employees", headers=self.mgr).json()
         self.assertEqual([(p["id"], p["salary"], p["account_username"]) for p in people], [(person["id"], "300.00", "hana-teacher")])
 
     # ---- cash balance and roll-up ----
@@ -415,7 +435,7 @@ class AccountingApiTests(unittest.TestCase):
         # fee money received and a paid salary change the balance by themselves
         charge = self._fee(month=today.month, amount="1000", paid="400", paid_on=today.isoformat())
         self.assertEqual(self._cash()["SYP"]["balance"], "1250.00")
-        self.client.post(self.A + "/employees", headers=self.acc, json={"name": "Rima", "salary": "200", "salary_currency": "SYP"})
+        self.client.post(self.A + "/employees", headers=self.mgr, json={"name": "Rima", "salary": "200", "salary_currency": "SYP"})
         self.client.post(self.A + "/salaries/generate", headers=self.acc, json={"year": today.year, "month": today.month, "currency": "SYP"})
         self.assertEqual(self._cash()["SYP"]["balance"], "1050.00")
         # the monthly sheet shows the balance at the start and the end of the month
@@ -768,7 +788,7 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual((line["paid_by"], line["recorded_by"]), ("الأستاذ كريم", "acc"))
 
     def test_saved_names_are_offered_again_and_staff_can_be_managed(self):
-        created = self.client.post("/api/admin/accounting/employees", headers=self.acc,
+        created = self.client.post("/api/admin/accounting/employees", headers=self.mgr,
                                    json={"name": "Rima Saleh", "job_title": "معلمة"}).json()
         self.client.put("/api/admin/accounting/entries", headers=self.acc, json={
             "period_type": "month", "year": 2026, "month": 10, "currency": "SYP", "item_key": "buffet",
@@ -786,12 +806,12 @@ class AccountingApiTests(unittest.TestCase):
         self.assertIn("Rima Saleh", names["persons"])
         self.assertEqual(names["payers"], ["الأب أحمد"])
         # rename / remove a saved person; old salary rows keep the name
-        renamed = self.client.patch(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc,
+        renamed = self.client.patch(f"/api/admin/accounting/employees/{created['id']}", headers=self.mgr,
                                     json={"name": "Rima S.", "job_title": "مديرة"})
         self.assertEqual(renamed.json()["name"], "Rima S.")
-        self.assertEqual(self.client.patch(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc,
+        self.assertEqual(self.client.patch(f"/api/admin/accounting/employees/{created['id']}", headers=self.mgr,
                                            json={"name": "lana", "job_title": ""}).status_code, 409)
-        self.assertEqual(self.client.delete(f"/api/admin/accounting/employees/{created['id']}", headers=self.acc).status_code, 204)
+        self.assertEqual(self.client.delete(f"/api/admin/accounting/employees/{created['id']}", headers=self.mgr).status_code, 204)
         self.assertNotIn("Rima S.", self.client.get("/api/admin/accounting/names", headers=self.acc).json()["staff"])
         self.assertEqual(self.client.get("/api/admin/accounting/names", headers=self.teacher).status_code, 403)
 
@@ -801,7 +821,7 @@ class AccountingApiTests(unittest.TestCase):
             "role": "teacher", "username": "rima.s", "password": "Qx7f3a9c1d2e44-9", "full_name": "ريما صالح", "job_title": "معلمة"})
         self.assertEqual(created.status_code, 201, created.text)
         self.assertEqual((created.json()["full_name"], created.json()["job_title"]), ("ريما صالح", "معلمة"))
-        staff = self.client.get("/api/admin/accounting/employees", headers=self.acc).json()
+        staff = self.client.get("/api/admin/accounting/employees", headers=self.mgr).json()
         person = next(e for e in staff if e["name"] == "ريما صالح")
         self.assertEqual(person["account_username"], "rima.s")
         accounts = {a["username"]: a for a in self.client.get("/api/admin/platform/accounts", headers=admin).json()}
@@ -810,7 +830,7 @@ class AccountingApiTests(unittest.TestCase):
         # renaming through the account renames the same person (no duplicate)
         account_id = created.json()["id"]
         self.client.patch(f"/api/admin/platform/accounts/{account_id}", headers=admin, json={"full_name": "ريما أحمد"})
-        staff = self.client.get("/api/admin/accounting/employees", headers=self.acc).json()
+        staff = self.client.get("/api/admin/accounting/employees", headers=self.mgr).json()
         self.assertEqual([e["name"] for e in staff if e["account_id"] == account_id], ["ريما أحمد"])
         self.assertEqual(len(staff), 1)
 
@@ -819,21 +839,21 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(row["employee_id"], person["id"])
 
         # tying a saved person to an account; an account has only one person
-        loose = self.client.post("/api/admin/accounting/employees", headers=self.acc, json={"name": "Dina Kareem", "job_title": "محاسبة"}).json()
+        loose = self.client.post("/api/admin/accounting/employees", headers=self.mgr, json={"name": "Dina Kareem", "job_title": "محاسبة"}).json()
         options = {a["username"]: a for a in self.client.get("/api/admin/accounting/staff-accounts", headers=self.acc).json()}
         self.assertEqual(options["rima.s"]["linked_to"], "ريما أحمد")
         self.assertEqual(options["acc"]["linked_to"], "")
-        conflict = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+        conflict = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.mgr,
                                      json={"name": "Dina Kareem", "account_id": account_id})
         self.assertEqual(conflict.status_code, 409)
-        linked = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+        linked = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.mgr,
                                    json={"name": "Dina Kareem", "account_id": options["acc"]["id"]})
         self.assertEqual(linked.json()["account_username"], "acc")
-        unlinked = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+        unlinked = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.mgr,
                                      json={"name": "Dina Kareem", "account_id": None})
         self.assertEqual(unlinked.json()["account_id"], "")
         # parents' accounts cannot be tied to staff
-        parent_tie = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.acc,
+        parent_tie = self.client.patch(f"/api/admin/accounting/employees/{loose['id']}", headers=self.mgr,
                                        json={"name": "Dina Kareem", "account_id": str(uuid.uuid4())})
         self.assertEqual(parent_tie.status_code, 404)
         self.assertEqual(self.client.get("/api/admin/accounting/staff-accounts", headers=self.teacher).status_code, 403)
@@ -846,13 +866,13 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual((row["label"], row["choice"], row["kind"], row["income"]), ("الإعلانات والدعاية", True, "income", "20000.00"))
 
     def test_saved_salary_prefills_payroll_and_generates_rows(self):
-        a = self.client.post("/api/admin/accounting/employees", headers=self.acc,
+        a = self.client.post("/api/admin/accounting/employees", headers=self.mgr,
                              json={"name": "Rima", "job_title": "معلمة", "salary": "1500000"}).json()
-        b = self.client.post("/api/admin/accounting/employees", headers=self.acc,
+        b = self.client.post("/api/admin/accounting/employees", headers=self.mgr,
                              json={"name": "Dina", "salary": "120", "salary_currency": "USD"}).json()
-        self.client.post("/api/admin/accounting/employees", headers=self.acc, json={"name": "NoSalary"})
+        self.client.post("/api/admin/accounting/employees", headers=self.mgr, json={"name": "NoSalary"})
         self.assertEqual((a["salary"], a["salary_currency"]), ("1500000.00", "SYP"))
-        listing = {e["name"]: e for e in self.client.get("/api/admin/accounting/employees", headers=self.acc).json()}
+        listing = {e["name"]: e for e in self.client.get("/api/admin/accounting/employees", headers=self.mgr).json()}
         self.assertEqual((listing["Dina"]["salary"], listing["Dina"]["salary_currency"]), ("120.00", "USD"))
         self.assertIsNone(listing["NoSalary"]["salary"])
         # one click creates the month's rows for everyone with a saved salary in that currency
@@ -863,7 +883,7 @@ class AccountingApiTests(unittest.TestCase):
         rows = self.client.get("/api/admin/accounting/salaries?year=2026&month=10", headers=self.acc).json()["rows"]
         self.assertEqual([(r["employee_name"], r["base"], r["net"]) for r in rows], [("Rima", "1500000.00", "1500000.00")])
         # changing the saved salary does not touch rows that already exist; clearing it is possible
-        updated = self.client.patch(f"/api/admin/accounting/employees/{a['id']}", headers=self.acc,
+        updated = self.client.patch(f"/api/admin/accounting/employees/{a['id']}", headers=self.mgr,
                                     json={"name": "Rima", "job_title": "معلمة", "salary": None})
         self.assertIsNone(updated.json()["salary"])
         self.assertEqual(len(self.client.get("/api/admin/accounting/salaries?year=2026&month=10", headers=self.acc).json()["rows"]), 1)
@@ -895,6 +915,7 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual([k for k in overview if k in ("SYP", "USD")], ["SYP", "USD"])
 
     def test_overview_per_class_and_chart_series(self):
+        self.enroll("Bashar", "KG1")
         children = {c["display_name"]: c["id"] for c in self.client.get("/api/admin/fees/children", headers=self.acc).json()}
         new = self.client.post("/api/admin/fees/charges", headers=self.acc, json={
             "child_name": "Bashar", "class_name": "KG1", "year": 2026, "month": 10, "amount": "100", "currency": "USD"}).json()
