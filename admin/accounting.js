@@ -560,6 +560,9 @@ function tabSheet(type, opts){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var capital = h("div", {});
   var tables = h("div", {});
+  var dirty = {}, savers = {};  // edits not saved yet (they survive a reload of the table) and the function that saves each row
+  var saveAllButton = null;
+  window.accSheetDirtyCount = function(){ return Object.keys(dirty).length; };
   var fYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var fMonth = accSelect(accMonths(false), filters.month);
   var fDay = h("input", {type:"date", value:filters.day});
@@ -613,7 +616,17 @@ function tabSheet(type, opts){
     var amountCells = isWeek
       ? [h("td", {}, [income]), h("td", {}, [expense])]
       : [h("td", {}, [h("div", {class:"a-amount"}, [kindSel ? kindSel : h("span", {class:"a-tag kind-" + line.kind, text:line.kind === "income" ? "وارد" : "صادر"}), amount])])];
-    var actions = [h("button", {type:"button", class:"a-btn sun save", text:"حفظ", disabled:"disabled", onclick:async function(){
+    var rowKey = query() + "|" + item.key + "|" + (item.custom ? line.id : line.currency);
+    var errorBox = h("small", {class:"a-row-error", role:"alert"});
+    function snapshot(){
+      return {details:details.value, note:note.value, person:person.value, income:income.value, expense:expense.value, amount:amount.value,
+        kind:kindSel ? kindSel.value : "", currency:currencySel ? currencySel.value : line.currency};
+    }
+    /* Saves this row. A number the browser cannot read (thousands separators, letters) is refused instead of being saved as 0. */
+    async function persist(){
+      if([income, expense, amount].some(function(el){ return el.validity && el.validity.badInput; })){
+        throw fail("المبلغ غير صالح: اكتب أرقاماً إنجليزية فقط وبدون فواصل الآلاف (مثال: 30000.50).");
+      }
       var inc = income.value, exp = expense.value;
       if(!isWeek){
         var kind = kindSel ? kindSel.value : line.kind;
@@ -624,11 +637,23 @@ function tabSheet(type, opts){
       var body = entryBody(item, currency, details.value, note.value, inc, exp, person.value);
       if(currency !== line.currency){ if(line.id) body.replaces = line.id; }  // the row moves to the other currency
       else if(item.custom && line.id) body.id = line.id;
+      await request("/api/admin/accounting/entries", {method:"PUT", body:JSON.stringify(body)});
+      delete dirty[rowKey];
+    }
+    savers[rowKey] = persist;
+    var actions = [h("button", {type:"button", class:"a-btn sun save", text:"حفظ", disabled:"disabled", onclick:async function(){
+      errorBox.textContent = ""; row.classList.remove("has-error");
       try{
-        await request("/api/admin/accounting/entries", {method:"PUT", body:JSON.stringify(body)});
-        setMsg(msg, currency !== line.currency ? "تم نقل السطر إلى " + currency + " وحفظه." : "تم الحفظ.", "ok"); await load();
-      }catch(error){ setMsg(msg, errText(error), "err"); }
-    }})];
+        await persist();
+        accToast("تم الحفظ.", "ok");
+        await load();
+      }catch(error){
+        var why = errText(error);
+        errorBox.textContent = why; row.classList.add("has-error");
+        (dirty[rowKey] = dirty[rowKey] || snapshot()).error = why;
+        accToast(why, "err");
+      }
+    }}), errorBox];
     var removes = item.custom || !item.auto;  // a row without an automatic value is simply deleted; an automatic one goes back to it
     if(line.id && (item.custom || line.manual)) actions.push(twoStep(removes ? "حذف" : "إعادة للتلقائي", async function(){
       await request("/api/admin/accounting/entries/" + encodeURIComponent(line.id), {method:"DELETE"}); setMsg(msg, item.custom ? "تم حذف البند." : removes ? "تم حذف السطر." : "عاد البند إلى القيمة التلقائية.", "ok"); await load(); }));
@@ -648,9 +673,44 @@ function tabSheet(type, opts){
     Array.prototype.forEach.call(row.children, function(cellNode, i){ if(i > 0 && HEADS[i]) cellNode.setAttribute("data-label", HEADS[i]); });  // shown as captions on a phone
     // a row that was changed lights up and can be saved; nothing to save, nothing to press
     var saveButton = actions[0];
-    function markChanged(){ saveButton.disabled = false; row.classList.add("dirty"); }
+    function markChanged(){ saveButton.disabled = false; row.classList.add("dirty"); dirty[rowKey] = snapshot(); updateSaveAll(); }
     [details, note, person, income, expense, amount, kindSel, currencySel].forEach(function(el){ if(el){ el.addEventListener("input", markChanged); el.addEventListener("change", markChanged); } });
+    var kept = dirty[rowKey];  // typed before and not saved yet: put it back after the table was rebuilt
+    if(kept){
+      details.value = kept.details; note.value = kept.note; person.value = kept.person; income.value = kept.income; expense.value = kept.expense; amount.value = kept.amount;
+      if(kindSel && kept.kind) kindSel.value = kept.kind;
+      if(currencySel && kept.currency) currencySel.value = kept.currency;
+      saveButton.disabled = false; row.classList.add("dirty");
+      if(kept.error){ errorBox.textContent = kept.error; row.classList.add("has-error"); }
+    }
     return row;
+  }
+  function dirtyHere(){ var prefix = query() + "|"; return Object.keys(dirty).filter(function(k){ return k.indexOf(prefix) === 0; }); }
+  function updateSaveAll(){
+    if(!saveAllButton) return;
+    var n = dirtyHere().length;
+    saveAllButton.disabled = n === 0;
+    saveAllButton.textContent = (accEnglish() ? "Save all changes" : "حفظ كل التعديلات") + (n ? " (" + n + ")" : "");
+  }
+  /* Saves every changed row of this sheet one after the other, then reloads once. Rows that failed stay as typed, marked in red. */
+  async function saveAll(){
+    var keys = dirtyHere().filter(function(k){ return savers[k]; });
+    var failed = [], saved = 0;
+    saveAllButton.disabled = true;
+    for(var n = 0; n < keys.length; n++){
+      try{ await savers[keys[n]](); saved++; }
+      catch(error){ var why = errText(error); if(dirty[keys[n]]) dirty[keys[n]].error = why; failed.push(why); }
+    }
+    await load();
+    if(failed.length) accToast((accEnglish() ? failed.length + " row(s) could not be saved (marked in red): " : "تعذّر حفظ " + failed.length + " سطر (بالأحمر): ") + failed[0], "err");
+    else accToast(accEnglish() ? saved + " row(s) saved." : "تم حفظ " + saved + " سطر.", "ok");
+  }
+  function addSaveBar(card){
+    var wrap = card.querySelector(".a-table-wrap");
+    if(!wrap) return;
+    saveAllButton = h("button", {type:"button", class:"a-btn sun", text:"حفظ كل التعديلات", onclick:saveAll});
+    wrap.parentNode.insertBefore(h("div", {class:"a-saveall"}, [saveAllButton, h("small", {class:"hint", text:"اكتب في عدة أسطر ثم احفظها كلها بضغطة واحدة. التعديلات غير المحفوظة لا تضيع عند تحديث الجدول."})]), wrap);
+    updateSaveAll();
   }
   /* Which rows belong to the step: the income step shows income rows, the expense step the expense rows. */
   function lineVisible(item, line){
@@ -697,7 +757,9 @@ function tabSheet(type, opts){
       h("p", {class:"hint", text:"لكل سطر عملته. غيّر العملة في السطر فيتحوّل المبلغ المكتوب تلقائياً بسعر اليوم، ثم اضغط «حفظ» لينتقل السطر إلى دفتر العملة الأخرى."}),
       h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table a-sheet"}, [h("colgroup", {}, widths.map(function(w){ return h("col", {style:"width:" + w + "%"}); })),
         h("thead", {}, [h("tr", {}, HEADS.map(function(t){ return h("th", {text:t}); }))]), tbody])]), customRowForm()]);
-    return readOnly ? readOnlySheet(lockSheet(card)) : lockSheet(card);
+    var finished = readOnly ? readOnlySheet(lockSheet(card)) : lockSheet(card);
+    if(!readOnly && !data.locked) addSaveBar(finished);
+    return finished;
   }
   function customRowForm(){
     var label = h("input", {type:"text", maxlength:"120", placeholder:"اسم البند"});
