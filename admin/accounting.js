@@ -263,7 +263,7 @@ function tabOverview(opts){
           h("td", {class:"num", text:money(m.expense)}), h("td", {class:"num strong" + (Number(m.closing) < 0 ? " due" : ""), text:money(m.closing)})]);
       }))]))]);
     return h("div", {class:"a-card a-cash"}, [
-      h("h3", {text:"رصيد الكيتا بـ" + ACC_CURRENCY_NAME[code]}),
+      h("h3", {text:"رصيد الروضة بـ" + ACC_CURRENCY_NAME[code]}),
       h("div", {class:"a-kpis"}, [kpi("الرصيد الحالي", money(cash.balance), Number(cash.balance) < 0 ? "due" : "good"), kpi("إجمالي الوارد", money(cash.income)), kpi("إجمالي الصادر", money(cash.expense)), kpi("رصيد البداية", money(cash.opening))]),
       cash.configured ? "" : h("p", {class:"a-review-note", text:"لم تحدّد رصيد البداية بعد، لذلك يبدأ الحساب من صفر عند أول شهر فيه بيانات. اضغط «تعديل رصيد البداية» وأدخل المبلغ الموجود في الصندوق عند بدء العمل بالنظام."}),
       h("p", {class:"hint", text:"الرصيد = رصيد البداية + كل الواردات − كل المصروفات، من شهر البداية حتى نهاية الشهر الحالي. الواردات تأتي تلقائياً من الاشتراكات المدفوعة، والمصروفات من الرواتب ومن الجداول. الراتب الذي لم يُسلَّم بعد يُخصم في شهره."}),
@@ -807,10 +807,10 @@ function tabSheet(type, opts){
         var c = conv[code];
         brows.push(h("tr", {class:"a-rolled"}, [h("td", {class:"name", text:"الرصيد الكلي بالـ" + (code === "SYP" ? "ليرة" : "دولار") + " (بعد التحويل)"}), h("td", {class:"num", text:money(c.opening)}), h("td", {class:"num strong" + (accCents(c.closing) < 0n ? " due" : ""), text:money(c.closing)})]));
       });
-      if(brows.length) parts.push(h("h4", {text:"رصيد الكيتا"}), h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+      if(brows.length) parts.push(h("h4", {text:"رصيد الروضة"}), h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
         h("thead", {}, [h("tr", {}, ["", "رصيد أول " + label, "رصيد آخر " + label].map(function(t){ return h("th", {text:t}); }))]), h("tbody", {}, brows)]))]));
     }else{
-      parts.push(h("p", {class:"hint", text:"لم يُدخَل رأس مال الكيتا بعد، لذلك لا يظهر الرصيد. أدخله في الصندوق أعلى هذه الصفحة."}));
+      parts.push(h("p", {class:"hint", text:"لم يُدخَل رأس مال الروضة بعد، لذلك لا يظهر الرصيد. أدخله في الصندوق أعلى هذه الصفحة."}));
     }
     if(conv) parts.push(h("p", {class:"hint", text:"1 دولار = " + conv.rate + " ليرة (" + (conv.source === "auto" ? "سعر اليوم تلقائياً من الإنترنت" : "السعر المحفوظ") + (conv.stale ? "، تعذّر جلب سعر اليوم فاستُعمل آخر سعر بتاريخ " + conv.rate_date : "") + ")."}));
     if(isWeek && data.balance) parts.push(h("p", {class:"hint", text:"رصيد أول اليوم/الأسبوع = رصيد أول الشهر + ما سُجّل في الأيام السابقة من الشهر. البنود الأسبوعية والشهرية وغير المؤرخة تُحتسب كاملة في رصيد الشهر."}));
@@ -824,14 +824,14 @@ function tabSheet(type, opts){
     function kpiBox(label, value, cls){ return h("div", {class:"a-kpi " + (cls || "")}, [h("span", {text:label}), h("strong", {text:value})]); }
     var shown = ACC_CURRENCIES.filter(function(c){ return c === "SYP" || cash[c].configured || nonZero(cash[c].balance); });
     var kpis = shown.map(function(c){ return kpiBox("الرصيد الحالي (" + c + ")", money(cash[c].balance), accCents(cash[c].balance) < 0n ? "due" : "good"); });
-    if(cash.total) ACC_CURRENCIES.forEach(function(c){ kpis.push(kpiBox("إجمالي الكيتا بالـ" + (c === "SYP" ? "ليرة" : "دولار"), money(cash.total[c].balance), accCents(cash.total[c].balance) < 0n ? "due" : "good")); });
+    if(cash.total) ACC_CURRENCIES.forEach(function(c){ kpis.push(kpiBox("إجمالي الروضة بالـ" + (c === "SYP" ? "ليرة" : "دولار"), money(cash.total[c].balance), accCents(cash.total[c].balance) < 0n ? "due" : "good")); });
     var base = cash.SYP.configured ? cash.SYP : cash.USD.configured ? cash.USD : null;
     var amount = accNumber(base ? base.opening : "", {"aria-label":"رأس المال", required:"required"});
     var currencySel = accSelect(CURRENCY_CHOICES, base ? base.currency : "SYP");
     accLinkCurrency(currencySel, [amount], msg);
     var monthSel = accSelect(accMonths(false), String(base ? base.start_month : Number(filters.month)));
     var yearInput = h("input", {type:"number", min:"2000", max:"2100", value:String(base ? base.start_year : Number(sheetYear()))});
-    var form = h("form", {class:"a-form-grid", hidden:base ? "hidden" : null}, [accField("رأس مال الكيتا (المبلغ عند البداية)", amount), accField("العملة", currencySel), accField("يبدأ الحساب من شهر", monthSel), accField("السنة", yearInput),
+    var form = h("form", {class:"a-form-grid", hidden:base ? "hidden" : null}, [accField("رأس مال الروضة (المبلغ عند البداية)", amount), accField("العملة", currencySel), accField("يبدأ الحساب من شهر", monthSel), accField("السنة", yearInput),
       h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ رأس المال"})])]);
     if(!base) form.removeAttribute("hidden");
     form.addEventListener("submit", async function(event){
@@ -842,10 +842,10 @@ function tabSheet(type, opts){
       }catch(error){ setMsg(msg, errText(error), "err"); }
     });
     var configured = ACC_CURRENCIES.filter(function(c){ return cash[c].configured; }).map(function(c){ return money(cash[c].opening) + " " + c + " (من " + MONTHS_AR[cash[c].start_month - 1] + " " + cash[c].start_year + ")"; });
-    capital.appendChild(h("div", {class:"a-card a-cash"}, [h("h3", {text:"رأس مال الكيتا والرصيد"}),
+    capital.appendChild(h("div", {class:"a-card a-cash"}, [h("h3", {text:"رأس مال الروضة والرصيد"}),
       h("div", {class:"a-kpis"}, kpis),
       configured.length ? h("p", {class:"hint", text:"رأس المال عند البداية: " + configured.join(" · ") + ". الرصيد = رأس المال + كل الوارد − كل الصادر."})
-        : h("p", {class:"a-review-note", text:"أدخل رأس مال الكيتا (المبلغ الموجود عند بدء العمل بالنظام)، وبعدها يُحسب الوارد والصادر منه ويظهر الرصيد في كل جدول لتتبّع أين ذهب المال."}),
+        : h("p", {class:"a-review-note", text:"أدخل رأس مال الروضة (المبلغ الموجود عند بدء العمل بالنظام)، وبعدها يُحسب الوارد والصادر منه ويظهر الرصيد في كل جدول لتتبّع أين ذهب المال."}),
       base ? h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تعديل رأس المال", onclick:function(){ form.hidden = !form.hidden; }})]) : "", form]));
   }
   function render(){
@@ -886,7 +886,7 @@ function tabSheet(type, opts){
     if(data.balance){
       var brows = codes.filter(function(c){ return data.balance[c]; }).map(function(c){ var b = data.balance[c]; return "<tr><td class='l'>الرصيد (" + c + ")</td><td>" + money(b.opening) + "</td><td>" + money(b.closing) + "</td></tr>"; }).join("");
       if(conv && conv.SYP && conv.SYP.opening !== undefined) brows += ACC_CURRENCIES.map(function(c){ var b = conv[c]; return "<tr><td class='l'>الرصيد الكلي بالـ" + (c === "SYP" ? "ليرة" : "دولار") + " (بعد التحويل)</td><td>" + money(b.opening) + "</td><td>" + money(b.closing) + "</td></tr>"; }).join("");
-      balanceTable = "<table style='margin-top:6px'><thead>" + accTh(["رصيد الكيتا", "رصيد أول " + label, "رصيد آخر " + label]) + "</thead><tbody>" + brows + "</tbody></table>";
+      balanceTable = "<table style='margin-top:6px'><thead>" + accTh(["رصيد الروضة", "رصيد أول " + label, "رصيد آخر " + label]) + "</thead><tbody>" + brows + "</tbody></table>";
     }
     var html = "<table><thead>" + accTh(isWeek ? ["البند / المادة", "التفاصيل", "البيان / الملاحظات", "المسؤول (من صرف / استلم)", "المبالغ الواردة", "المبالغ الصادرة", "العملة"] : ["البند / المادة", "التفاصيل", "البيان / الملاحظات", "المسؤول (من صرف / استلم)", "النوع", "المبلغ", "العملة"]) + "</thead><tbody>" + body + "</tbody></table>" +
       "<table style='margin-top:6px'><thead>" + accTh(["", "الوارد", "الصادر", "الصافي"]) + "</thead><tbody>" + totalRows + "</tbody></table>" + balanceTable;
