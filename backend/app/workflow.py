@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.accounting import AUTO_ITEMS, STANDARD_ITEMS, salary_row, sheet_range, unified_sheet, week_monday
+from app.accounting import AUTO_ITEMS, STANDARD_ITEMS, salary_row, sheet_range, todays_rate, unified_sheet, week_monday
 from app.database import get_session
 from app.fees import (
     CURRENCIES,
@@ -109,6 +109,13 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
     )
     openings = {row.currency for row in session.scalars(select(CashOpening)).all()}
     rates = session.scalar(select(func.count()).select_from(ExchangeRate)) or 0
+    if date.today() <= last or not rates:
+        # the system knows today's rate by itself: it asks the online feed when nothing is stored for today (at most every few minutes)
+        try:
+            if todays_rate(session, date.today()) is not None:
+                rates = max(rates, 1)
+        except Exception:  # the status list must work even when the feed or the table is not reachable
+            session.rollback()
     return {
         "first": first, "last": last, "children": children, "charged_children": len(charged_children), "charges": len(charges),
         "open_charges": open_charges, "review_fees": sum(1 for c in charges if c.needs_review), "payments_in_month": payments_in_month,

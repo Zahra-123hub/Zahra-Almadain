@@ -109,21 +109,43 @@ function tabBasics(){
     ["الإعلانات والدعاية", "وارد أو صادر"], ["مصروفات نثرية / أخرى", "مصروف"]];
 
   function rateCard(rates){
+    var current = rates.current;
     var today = localToday();
+    function readable(text){ var n = Number(text); return isFinite(n) ? n.toLocaleString("en-US", {maximumFractionDigits: 4}) : text; }
+    var head;
+    if(current){
+      var perPound = Number(current.rate) > 0 ? 100000 / Number(current.rate) : 0;
+      var source = current.stale ? (accEnglish() ? "Last known rate (the online source could not be reached)" : "آخر سعر معروف (تعذّر الوصول إلى مصدر الأسعار)") :
+        current.source === "auto" ? (accEnglish() ? "Fetched automatically from the internet" : "يجلبه النظام تلقائياً من الإنترنت") : (accEnglish() ? "Entered by hand" : "مُدخل يدوياً");
+      head = [h("div", {class:"a-kpis"}, [
+        h("div", {class:"a-kpi good"}, [h("span", {text:"1 دولار (USD) ="}), h("strong", {dir:"ltr", text:readable(current.rate) + " SYP"})]),
+        h("div", {class:"a-kpi"}, [h("span", {text:"100,000 ليرة (SYP) ≈"}), h("strong", {dir:"ltr", text:perPound.toFixed(2) + " USD"})])]),
+        h("p", {class:"hint", text:source + " · " + current.date})];
+    }else{
+      head = [h("p", {class:"a-msg err", text:"لم يتمكّن النظام من جلب سعر الصرف من الإنترنت الآن. جرّب «تحديث الآن»، أو أدخل السعر يدوياً."})];
+    }
     var rate = h("input", {type:"text", inputmode:"decimal", dir:"ltr", placeholder:"15000", "aria-label":"سعر الصرف", required:"required"});
     var date = h("input", {type:"date", value:today, max:today});
-    var form = h("form", {class:"a-form-grid"}, [accField("كم ليرة سورية تساوي 1 دولار", rate), accField("ابتداءً من تاريخ", date), h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ سعر الصرف"})])]);
+    var form = h("form", {class:"a-form-grid", hidden:current ? "hidden" : null}, [accField("كم ليرة سورية تساوي 1 دولار", rate), accField("ابتداءً من تاريخ", date), h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn sun", text:"حفظ سعر الصرف"})])]);
+    if(!current) form.hidden = false;
     form.addEventListener("submit", async function(event){
       event.preventDefault();
       var text = rate.value.trim().replace(/[٠-٩]/g, function(d){ return String(d.charCodeAt(0) - 1632); }).replace(",", ".");
       try{ await request("/api/admin/accounting/rates", {method:"PUT", body:JSON.stringify({effective_date:date.value, syp_per_usd:text})}); setMsg(msg, "تم حفظ سعر الصرف.", "ok"); ACC_REFRESH(); await load(); }
       catch(error){ setMsg(msg, errText(error), "err"); }
     });
-    var rows = rates.rates.slice(0, 8).map(function(r){ return h("tr", {}, [h("td", {class:"name", dir:"ltr", text:r.date}), h("td", {class:"num", dir:"ltr", text:r.rate})]); });
-    return h("div", {class:"a-card"}, [h("h3", {text:"سعر الصرف"}),
-      h("p", {class:"hint", text:rates.current ? "السعر الحالي: 1 دولار = " + rates.current.rate + " ليرة (منذ " + rates.current.date + ")" : "لا يوجد سعر صرف محفوظ بعد. يلزم لتحويل المبالغ بين الدولار والليرة."}),
-      h("p", {class:"hint", text:"الأسعار القديمة لا تتغير: كل عملية محوَّلة تحتفظ بسعر يومها."}), form,
-      rows.length ? h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, ["التاريخ", "السعر"].map(function(t){ return h("th", {text:t}); }))]), h("tbody", {}, rows)]))]) : ""]);
+    async function refresh(force){
+      try{ await request("/api/admin/accounting/rates/refresh" + (force ? "?force=true" : ""), {method:"POST"}); setMsg(msg, "تم تحديث سعر الصرف من الإنترنت.", "ok"); ACC_REFRESH(); await load(); }
+      catch(error){ setMsg(msg, errText(error), "err"); }
+    }
+    var buttons = [h("button", {type:"button", class:"a-btn sun", text:"تحديث الآن من الإنترنت", onclick:function(){ refresh(false); }})];
+    if(current && current.source === "manual") buttons.push(h("button", {type:"button", class:"a-btn ghost", text:"العودة إلى السعر التلقائي", onclick:function(){ refresh(true); }}));
+    buttons.push(h("button", {type:"button", class:"a-btn ghost", text:"تعديل يدوي (اختياري)", onclick:function(){ form.hidden = !form.hidden; }}));
+    var rows = rates.rates.slice(0, 8).map(function(r){ return h("tr", {}, [h("td", {class:"name", dir:"ltr", text:r.date}), h("td", {class:"num", dir:"ltr", text:readable(r.rate)}), h("td", {text:r.source === "auto" ? "تلقائي" : "يدوي"})]); });
+    return h("div", {class:"a-card"}, [h("h3", {text:"سعر الصرف"})].concat(head, [
+      h("p", {class:"hint", text:"يعرف النظام سعر اليوم بنفسه: يجلبه من الإنترنت مرة واحدة كل يوم ويحفظه، ويحوّل به الدولار إلى ليرة والعكس. لا تحتاج إلى إدخاله. السعر اليدوي يتقدّم على التلقائي ليوم واحد فقط."}),
+      h("p", {class:"hint", text:"الأسعار القديمة لا تتغير: كل عملية محوَّلة تحتفظ بسعر يومها."}), h("div", {class:"a-row"}, buttons), form,
+      rows.length ? h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, ["التاريخ", "السعر", "المصدر"].map(function(t){ return h("th", {text:t}); }))]), h("tbody", {}, rows)]))]) : ""]));
   }
   function openingCard(code, cash){
     var amount = accNumber(cash.opening, {"aria-label":"رصيد البداية", required:"required"});
