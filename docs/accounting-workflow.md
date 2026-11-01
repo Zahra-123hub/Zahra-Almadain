@@ -21,6 +21,12 @@ A bar at the top shows the steps; every step has a status and a mark when someth
 Status words: **معلّقة** (pending), **قيد التنفيذ** (in progress), **مكتملة** (complete). Issues (open fees, missing receipts, a cash
 difference, lines flagged for review, unpaid salaries) are listed under the step and marked with a red dot.
 
+## Children and employees are the work of the management
+
+Adding, changing and removing children (with their parents) and employees (with their usual salary and sign-in account) is done in the **management portal** (`/management/`, tabs الأطفال and الموظفون), not in the accounting.
+The accountant can read both lists, picks from them (a child for a fee, an employee for a salary line) and gets a clear message when a name is not saved yet. The server enforces this: the write endpoints for children and employees, the class of a child and the creation of a child or an employee by typing a name are refused for the accountant (403 / 404).
+The administrator keeps all rights.
+
 ## Rules that stay as they were
 
 - Only the month closing locks. A week is never locked; the weekly check is for control only.

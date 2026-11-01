@@ -20,7 +20,7 @@ each call is authorised again by the server (`require_platform_role`, `require_m
   for their child, notifications, the names of the other guardians of the child (no phone or e-mail), the notices of the management.
 - **Teacher**: only the children assigned to them (`teacher_child_links`). Report editor (draft, attachments, submit for review, status and a hint
   whether parents can see it), posts with a preview, teaching material with the storage meter (250 MB), notifications.
-- **Management**: numbers, children with group, teachers and parent accounts (assign and remove), groups (rename), registration requests
+- **Management**: adds, changes and removes the children (with father / mother and their portal account) and the employees (with salary and account); numbers, children with group, teachers and parent accounts (assign and remove), groups (rename), registration requests
   (approve with a one-time code, reject), approval of reports, notices for parents and teachers.
 - **Admin**: everything above plus accounts and roles, website content, settings, the system log (read only, CSV), the teachers' files (download, delete), a security overview (numbers only) and accounting (CSV export of fees and salaries).
 

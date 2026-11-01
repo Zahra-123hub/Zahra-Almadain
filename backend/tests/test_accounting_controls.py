@@ -45,9 +45,9 @@ class ControlsBase(unittest.TestCase):
         main.app.dependency_overrides[main.optional_session] = override
         self.client = TestClient(main.app)
         with Session(self.engine) as session:
-            roles = {n: Role(name=n) for n in ("admin", "teacher", "parent", "accountant")}
+            roles = {n: Role(name=n) for n in ("admin", "teacher", "parent", "accountant", "manager")}
             session.add_all(roles.values())
-            for username, role in (("acc", "accountant"), ("teacher1", "teacher"), ("parent1", "parent")):
+            for username, role in (("acc", "accountant"), ("teacher1", "teacher"), ("parent1", "parent"), ("mgr0", "manager")):
                 session.add(Account(username=username, password_hash=main.PASSWORD_HASHER.hash(PASSWORD), roles=[roles[role]]))
             session.add(Child(display_name="Amal", class_name="KG1"))
             session.commit()
@@ -57,7 +57,7 @@ class ControlsBase(unittest.TestCase):
                 "/api/platform/auth/login", json={"username": name, "password": PASSWORD}
             ).json()["access_token"]}
 
-        self.acc, self.teacher, self.parent = token("acc"), token("teacher1"), token("parent1")
+        self.acc, self.teacher, self.parent, self.mgr = token("acc"), token("teacher1"), token("parent1"), token("mgr0")
         self.admin = {"Authorization": "Bearer " + self.client.post(
             "/api/auth/login", json={"username": "legacy-admin", "password": "Qx9edbcb5679ea-9"}
         ).json()["access_token"]}
@@ -71,6 +71,19 @@ class ControlsBase(unittest.TestCase):
         self.env.stop()
 
     # ---- helpers ----
+    # ---- people are the work of the management ----
+    def hire(self, name, job="teacher", **extra):
+        """Adds an employee the way the management does (the accountant can no longer add people)."""
+        made = self.client.post("/api/admin/accounting/employees", headers=self.mgr, json={"name": name, "job_title": job, **extra})
+        self.assertIn(made.status_code, (201, 409), made.text)
+        return made
+
+    def enroll(self, name, class_name="KG1"):
+        """Adds a child with a father, the way the management does."""
+        made = self.client.post("/api/admin/accounting/children", headers=self.mgr, json={
+            "name": name, "class_name": class_name, "guardians": [{"relation": "father", "name": "Father of " + name}]})
+        self.assertEqual(made.status_code, 201, made.text)
+        return made.json()
     def charge(self, month=1, amount="1000", year=2026, currency="SYP"):
         child_id = self.client.get(F + "/children", headers=self.acc).json()[0]["id"]
         response = self.client.post(F + "/charges", headers=self.acc, json={
@@ -130,6 +143,8 @@ class ClosedMonthTests(ControlsBase):
         payment_id = paid.json()["payments"][0]["id"]
         saved = self.entry("2026-01-12", "buffet", income="50")
         entry_id = next(line["id"] for item in saved.json()["rows"] if item["key"] == "buffet" for line in [item] if line["id"])
+        self.hire("Rima")
+        self.hire("Dina")
         salary = self.client.post(A + "/salaries", headers=self.acc, json={
             "employee_name": "Rima", "year": 2026, "month": 1, "currency": "SYP", "base": "500", "paid_on": "2026-01-28"}).json()
         self.assertEqual(self.close().status_code, 201)

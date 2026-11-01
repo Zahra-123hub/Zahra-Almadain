@@ -18,8 +18,7 @@ class CommunityTests(ControlsBase):
     def setUp(self):
         super().setUp()
         with Session(self.engine) as session:
-            manager = Role(name="manager")
-            session.add(manager)
+            manager = session.scalar(select(Role).where(Role.name == "manager"))
             session.add(Account(username="manager1", password_hash=main.PASSWORD_HASHER.hash(PASSWORD), roles=[manager]))
             parent_role = session.scalar(select(Role).where(Role.name == "parent"))
             session.add(Account(username="parent2", password_hash=main.PASSWORD_HASHER.hash(PASSWORD), roles=[parent_role]))

@@ -5,6 +5,46 @@
 
   var TXT = {
     ar: {
+      kidsTitle: "إضافة طفل",
+      kidsHelp: "احفظ اسم كل طفل مرة واحدة مع والده أو والدته أو كليهما. إن ربطتَ ولي الأمر بحسابه في بوابة الأهل رأى تقارير طفله ومنشوراته الخاصة. الأطفال المحفوظون هنا يراهم المحاسب في الاشتراكات.",
+      oneOrBoth: "أضف الأب والأم، أو واحداً منهما فقط. اترك خانات الآخر فارغة إن لم يكن موجوداً.",
+      childName: "اسم الطفل",
+      className: "الصف / المجموعة",
+      birthDate: "تاريخ الميلاد",
+      father: "الأب",
+      mother: "الأم",
+      otherGuardian: "ولي أمر آخر",
+      relationLabel: "الصفة",
+      fullName: "الاسم الكامل",
+      phoneLabel: "الهاتف",
+      emailLabel: "البريد الإلكتروني (اختياري)",
+      loginAccount: "حساب بوابة الأهل",
+      noLogin: "بلا حساب دخول",
+      saveChild: "＋ حفظ الطفل",
+      childSaved: "تم حفظ الطفل وولي أمره.",
+      kidsList: "الأطفال المسجَّلون",
+      noKids: "لا يوجد أطفال محفوظون بعد.",
+      removeFromList: "إزالة من القائمة",
+      childRemoved: "أُزيل الطفل من القائمة (تبقى اشتراكاته ودفعاته القديمة).",
+      needGuardian: "أضف ولي أمر واحداً على الأقل: الأب أو الأم (أو الاثنين).",
+      nameFor: "اكتب اسم ",
+      both: "الأب والأم",
+      oneGuardian: "ولي أمر واحد",
+      empTitle: "إضافة موظف",
+      empHelp: "احفظ اسم كل موظف أو مدرّسة مرة واحدة، واربطه بحساب دخوله إن وُجد. يختار المحاسب منهم عند إنشاء الرواتب. الراتب الشهري المعتاد يُملأ منه سطر الراتب تلقائياً.",
+      jobTitle: "المسمى الوظيفي",
+      salaryLabel: "الراتب الشهري المعتاد",
+      salaryCurrency: "العملة",
+      empAccount: "حساب الدخول",
+      saveEmp: "＋ حفظ الموظف",
+      empSaved: "تم حفظ الموظف.",
+      empList: "الموظفون المسجَّلون",
+      noEmp: "لا يوجد موظفون محفوظون بعد.",
+      empRemoved: "أُزيل الموظف من القائمة (تبقى رواتبه القديمة).",
+      linkedTo: "مرتبط بـ",
+      teacherRole: "معلمة",
+      accountantRole: "محاسب",
+      followed: "وتحدّث راتب {n} سطر لم يُدفع بعد ليوافق الراتب الجديد.",
       searchChildren: "ابحث باسم الطفل أو ولي الأمر", noChildren: "لا يوجد أطفال بعد.", noResult: "لا توجد نتيجة لهذا البحث.",
       group: "المجموعة / الصف", groupHint: "اكتب اسم المجموعة (مثال: KG1). إن لم تكن موجودة تُنشأ تلقائياً.", save: "حفظ", saved: "تم الحفظ.",
       guardians: "أولياء الأمور", noGuardians: "لم يُسجَّل ولي أمر بعد.", father: "الأب", mother: "الأم", guardian: "ولي أمر",
@@ -21,6 +61,46 @@
       home: "الرئيسية", statParents: "حسابات الأهل", statTeachers: "المعلمات", statGroups: "المجموعات", statRequests: "طلبات بانتظار القرار", statReview: "تقارير بانتظار الاعتماد"
     },
     en: {
+      kidsTitle: "Add a child",
+      kidsHelp: "Save every child once with the father, the mother or both. If you tie a parent to their portal account they see the reports and private posts of their child. The accountant sees the saved children in the fees.",
+      oneOrBoth: "Add the father and the mother, or only one of them. Leave the other's fields empty if there is none.",
+      childName: "Child's name",
+      className: "Class / group",
+      birthDate: "Date of birth",
+      father: "Father",
+      mother: "Mother",
+      otherGuardian: "Another guardian",
+      relationLabel: "Role",
+      fullName: "Full name",
+      phoneLabel: "Phone",
+      emailLabel: "E-mail (optional)",
+      loginAccount: "Parents' portal account",
+      noLogin: "No sign-in account",
+      saveChild: "＋ Save child",
+      childSaved: "The child and the guardian are saved.",
+      kidsList: "Saved children",
+      noKids: "No children are saved yet.",
+      removeFromList: "Remove from the list",
+      childRemoved: "The child was removed from the list (old fees and payments stay).",
+      needGuardian: "Add at least one guardian: the father or the mother (or both).",
+      nameFor: "Write the name of: ",
+      both: "Father and mother",
+      oneGuardian: "One guardian",
+      empTitle: "Add an employee",
+      empHelp: "Save every employee or teacher once and tie them to their sign-in account if they have one. The accountant picks from them when creating the salaries. The usual monthly salary fills the salary line automatically.",
+      jobTitle: "Job title",
+      salaryLabel: "Usual monthly salary",
+      salaryCurrency: "Currency",
+      empAccount: "Sign-in account",
+      saveEmp: "＋ Save employee",
+      empSaved: "The employee is saved.",
+      empList: "Saved employees",
+      noEmp: "No employees are saved yet.",
+      empRemoved: "The employee was removed from the list (old salaries stay).",
+      linkedTo: "linked to",
+      teacherRole: "Teacher",
+      accountantRole: "Accountant",
+      followed: "and {n} unpaid salary line(s) follow the new salary.",
       searchChildren: "Search by child or parent name", noChildren: "No children yet.", noResult: "Nothing found for this search.",
       group: "Group / class", groupHint: "Type the group name (e.g. KG1). A new name creates the group.", save: "Save", saved: "Saved.",
       guardians: "Guardians", noGuardians: "No guardian recorded yet.", father: "Father", mother: "Mother", guardian: "Guardian",
@@ -75,7 +155,7 @@
 
     return function (shellMain) {
       var views = api.viewShell(shellMain, [
-        ["home", "navHome"], ["children", "navMChildren"], ["groups", "navGroups"], ["requests", "navRequests"],
+        ["home", "navHome"], ["kids", "navKids"], ["employees", "navEmployees"], ["children", "navAssign"], ["groups", "navGroups"], ["requests", "navRequests"],
         ["review", "navReview"], ["notices", "navNotices"], ["notifications", "navNotifications"], ["profile", "navProfile"]]);
       var panes = views.panes;
       var shared = {names: {}, groups: []};
@@ -84,7 +164,7 @@
       api.renderDashboardWelcome(panes.home);
       var stats = el("div", "p-stats");
       var tiles = {
-        children: api.statTile(t("statChildren"), "children", views.show),
+        children: api.statTile(t("statChildren"), "kids", views.show),
         parents: api.statTile(m("statParents"), "children", views.show),
         teachers: api.statTile(m("statTeachers"), "children", views.show),
         groups: api.statTile(m("statGroups"), "groups", views.show),
@@ -200,6 +280,228 @@
           drawChildren();
           return loadGroups();
         }).catch(function (error) { childList.innerHTML = ""; api.showError(childCard, error); });
+      }
+
+      // ---- children: add, change, remove (the work of the management, not of the accounting)
+      var ACCOUNTING = "/api/admin/accounting";
+      var kidsCard = el("section", "p-card");
+      kidsCard.appendChild(el("h2", "", m("kidsTitle")));
+      kidsCard.appendChild(el("p", "p-muted", m("kidsHelp")));
+      var kidForm = el("form", "p-kid-form");
+      kidsCard.appendChild(kidForm);
+      var kidsMsg = el("p", "p-alert");
+      kidsMsg.setAttribute("role", "status");
+      kidsCard.appendChild(kidsMsg);
+      var kidsListCard = el("section", "p-card");
+      kidsListCard.appendChild(el("h2", "", m("kidsList")));
+      var kidSearch = el("input"); kidSearch.type = "search"; kidSearch.placeholder = m("searchChildren"); kidSearch.setAttribute("aria-label", m("searchChildren"));
+      kidsListCard.appendChild(field(m("searchChildren"), kidSearch));
+      var kidsBox = el("div", "p-child-list");
+      kidsListCard.appendChild(kidsBox);
+      panes.kids.appendChild(kidsCard);
+      panes.kids.appendChild(kidsListCard);
+      var kids = [], parentAccounts = [];
+      var FIRST = function(){ return [["father", m("father")], ["guardian", m("otherGuardian")]]; };
+      function kidsNote(text, kind){ kidsMsg.className = "p-alert " + (kind || "success"); kidsMsg.textContent = text; }
+
+      /* father / other guardian, or mother: stays empty when the child has only one parent */
+      function guardianBlock(title, relations, saved){
+        saved = saved || {};
+        var relation = null;
+        if(relations.length > 1){
+          relation = el("select");
+          relations.forEach(function(r){ relation.appendChild(new Option(r[1], r[0])); });
+          relation.value = saved.relation || relations[0][0];
+        }
+        var name = textInput(saved.name, 120); name.placeholder = m("fullName"); name.autocomplete = "off";
+        var phone = textInput(saved.phone, 40); phone.type = "tel"; phone.dir = "ltr";
+        var email = textInput(saved.email, 254); email.type = "email"; email.dir = "ltr";
+        var account = el("select");
+        account.appendChild(new Option("— " + m("noLogin") + " —", ""));
+        parentAccounts.forEach(function(a){ account.appendChild(new Option(a.username, a.id)); });
+        account.value = saved.account_id || "";
+        var box = el("fieldset", "p-fieldset");
+        box.appendChild(el("legend", "", title));
+        if(relation) box.appendChild(field(m("relationLabel"), relation));
+        box.appendChild(field(m("fullName"), name)); box.appendChild(field(m("phoneLabel"), phone));
+        box.appendChild(field(m("emailLabel"), email)); box.appendChild(field(m("loginAccount"), account));
+        return {
+          node: box,
+          get: function(){
+            if(!(name.value.trim() || phone.value.trim() || email.value.trim() || account.value)) return null;
+            if(!name.value.trim()) throw new Error(m("nameFor") + title);
+            var out = {relation: relation ? relation.value : relations[0][0], name: name.value.trim(), phone: phone.value.trim(), email: email.value.trim(), account_id: account.value || null};
+            if(saved.id) out.id = saved.id;
+            return out;
+          }
+        };
+      }
+      function kidPayload(name, cls, birth, blocks){
+        var guardians = blocks.map(function(b){ return b.get(); }).filter(function(g){ return g; });
+        if(!guardians.length) throw new Error(m("needGuardian"));
+        return {name: name.trim(), class_name: cls.trim(), birth_date: birth || null, guardians: guardians};
+      }
+      var newName, newClass, newBirth, newFirst, newMother;
+      function drawKidForm(){
+        newName = textInput("", 120); newName.required = true; newName.autocomplete = "off";
+        newClass = textInput("", 60); newClass.setAttribute("list", "zm-groups");
+        newBirth = el("input"); newBirth.type = "date"; newBirth.max = new Date().toISOString().slice(0, 10);
+        newFirst = guardianBlock(m("father"), FIRST(), null);
+        newMother = guardianBlock(m("mother"), [["mother", m("mother")]], null);
+        kidForm.innerHTML = "";
+        [field(m("childName"), newName), field(m("className"), newClass), field(m("birthDate"), newBirth)].forEach(function(node){ kidForm.appendChild(node); });
+        kidForm.appendChild(el("p", "p-muted", m("oneOrBoth")));
+        kidForm.appendChild(newFirst.node); kidForm.appendChild(newMother.node);
+        var save = el("button", "p-button sun", m("saveChild")); save.type = "submit";
+        kidForm.appendChild(save);
+      }
+      kidForm.addEventListener("submit", function(event){
+        event.preventDefault();
+        var body;
+        try{ body = kidPayload(newName.value, newClass.value, newBirth.value, [newFirst, newMother]); }catch(error){ kidsNote(error.message, "error"); return; }
+        request(ACCOUNTING + "/children", {method: "POST", body: JSON.stringify(body)}).then(function(){
+          kidsNote(m("childSaved"), "success");
+          return reloadKids().then(function(){ drawKidForm(); reloadChildren(); loadStats(); });
+        }).catch(function(error){ kidsNote(api.errorMessage(error), "error"); });
+      });
+      function drawKids(){
+        kidsBox.innerHTML = "";
+        var word = kidSearch.value.trim().toLowerCase();
+        var shown = kids.filter(function(child){
+          return !word || child.name.toLowerCase().indexOf(word) !== -1 || child.guardians.some(function(g){ return (g.name + " " + g.phone).toLowerCase().indexOf(word) !== -1; });
+        });
+        if(!kids.length){ kidsBox.appendChild(el("p", "p-muted", m("noKids"))); return; }
+        if(!shown.length){ kidsBox.appendChild(el("p", "p-muted", m("noResult"))); return; }
+        shown.forEach(function(child){
+          var card = el("article", "p-card p-child");
+          var head = el("div", "p-child-head");
+          head.appendChild(el("span", "p-avatar sun", (child.name || "?").charAt(0)));
+          head.appendChild(el("h3", "", child.name));
+          head.appendChild(el("span", "p-badge" + (child.guardians.length === 2 ? " p-status-active" : ""), child.guardians.length === 2 ? m("both") : m("oneGuardian")));
+          card.appendChild(head);
+          var nameInput = textInput(child.name, 120), clsInput = textInput(child.class_name, 60), birthInput = el("input");
+          clsInput.setAttribute("list", "zm-groups");
+          birthInput.type = "date"; birthInput.value = child.birth_date || ""; birthInput.max = new Date().toISOString().slice(0, 10);
+          var firstSaved = child.guardians.filter(function(g){ return g.relation !== "mother"; })[0];
+          var motherSaved = child.guardians.filter(function(g){ return g.relation === "mother"; })[0];
+          var first = guardianBlock(m("father"), FIRST(), firstSaved), mother = guardianBlock(m("mother"), [["mother", m("mother")]], motherSaved);
+          [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput), first.node, mother.node].forEach(function(node){ card.appendChild(node); });
+          var row = el("div", "p-row");
+          row.appendChild(api.button(m("save"), "sun", function(){
+            var body;
+            try{ body = kidPayload(nameInput.value, clsInput.value, birthInput.value, [first, mother]); }catch(error){ note(card, error.message, "error"); return; }
+            request(ACCOUNTING + "/children/" + encodeURIComponent(child.id), {method: "PATCH", body: JSON.stringify(body)})
+              .then(function(){ kidsNote(m("saved"), "success"); return reloadKids().then(function(){ reloadChildren(); loadStats(); }); })
+              .catch(function(error){ note(card, api.errorMessage(error), "error"); });
+          }));
+          row.appendChild(sureButton(m("removeFromList"), function(){
+            return request(ACCOUNTING + "/children/" + encodeURIComponent(child.id), {method: "DELETE"}).then(function(){ kidsNote(m("childRemoved"), "success"); return reloadKids(); }).then(function(){ reloadChildren(); loadStats(); });
+          }, function(error){ note(card, api.errorMessage(error), "error"); }));
+          card.appendChild(row);
+          kidsBox.appendChild(card);
+        });
+      }
+      kidSearch.addEventListener("input", drawKids);
+      function reloadKids(){
+        return Promise.all([request(ACCOUNTING + "/children"), request(ACCOUNTING + "/parent-accounts")]).then(function(results){
+          kids = results[0]; parentAccounts = results[1];
+          if(!kidForm.children.length) drawKidForm();
+          drawKids();
+        }).catch(function(error){ kidsBox.innerHTML = ""; api.showError(kidsListCard, error); });
+      }
+
+      // ---- employees: add, change, remove (the accountant only picks from them)
+      var empCard = el("section", "p-card");
+      empCard.appendChild(el("h2", "", m("empTitle")));
+      empCard.appendChild(el("p", "p-muted", m("empHelp")));
+      var empForm = el("form", "p-kid-form");
+      empCard.appendChild(empForm);
+      var empMsg = el("p", "p-alert");
+      empMsg.setAttribute("role", "status");
+      empCard.appendChild(empMsg);
+      var empListCard = el("section", "p-card");
+      empListCard.appendChild(el("h2", "", m("empList")));
+      var empBox = el("div", "p-child-list");
+      empListCard.appendChild(empBox);
+      panes.employees.appendChild(empCard);
+      panes.employees.appendChild(empListCard);
+      var staffAccounts = [];
+      function empNote(text, kind){ empMsg.className = "p-alert " + (kind || "success"); empMsg.textContent = text; }
+      function accountSelect(current){
+        var select = el("select");
+        select.appendChild(new Option("— " + m("noLogin") + " —", ""));
+        staffAccounts.forEach(function(a){
+          var roles = a.roles.map(function(r){ return r === "teacher" ? m("teacherRole") : m("accountantRole"); }).join(" + ");
+          var other = a.linked_to && a.id !== current;
+          var option = new Option(a.username + " (" + roles + ")" + (other ? " — " + m("linkedTo") + " " + a.linked_to : ""), a.id);
+          option.disabled = !!other;
+          select.appendChild(option);
+        });
+        select.value = current || "";
+        return select;
+      }
+      function currencySelect(value){
+        var select = el("select");
+        ["SYP", "USD"].forEach(function(code){ select.appendChild(new Option(code, code)); });
+        select.value = value || "SYP";
+        return select;
+      }
+      function salaryBody(name, job, salary, currency, account){
+        return {name: name.trim(), job_title: job.trim(), salary: salary === "" ? null : salary, salary_currency: currency, account_id: account || null};
+      }
+      var eName, eJob, eSalary, eCurrency, eAccount;
+      function drawEmpForm(){
+        eName = textInput("", 120); eName.required = true; eName.placeholder = m("fullName"); eName.autocomplete = "off";
+        eJob = textInput("", 80);
+        eSalary = el("input"); eSalary.type = "number"; eSalary.min = "0"; eSalary.step = "0.01"; eSalary.inputMode = "decimal";
+        eCurrency = currencySelect("SYP"); eAccount = accountSelect("");
+        empForm.innerHTML = "";
+        [field(m("fullName"), eName), field(m("jobTitle"), eJob), field(m("salaryLabel"), eSalary), field(m("salaryCurrency"), eCurrency), field(m("empAccount"), eAccount)].forEach(function(node){ empForm.appendChild(node); });
+        var save = el("button", "p-button sun", m("saveEmp")); save.type = "submit";
+        empForm.appendChild(save);
+      }
+      empForm.addEventListener("submit", function(event){
+        event.preventDefault();
+        var body = salaryBody(eName.value, eJob.value, eSalary.value, eCurrency.value, eAccount.value);
+        if(body.salary === null){ delete body.salary; }
+        request(ACCOUNTING + "/employees", {method: "POST", body: JSON.stringify(body)}).then(function(){
+          empNote(m("empSaved"), "success");
+          return reloadEmployees().then(function(){ drawEmpForm(); });
+        }).catch(function(error){ empNote(api.errorMessage(error), "error"); });
+      });
+      function drawEmployees(list){
+        empBox.innerHTML = "";
+        if(!list.length){ empBox.appendChild(el("p", "p-muted", m("noEmp"))); return; }
+        list.forEach(function(person){
+          var card = el("article", "p-card p-child");
+          var head = el("div", "p-child-head");
+          head.appendChild(el("span", "p-avatar sun", (person.name || "?").charAt(0)));
+          head.appendChild(el("h3", "", person.name));
+          if(person.account_username) head.appendChild(el("span", "p-badge p-status-active", person.account_username));
+          card.appendChild(head);
+          var nameInput = textInput(person.name, 120), jobInput = textInput(person.job_title, 80);
+          var salaryInput = el("input"); salaryInput.type = "number"; salaryInput.min = "0"; salaryInput.step = "0.01"; salaryInput.inputMode = "decimal"; salaryInput.value = person.salary || "";
+          var currencyInput = currencySelect(person.salary_currency), accountInput = accountSelect(person.account_id);
+          [field(m("fullName"), nameInput), field(m("jobTitle"), jobInput), field(m("salaryLabel"), salaryInput), field(m("salaryCurrency"), currencyInput), field(m("empAccount"), accountInput)].forEach(function(node){ card.appendChild(node); });
+          var row = el("div", "p-row");
+          row.appendChild(api.button(m("save"), "sun", function(){
+            request(ACCOUNTING + "/employees/" + encodeURIComponent(person.id), {method: "PATCH", body: JSON.stringify(salaryBody(nameInput.value, jobInput.value, salaryInput.value, currencyInput.value, accountInput.value))})
+              .then(function(saved){ empNote(m("saved") + (saved.updated_salary_rows ? " " + m("followed").replace("{n}", saved.updated_salary_rows) : ""), "success"); return reloadEmployees(); })
+              .catch(function(error){ note(card, api.errorMessage(error), "error"); });
+          }));
+          row.appendChild(sureButton(m("removeFromList"), function(){
+            return request(ACCOUNTING + "/employees/" + encodeURIComponent(person.id), {method: "DELETE"}).then(function(){ empNote(m("empRemoved"), "success"); return reloadEmployees(); });
+          }, function(error){ note(card, api.errorMessage(error), "error"); }));
+          card.appendChild(row);
+          empBox.appendChild(card);
+        });
+      }
+      function reloadEmployees(){
+        return Promise.all([request(ACCOUNTING + "/employees"), request(ACCOUNTING + "/staff-accounts")]).then(function(results){
+          staffAccounts = results[1];
+          if(!empForm.children.length) drawEmpForm();
+          drawEmployees(results[0]);
+        }).catch(function(error){ empBox.innerHTML = ""; api.showError(empListCard, error); });
       }
 
       // ---- groups
@@ -335,6 +637,8 @@
       });
 
       // ---- report approval (the names of the children come from the children list)
+      reloadKids();
+      reloadEmployees();
       reloadChildren().then(function () { api.loadReviewQueue(panes.review); });
       loadRequests();
       loadNotices();

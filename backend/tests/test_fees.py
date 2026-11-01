@@ -96,13 +96,14 @@ class FeeApiTests(unittest.TestCase):
         main.app.dependency_overrides[main.optional_session] = override_get_session
         self.client = TestClient(main.app)
         with Session(self.engine) as session:
-            roles = {name: Role(name=name) for name in ("admin", "teacher", "parent", "accountant")}
+            roles = {name: Role(name=name) for name in ("admin", "teacher", "parent", "accountant", "manager")}
             session.add_all(roles.values())
             for username, role in (
                 ("accountant1", "accountant"),
                 ("teacher1", "teacher"),
                 ("parent1", "parent"),
                 ("platform-admin", "admin"),
+                ("manager1", "manager"),
             ):
                 session.add(
                     Account(
@@ -126,7 +127,7 @@ class FeeApiTests(unittest.TestCase):
                     json={"username": name, "password": "Qx5a6ba62b7e4b-9"},
                 ).json()["access_token"]
             }
-            for name in ("accountant1", "teacher1", "parent1", "platform-admin")
+            for name in ("accountant1", "teacher1", "parent1", "platform-admin", "manager1")
         }
         self.tokens["legacy"] = {
             "Authorization": "Bearer "
@@ -136,6 +137,7 @@ class FeeApiTests(unittest.TestCase):
             ).json()["access_token"]
         }
         self.acc = self.tokens["accountant1"]
+        self.mgr = self.tokens["manager1"]
         self.children = {
             c["display_name"]: c["id"]
             for c in self.client.get("/api/admin/fees/children", headers=self.acc).json()
@@ -326,44 +328,41 @@ class FeeApiTests(unittest.TestCase):
         ).json()
         self.assertEqual(only_kg2["created"], 1)
 
-    def test_new_row_with_new_child_class_and_first_payment(self):
+    def test_a_row_for_a_saved_child_with_a_first_payment_the_accountant_cannot_add_children(self):
+        # a child that is not saved cannot be created by typing the name: that is the work of the management
+        unknown = self.client.post(
+            "/api/admin/fees/charges", headers=self.acc,
+            json={"child_name": "Dana New", "class_name": "KG3", "year": 2026, "month": 10, "amount": "80", "currency": "USD"},
+        )
+        self.assertEqual(unknown.status_code, 404, unknown.text)
+        names = [c["display_name"] for c in self.client.get("/api/admin/fees/children", headers=self.acc).json()]
+        self.assertNotIn("Dana New", names)
+        made = self.client.post("/api/admin/accounting/children", headers=self.mgr, json={
+            "name": "Dana New", "class_name": "KG3", "guardians": [{"relation": "mother", "name": "Mother of Dana"}]})
+        self.assertEqual(made.status_code, 201, made.text)
         response = self.client.post(
-            "/api/admin/fees/charges",
-            headers=self.acc,
-            json={
-                "child_name": "Dana New",
-                "class_name": "KG3",
-                "year": 2026,
-                "month": 10,
-                "amount": "80",
-                "currency": "USD",
-                "payment": {"amount": "30", "paid_on": "2026-10-02", "receipt_no": "N-1", "note": "x"},
-            },
+            "/api/admin/fees/charges", headers=self.acc,
+            json={"child_name": "Dana New", "class_name": "KG1", "year": 2026, "month": 10, "amount": "80", "currency": "USD",
+                  "payment": {"amount": "30", "paid_on": "2026-10-02", "receipt_no": "N-1", "note": "x"}},
         )
         self.assertEqual(response.status_code, 201, response.text)
         row = response.json()
-        self.assertEqual((row["child_name"], row["class_name"]), ("Dana New", "KG3"))
+        self.assertEqual((row["child_name"], row["class_name"]), ("Dana New", "KG3"))  # the class stays what the management set
         self.assertEqual((row["paid"], row["remaining"], row["status"]), ("30.00", "50.00", "partial"))
-        # same child again (other currency) reuses the child instead of duplicating it
+        # same child again (other currency, other spelling) reuses the child
         again = self.client.post(
-            "/api/admin/fees/charges",
-            headers=self.acc,
+            "/api/admin/fees/charges", headers=self.acc,
             json={"child_name": "dana new", "year": 2026, "month": 10, "amount": "900000", "currency": "SYP"},
         )
         self.assertEqual(again.status_code, 201)
         self.assertEqual(again.json()["child_id"], row["child_id"])
-        names = [c["display_name"] for c in self.client.get("/api/admin/fees/children", headers=self.acc).json()]
-        self.assertEqual(names.count("Dana New"), 1)
-        # a first payment above the amount rejects the whole row (nothing is created)
+        # a first payment above the amount rejects the whole row
         bad = self.client.post(
-            "/api/admin/fees/charges",
-            headers=self.acc,
-            json={"child_name": "Eli Over", "year": 2026, "month": 10, "amount": "10", "currency": "USD",
-                  "payment": {"amount": "11", "paid_on": "2026-10-02"}},
+            "/api/admin/fees/charges", headers=self.acc,
+            json={"child_name": "Amal", "year": 2026, "month": 11, "amount": "10", "currency": "USD",
+                  "payment": {"amount": "11", "paid_on": "2026-11-02"}},
         )
         self.assertEqual(bad.status_code, 422)
-        names = [c["display_name"] for c in self.client.get("/api/admin/fees/children", headers=self.acc).json()]
-        self.assertNotIn("Eli Over", names)
         # neither a child nor a name
         self.assertEqual(
             self.client.post("/api/admin/fees/charges", headers=self.acc,
@@ -371,12 +370,10 @@ class FeeApiTests(unittest.TestCase):
             422,
         )
 
-    def test_child_class_can_be_set(self):
-        response = self.client.patch(
-            f"/api/admin/fees/children/{self.children['Amal']}",
-            headers=self.acc,
-            json={"class_name": "KG3"},
-        )
+    def test_child_class_can_be_set_by_the_management_not_by_the_accountant(self):
+        url = f"/api/admin/fees/children/{self.children['Amal']}"
+        self.assertEqual(self.client.patch(url, headers=self.acc, json={"class_name": "KG3"}).status_code, 403)
+        response = self.client.patch(url, headers=self.mgr, json={"class_name": "KG3"})
         self.assertEqual(response.json()["class_name"], "KG3")
 
 

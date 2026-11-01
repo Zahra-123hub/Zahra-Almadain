@@ -6,8 +6,8 @@ var ACC_ORDER = ["basics", "staff", "fees", "income", "expenses", "payroll", "re
 var ACC_STEP_TEXT = {
   dashboard: ["لوحة سير العمل", "ما تم وما بقي، والخطوة التالية"],
   basics: ["الإعدادات الأساسية", "العملات وسعر الصرف والصندوق والبنود"],
-  staff: ["الموظفون والرواتب", "بيانات الموظفين والرواتب المستحقة هذا الشهر"],
-  fees: ["اشتراكات الأطفال", "الأطفال والاشتراك الشهري والمتبقي على كل ولي أمر"],
+  staff: ["الموظفون والرواتب", "الموظفون تضيفهم الإدارة، وهنا تُنشأ رواتب الشهر المستحقة"],
+  fees: ["اشتراكات الأطفال", "الاشتراك الشهري والمتبقي على كل ولي أمر (الأطفال تضيفهم الإدارة)"],
   income: ["الإيرادات", "كل ما دخل الصندوق: الدفعات وغيرها"],
   expenses: ["المصروفات والإيصالات", "كل ما خرج من الصندوق مع التاريخ والبيان والإيصال"],
   payroll: ["دفع الرواتب", "الرواتب المدفوعة فعلاً ومطابقتها بالمستحق"],
@@ -207,13 +207,21 @@ function tabBasics(){
   return h("section", {}, [msg, body]);
 }
 
-/* ------------------------------------------------------------------ step 2: staff and the salaries they are owed */
+/* ------------------------------------------------------------------ the people are the work of the management */
+function accManagementNote(text){
+  var isAdmin = ACC_VIEWER && ACC_VIEWER.role === "admin";
+  var children = [h("p", {class:"hint", text:text})];
+  if(isAdmin) children.push(h("div", {class:"a-row"}, [h("a", {class:"a-btn ghost", href:"../management/", style:"text-decoration:none", text:"فتح بوابة الإدارة"})]));
+  return h("div", {class:"a-card a-hintcard"}, children);
+}
+
+/* ------------------------------------------------------------------ step 2: staff (read only) and the salaries they are owed */
 function staffStep(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var yearInput = h("input", {type:"number", min:"2000", max:"2100", value:String(ACC_PERIOD.year)});
   var monthSel = accSelect(accMonths(false), String(ACC_PERIOD.month));
   var card = h("div", {class:"a-card"}, [h("h3", {text:"الرواتب المستحقة للشهر"}),
-    h("p", {class:"hint", text:"بعد تسجيل الموظفين ورواتبهم الأساسية أنشئ سطر راتب لكل موظف لهذا الشهر دفعة واحدة. يُسجَّل الدفع الفعلي في خطوة «دفع الرواتب»."}),
+    h("p", {class:"hint", text:"بعد أن تسجّل الإدارة الموظفين ورواتبهم الأساسية أنشئ سطر راتب لكل موظف لهذا الشهر دفعة واحدة. يُسجَّل الدفع الفعلي في خطوة «دفع الرواتب»."}),
     h("div", {class:"a-form-grid"}, [accField("الشهر", monthSel), accField("السنة", yearInput)]),
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:"إنشاء رواتب الشهر لكل الموظفين", onclick:async function(){
       try{
@@ -222,7 +230,23 @@ function staffStep(){
         ACC_REFRESH();
       }catch(error){ setMsg(msg, errText(error), "err"); }
     }})]), msg]);
-  return h("section", {}, [card, tabEmployees()]);
+  var list = h("div", {});
+  var staffCard = h("div", {class:"a-card"}, [h("h3", {text:"الموظفون المسجَّلون"}), list]);
+  request("/api/admin/accounting/employees").then(function(rows){
+    if(!rows.length){ list.appendChild(h("div", {class:"a-empty", text:"لا يوجد موظفون مسجَّلون بعد. تضيفهم الإدارة."})); return; }
+    list.appendChild(h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+      h("thead", {}, [h("tr", {}, ["الاسم", "المسمى الوظيفي", "الراتب المعتاد", "حساب الدخول"].map(function(t){ return h("th", {text:t}); }))]),
+      h("tbody", {}, rows.map(function(e){
+        return h("tr", {}, [h("td", {class:"name", dir:"auto", text:e.name}), h("td", {dir:"auto", text:e.job_title || "—"}),
+          h("td", {class:"num", dir:"ltr", text:e.salary ? money(e.salary) + " " + (e.salary_currency || "") : "—"}), h("td", {text:e.account_username || "—"})]);
+      }))]))]));
+  }).catch(function(error){ setMsg(msg, errText(error), "err"); });
+  return h("section", {}, [accManagementNote("إضافة الموظفين وتعديل بياناتهم ورواتبهم الأساسية وحذفهم من مهام الإدارة، وليست من مهام المحاسبة. هنا تختار من المسجَّلين فقط."), card, staffCard]);
+}
+
+/* ------------------------------------------------------------------ step 3: the fees of the children (the children are added by the management) */
+function feesStep(){
+  return h("section", {}, [accManagementNote("إضافة الأطفال وأولياء أمورهم وتعديلهم من مهام الإدارة. هنا تحدّد الاشتراكات وتسجّل الدفعات للأطفال المسجَّلين فقط."), tabFees()]);
 }
 
 /* ------------------------------------------------------------------ sub tabs inside a step */
@@ -248,7 +272,7 @@ function accSubTabs(id, defs){
 function incomeStep(){
   var note = h("div", {class:"a-card a-hintcard"}, [
     h("p", {class:"hint", text:"دفعات أولياء الأمور تُسجَّل في خطوة «اشتراكات الأطفال» وتظهر هنا تلقائياً في بند الاشتراكات. سجّل هنا الإيرادات الأخرى (بوفيه، نقل، تبرعات...)."}),
-    h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تسجيل دفعة من ولي أمر", onclick:function(){ ACC_SUBSEL.fees = "charges"; ACC_GO("fees"); }})])]);
+    h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"تسجيل دفعة من ولي أمر", onclick:function(){ ACC_GO("fees"); }})])]);
   return h("section", {}, [note, tabSheet("day", {focus:"income"})]);
 }
 
@@ -452,7 +476,7 @@ function tabAccounting(){
     switch(ACC_STEP){
       case "basics": content = tabBasics(); break;
       case "staff": content = staffStep(); break;
-      case "fees": content = accSubTabs("fees", [["charges", "اشتراكات الأطفال", tabFees], ["kids", "الأطفال وأولياء الأمور", tabKids]]); break;
+      case "fees": content = feesStep(); break;
       case "income": content = incomeStep(); break;
       case "expenses": content = tabSheet("day", {focus:"expense"}); break;
       case "payroll": content = tabSalaries(); break;

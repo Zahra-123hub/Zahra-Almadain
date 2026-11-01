@@ -578,11 +578,13 @@ def require_publisher(
     return account.username
 
 
-def require_fees_user(
-    authorization: str | None = Header(default=None),
-    session: Session | None = Depends(optional_session),
+def fees_actor(
+    authorization: str | None,
+    session: Session | None,
+    allowed: tuple[str, ...],
+    refusal: str,
 ) -> fees.FeesActor:
-    """Fees are only for accountants and admins; everyone else gets 403."""
+    """Who is acting, when the sign-in must belong to one of the `allowed` roles (the server admin always counts as admin)."""
     secret = os.getenv("SESSION_SECRET", "")
     if not secret:
         raise HTTPException(503, "لم يتم إعداد جلسات المسؤول على الخادم.")
@@ -618,11 +620,34 @@ def require_fees_user(
     if portal_session is None or account is None:
         raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
     roles = {role.name for role in account.roles}
-    if "accountant" in roles:
-        return fees.FeesActor(account.id, account.username, "accountant")
-    if "admin" in roles:
-        return fees.FeesActor(account.id, account.username, "admin")
-    raise HTTPException(403, "ليس لديك صلاحية الوصول إلى الاشتراكات والرسوم.")
+    for name in allowed:  # the order of `allowed` decides the role shown when someone holds several
+        if name in roles:
+            return fees.FeesActor(account.id, account.username, name)
+    raise HTTPException(403, refusal)
+
+
+def require_fees_user(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """Fees and accounting are only for accountants and admins; everyone else gets 403."""
+    return fees_actor(authorization, session, ("accountant", "admin"), "ليس لديك صلاحية الوصول إلى الاشتراكات والرسوم.")
+
+
+def require_people_manager(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """Adding, changing and removing children and employees is the work of the management (and the admin), not of the accountant."""
+    return fees_actor(authorization, session, ("manager", "admin"), "إضافة الأطفال والموظفين وتعديلهم من مهام الإدارة.")
+
+
+def require_staff_reader(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """The lists of children and employees may be read by the accountant, the management and the admin."""
+    return fees_actor(authorization, session, ("accountant", "manager", "admin"), "ليس لديك صلاحية الاطّلاع على هذه القوائم.")
 
 
 def get_platform_principal(
@@ -771,8 +796,8 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
     )
 
 
-app.include_router(fees.build_router(require_fees_user))
-app.include_router(accounting.build_router(require_fees_user))
+app.include_router(fees.build_router(require_fees_user, require_people_manager))
+app.include_router(accounting.build_router(require_fees_user, require_people_manager, require_staff_reader))
 app.include_router(workflow.build_router(require_fees_user))
 
 

@@ -239,6 +239,22 @@ var EN_TEXT = {
   "قيمة غير مسموحة":"value not allowed",
   "مطلوب":"required",
   "قيمة غير صالحة":"invalid value",
+  "— اختر الطفل —":"— choose the child —",
+  "الطفل غير موجود في القائمة؟ إضافة الأطفال من مهام الإدارة (بوابة الإدارة).":"Child not in the list? Adding children is the work of the management (management portal).",
+  "اختر الطفل من القائمة. إن لم يكن موجوداً فالإدارة هي التي تضيفه.":"Choose the child from the list. If the child is not there, the management adds them.",
+  "الموظفون":"Employees",
+  "الموظفون تضيفهم الإدارة، وهنا تُنشأ رواتب الشهر المستحقة":"The management adds the employees; here the salaries owed for the month are created",
+  "الاشتراك الشهري والمتبقي على كل ولي أمر (الأطفال تضيفهم الإدارة)":"The monthly fee and what each parent still owes (children are added by the management)",
+  "فتح بوابة الإدارة":"Open the management portal",
+  "بعد أن تسجّل الإدارة الموظفين ورواتبهم الأساسية أنشئ سطر راتب لكل موظف لهذا الشهر دفعة واحدة. يُسجَّل الدفع الفعلي في خطوة «دفع الرواتب».":"After the management has saved the employees and their basic salaries, create this month's salary line for every employee at once. The actual payment is recorded in the step Salary payments.",
+  "الموظفون المسجَّلون":"Saved employees",
+  "لا يوجد موظفون مسجَّلون بعد. تضيفهم الإدارة.":"No employees are saved yet. The management adds them.",
+  "المسمى الوظيفي":"Job title",
+  "الراتب المعتاد":"Usual salary",
+  "حساب الدخول":"Sign-in account",
+  "إضافة الموظفين وتعديل بياناتهم ورواتبهم الأساسية وحذفهم من مهام الإدارة، وليست من مهام المحاسبة. هنا تختار من المسجَّلين فقط.":"Adding employees, changing their details and basic salaries and removing them is the work of the management, not of the accounting. Here you only pick from the saved people.",
+  "إضافة الأطفال وأولياء أمورهم وتعديلهم من مهام الإدارة. هنا تحدّد الاشتراكات وتسجّل الدفعات للأطفال المسجَّلين فقط.":"Adding children and their parents and changing them is the work of the management. Here you set the fees and record the payments for saved children only.",
+  "الموظف «":"The employee «",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -1276,7 +1292,7 @@ function tabFees(){
 
   // ----- add charge / generate forms ----------------------------------
   var NEW_CHILD = "__new__";
-  var addChild = select([[NEW_CHILD, "＋ طفل جديد (اكتب الاسم)"]], NEW_CHILD);
+  var addChild = select([[NEW_CHILD, "— اختر الطفل —"]], NEW_CHILD);
   var addName = h("input", {type:"text", maxlength:"120", placeholder:"الاسم الكامل للطفل", autocomplete:"off"});
   var addClass = h("input", {type:"text", maxlength:"60", placeholder:"مثال: الروضة الأولى / شعبة أ", list:"fee-classes", autocomplete:"off"});
   var classList = h("datalist", {id:"fee-classes"});
@@ -1290,15 +1306,9 @@ function tabFees(){
   var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
   var payNote = h("input", {type:"text", maxlength:"500"});
   var payPayer = h("input", {type:"text", maxlength:"120", placeholder:"من دفع؟", autocomplete:"off", list:"acc-payers"});
-  var nameField = field("اسم الطفل", addName), classField = field("الصف / الشعبة", addClass);
-  function syncNewChild(){
-    var isNew = addChild.value === NEW_CHILD;
-    nameField.hidden = !isNew; classField.hidden = !isNew;
-  }
-  addChild.addEventListener("change", syncNewChild);
   var addForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إضافة صف جديد إلى الجدول"}),
-    field("الطفل", addChild), nameField, classField,
+    field("الطفل", addChild), h("p", {class:"hint", text:"الطفل غير موجود في القائمة؟ إضافة الأطفال من مهام الإدارة (بوابة الإدارة)."}),
     field("الشهر", addMonth), field("السنة", addYear),
     field("الرسم المطلوب", addAmount), field("العملة", addCurrency),
     h("strong", {text:"دفعة أولى (اختياري)"}),
@@ -1309,10 +1319,8 @@ function tabFees(){
   addForm.addEventListener("submit", async function(event){
     event.preventDefault();
     var body = {year:Number(addYear.value), month:Number(addMonth.value), amount:addAmount.value, currency:addCurrency.value};
-    if(addChild.value === NEW_CHILD){
-      if(addName.value.trim().length < 2){ setMsg(msg, "اكتب اسم الطفل.", "err"); return; }
-      body.child_name = addName.value.trim(); body.class_name = addClass.value.trim();
-    } else body.child_id = addChild.value;
+    if(addChild.value === NEW_CHILD){ setMsg(msg, "اختر الطفل من القائمة. إن لم يكن موجوداً فالإدارة هي التي تضيفه.", "err"); return; }
+    body.child_id = addChild.value;
     if(payAmount.value && Number(payAmount.value) > 0){
       body.payment = {amount:payAmount.value, paid_on:payDate.value, receipt_no:payReceipt.value.trim() || null, note:payNote.value.trim(), payer_name:payPayer.value.trim()};
     }
@@ -1367,7 +1375,8 @@ function tabFees(){
     if(Number(row.paid) > 0) box.appendChild(refundForm(row));
     var amount = numberInput(row.amount);
     var cls = h("input", {type:"text", maxlength:"60", value:row.class_name});
-    box.appendChild(h("div", {class:"a-form-grid"}, [
+    var canEditChild = viewer.role === "admin";
+    var detailGrid = (h("div", {class:"a-form-grid"}, [
       field("تعديل الرسم المطلوب", amount),
       h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"حفظ الرسم", onclick:async function(){
         try{ await request("/api/admin/fees/charges/" + encodeURIComponent(row.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})}); setMsg(msg, "تم تعديل الرسم.", "ok"); await load(); }
@@ -1381,6 +1390,12 @@ function tabFees(){
         await request("/api/admin/fees/charges/" + encodeURIComponent(row.id), {method:"DELETE"}); openId = ""; setMsg(msg, "تم حذف الرسم.", "ok"); await load();
       })])
     ]));
+    box.appendChild(detailGrid);
+    if(!canEditChild){  // the class of a child belongs to the management
+      detailGrid.removeChild(detailGrid.children[2]);
+      var classButtons = detailGrid.children[2];
+      if(classButtons && classButtons.firstChild) classButtons.removeChild(classButtons.firstChild);
+    }
     return h("tr", {class:"a-detail-row"}, [box]);
   }
   function paymentLine(row, p){
@@ -1456,11 +1471,13 @@ function tabFees(){
     var name = h("input", {type:"text", maxlength:"120", value:r.child_name, placeholder:"اسم الطفل", "aria-label":"اسم الطفل"});
     var cls = h("input", {type:"text", maxlength:"60", value:r.class_name, placeholder:"الصف", "aria-label":"الصف"});
     var amount = numberInput(r.amount, {placeholder:"الرسم", "aria-label":"الرسم المطلوب"});
+    var canEditChild = viewer.role === "admin";
+    name.disabled = cls.disabled = !canEditChild;  // a wrong name or class is corrected by the management
     var save = h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
       try{
-        if(name.value.trim().length < 2){ setMsg(msg, "اكتب اسم الطفل (حرفان على الأقل).", "err"); return; }
+        if(canEditChild && name.value.trim().length < 2){ setMsg(msg, "اكتب اسم الطفل (حرفان على الأقل).", "err"); return; }
         if(amount.value !== "") await request("/api/admin/fees/charges/" + encodeURIComponent(r.id), {method:"PATCH", body:JSON.stringify({amount:amount.value})});
-        await request("/api/admin/fees/children/" + encodeURIComponent(r.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value.trim(), display_name:name.value.trim()})});
+        if(canEditChild) await request("/api/admin/fees/children/" + encodeURIComponent(r.child_id), {method:"PATCH", body:JSON.stringify({class_name:cls.value.trim(), display_name:name.value.trim()})});
         setMsg(msg, "تم حفظ التصحيح. اضغط «تمت المراجعة» بعد التأكد من السطر.", "ok"); await load();
       }catch(error){ setMsg(msg, errText(error), "err"); }
     }});
@@ -1523,13 +1540,12 @@ function tabFees(){
       var list = await request("/api/admin/fees/children");
       var keep = addChild.value;
       addChild.innerHTML = "";
-      addChild.appendChild(new Option("＋ طفل جديد (اكتب الاسم)", NEW_CHILD));
+      addChild.appendChild(new Option("— اختر الطفل —", NEW_CHILD));
       list.forEach(function(c){ addChild.appendChild(new Option(c.display_name + (c.class_name ? " — " + c.class_name : ""), c.id)); });
       addChild.value = Array.prototype.some.call(addChild.options, function(o){ return o.value === keep; }) ? keep : NEW_CHILD;
       classList.innerHTML = "";
       list.map(function(c){ return c.class_name; }).filter(function(v, i, a){ return v && a.indexOf(v) === i; })
         .forEach(function(name){ classList.appendChild(new Option(name)); });
-      syncNewChild();
     }catch(error){ setMsg(msg, errText(error), "err"); }
   }
 
