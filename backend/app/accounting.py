@@ -15,8 +15,9 @@ import httpx
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -50,6 +51,7 @@ from app.models import (
     ChildGuardian,
     ExchangeRate,
     Employee,
+    EntryReceipt,
     FeeCharge,
     FeePayment,
     PeriodLock,
@@ -122,6 +124,16 @@ STANDARD_ITEMS = [
     ("misc", "مصروفات نثرية / أخرى", "expense"),
 ]
 AUTO_ITEMS = {"registration", "salaries"}
+# receipts kept with a row: pdf or a picture, checked by their first bytes
+RECEIPT_TYPES = {
+    ".pdf": (b"%PDF-", "application/pdf"),
+    ".jpg": (b"\xff\xd8\xff", "image/jpeg"),
+    ".jpeg": (b"\xff\xd8\xff", "image/jpeg"),
+    ".png": (b"\x89PNG\r\n\x1a\n", "image/png"),
+    ".webp": (b"RIFF", "image/webp"),
+}
+MAX_RECEIPT_BYTES = 3 * 1024 * 1024
+MAX_RECEIPTS_PER_ENTRY = 5
 # Rows that can be income (e.g. buffet sales, bus fees) or expense: the user picks the type.
 CHOICE_ITEMS = {"buffet", "transport", "advertising"}
 
@@ -272,6 +284,7 @@ class EntryIn(BaseModel):
     expense: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     manual: bool = True
     person: str = Field(default="", max_length=120)  # who spent / received the money
+    receipt_no: str = Field(default="", max_length=60)  # number of the paper receipt
     replaces: uuid.UUID | None = None  # the row in the other currency this one takes over (the row changed its currency)
 
 
@@ -620,6 +633,27 @@ def is_locked(session: Session, start: date, end: date) -> bool:
     return any((lock.year, lock.month) in wanted for lock in locks)
 
 
+def attach_receipt_info(session: Session, items: list[dict[str, Any]]) -> None:
+    """Every stored line learns how many receipts it has and whether an expense still lacks one."""
+    ids = [uuid.UUID(line["id"]) for item in items for line in item["lines"] if line.get("id")]
+    counts: dict[str, int] = {}
+    numbers: dict[str, str] = {}
+    if ids:
+        counts = {str(entry_id): number for entry_id, number in session.execute(
+            select(EntryReceipt.entry_id, func.count()).where(EntryReceipt.entry_id.in_(ids)).group_by(EntryReceipt.entry_id)).all()}
+        numbers = {str(entry_id): text for entry_id, text in session.execute(
+            select(AccountingEntry.id, AccountingEntry.receipt_no).where(AccountingEntry.id.in_(ids))).all()}
+    for item in items:
+        for line in item["lines"]:
+            key = line.get("id")
+            line["receipts"] = counts.get(key, 0) if key else 0
+            line["receipt_no"] = numbers.get(key, "") if key else ""
+            line["needs_receipt"] = bool(
+                key and not line.get("auto") and not line.get("rolled") and Decimal(line["expense"]) > 0
+                and not line["receipts"] and not line["receipt_no"]
+            )
+
+
 def unified_sheet(session: Session, period_type: str, year: int, month: int, week_start: date | None) -> dict[str, Any]:
     """One sheet with both currencies: every item has one line per currency that has something in it (a blank line in
     pounds when it has nothing), then the totals per currency, the same totals converted into the other currency,
@@ -649,6 +683,7 @@ def unified_sheet(session: Session, period_type: str, year: int, month: int, wee
             else:
                 items.append({"key": "custom", "label": row["label"], "auto": False, "choice": False, "custom": True, "lines": [line]})
     items.extend(rolled.values())
+    attach_receipt_info(session, items)
     totals = {code: sheets[code]["totals"] for code in CURRENCIES}
 
     # cash balance at the start and the end of the period (only when the opening capital has been entered)
@@ -1252,6 +1287,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         entry.details = payload.details.strip()
         entry.note = payload.note.strip()
         entry.person = payload.person.strip()
+        entry.receipt_no = payload.receipt_no.strip()
         entry.entered_by = actor.name[:80]
         entry.income, entry.expense = money(payload.income), money(payload.expense)
         entry.manual = payload.manual
@@ -1305,9 +1341,100 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         ensure_open(session, *months_between(*sheet_range(entry.period_type, entry.year, entry.month, entry.week_start)))
         log(session, actor, "entry.delete", entry.id,
             f"{entry.period_type} {entry.item_key} {entry.currency} {money(entry.income)}/{money(entry.expense)} «{entry.details[:60]}»")
+        session.execute(delete(EntryReceipt).where(EntryReceipt.entry_id == entry.id))
         session.delete(entry)
         session.commit()
         return build_sheet(session, period[0], period[1], period[2], period[3], period[4])
+
+    # ---- receipts of the rows ------------------------------------------------------
+
+    def entry_months(entry: AccountingEntry) -> list[tuple[int, int]]:
+        return months_between(*sheet_range(entry.period_type, entry.year, entry.month, entry.week_start))
+
+    def receipt_data(item: EntryReceipt) -> dict[str, Any]:
+        return {
+            "id": str(item.id), "name": item.original_name, "size": item.byte_size, "type": item.media_type,
+            "uploaded_by": item.uploaded_by, "created_at": item.created_at.isoformat() if item.created_at else "",
+        }
+
+    @router.get("/entries/{entry_id}/receipts")
+    def list_receipts(
+        entry_id: uuid.UUID,
+        response: Response,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, Any]]:
+        response.headers["Cache-Control"] = "no-store"
+        if session.get(AccountingEntry, entry_id) is None:
+            raise HTTPException(404, "السطر غير موجود.")
+        items = session.scalars(select(EntryReceipt).where(EntryReceipt.entry_id == entry_id).order_by(EntryReceipt.created_at)).all()
+        return [receipt_data(item) for item in items]
+
+    @router.post("/entries/{entry_id}/receipts", status_code=201)
+    async def add_receipt(
+        entry_id: uuid.UUID,
+        file: UploadFile = File(...),
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        entry = session.get(AccountingEntry, entry_id)
+        if entry is None:
+            raise HTTPException(404, "السطر غير موجود.")
+        ensure_open(session, *entry_months(entry))
+        name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+        extension = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+        known = RECEIPT_TYPES.get(extension)
+        if not name or len(name) > 180 or known is None:
+            raise HTTPException(422, "الملفات المقبولة للإيصالات: PDF أو صورة (JPG, PNG, WEBP).")
+        contents = await file.read(MAX_RECEIPT_BYTES + 1)
+        await file.close()
+        if not contents:
+            raise HTTPException(422, "الملف فارغ.")
+        if len(contents) > MAX_RECEIPT_BYTES:
+            raise HTTPException(413, "حجم الإيصال أكبر من 3 ميغابايت.")
+        if not contents.startswith(known[0]):
+            raise HTTPException(422, "محتوى الملف لا يطابق نوعه.")
+        count = session.scalar(select(func.count()).select_from(EntryReceipt).where(EntryReceipt.entry_id == entry_id)) or 0
+        if count >= MAX_RECEIPTS_PER_ENTRY:
+            raise HTTPException(409, "الحد الأقصى 5 إيصالات للسطر الواحد.")
+        item = EntryReceipt(entry_id=entry_id, original_name=name, media_type=known[1], byte_size=len(contents), contents=contents, uploaded_by=actor.name[:80])
+        session.add(item)
+        session.flush()
+        log(session, actor, "receipt.add", entry_id, f"{name[:80]} ({len(contents)} bytes)")
+        session.commit()
+        session.refresh(item)
+        return receipt_data(item)
+
+    @router.get("/receipts/{receipt_id}/download")
+    def download_receipt(
+        receipt_id: uuid.UUID,
+        _actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        item = session.get(EntryReceipt, receipt_id)
+        if item is None:
+            raise HTTPException(404, "الإيصال غير موجود.")
+        return Response(
+            content=item.contents, media_type=item.media_type,
+            headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(item.original_name, safe=""), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+    @router.delete("/receipts/{receipt_id}", status_code=204)
+    def delete_receipt(
+        receipt_id: uuid.UUID,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        item = session.get(EntryReceipt, receipt_id)
+        if item is None:
+            raise HTTPException(404, "الإيصال غير موجود.")
+        entry = session.get(AccountingEntry, item.entry_id)
+        if entry is not None:
+            ensure_open(session, *entry_months(entry))
+        log(session, actor, "receipt.delete", item.entry_id, item.original_name[:80])
+        session.delete(item)
+        session.commit()
+        return Response(status_code=204)
 
     # ---- children and their parents -----------------------------------------
 
@@ -1517,6 +1644,12 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             raise HTTPException(422, "لا يمكن إغلاق شهر لم ينتهِ بعد.")
         if session.scalar(select(PeriodLock.id).where(PeriodLock.year == payload.year, PeriodLock.month == payload.month)):
             raise HTTPException(409, "هذا الشهر مغلق بالفعل.")
+        from app.workflow import close_blockers  # imported here: workflow itself builds on this module
+
+        blockers = close_blockers(session, payload.year, payload.month)
+        if blockers:
+            raise HTTPException(422, "لا يمكن إغلاق الشهر قبل مراجعة الأسطر المعلّمة «تحتاج مراجعة» (اشتراكات: {} · رواتب: {}).".format(
+                next((b["count"] for b in blockers if b["kind"] == "review_fees"), 0), next((b["count"] for b in blockers if b["kind"] == "review_salaries"), 0)))
         snapshot: dict[str, Any] = {}
         for code in CURRENCIES:
             totals = Ledger.load(session, code).sheet("month", payload.year, payload.month, None)["totals"]

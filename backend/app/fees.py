@@ -179,43 +179,45 @@ class ChildClassIn(BaseModel):
 NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?$")
 
 
-def xlsx_response(filename: str, sheet_title: str, header: list[str], rows: list[list[Any]]) -> Response:
-    """A real Excel file (opens correctly in any language setting, unlike a comma CSV): bold header, frozen first row, filter,
-    right-to-left sheet, numbers as numbers. Text is always stored as text, so a cell like "=SUM(A1)" can never run as a formula."""
+def workbook_response(filename: str, sheets: list[tuple[str, list[str], list[list[Any]]]]) -> Response:
+    """A real Excel file with one or more sheets (opens correctly in any language setting, unlike a comma CSV): bold header,
+    frozen first row, filter, right-to-left sheets, numbers as numbers. Text is always stored as text, so a cell like
+    "=SUM(A1)" can never run as a formula."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
     book = Workbook()
-    sheet = book.active
-    sheet.title = sheet_title[:31]
-    sheet.sheet_view.rightToLeft = True
-    sheet.append(header)
-    for cell in sheet[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="17408F")
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    widths = [len(str(title)) + 4 for title in header]
-    for values in rows:
-        sheet.append([None] * len(values))
-        line = sheet.max_row
-        for index, value in enumerate(values, start=1):
-            cell = sheet.cell(row=line, column=index)
-            text = "" if value is None else str(value)
-            if text and NUMBER_RE.match(text):
-                number = Decimal(text)
-                cell.value = int(number) if number == number.to_integral_value() and "." not in text else float(number)
-                cell.number_format = "#,##0.00" if "." in text else "#,##0"
-                cell.alignment = Alignment(horizontal="right")
-            else:
-                cell.value = text
-                cell.data_type = "s"
-            widths[index - 1] = max(widths[index - 1], min(len(text) + 2, 60))
-    for index, width in enumerate(widths, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
-    sheet.freeze_panes = "A2"
-    if rows:
-        sheet.auto_filter.ref = sheet.dimensions
+    book.remove(book.active)
+    for title, header, rows in sheets:
+        sheet = book.create_sheet(title[:31])
+        sheet.sheet_view.rightToLeft = True
+        sheet.append(header)
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="17408F")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        widths = [len(str(name)) + 4 for name in header]
+        for values in rows:
+            sheet.append([None] * len(values))
+            line = sheet.max_row
+            for index, value in enumerate(values, start=1):
+                cell = sheet.cell(row=line, column=index)
+                text = "" if value is None else str(value)
+                if text and NUMBER_RE.match(text):
+                    number = Decimal(text)
+                    cell.value = int(number) if number == number.to_integral_value() and "." not in text else float(number)
+                    cell.number_format = "#,##0.00" if "." in text else "#,##0"
+                    cell.alignment = Alignment(horizontal="right")
+                else:
+                    cell.value = text
+                    cell.data_type = "s"
+                widths[index - 1] = max(widths[index - 1], min(len(text) + 2, 60))
+        for index, width in enumerate(widths, start=1):
+            sheet.column_dimensions[get_column_letter(index)].width = width
+        sheet.freeze_panes = "A2"
+        if rows:
+            sheet.auto_filter.ref = sheet.dimensions
     buffer = io.BytesIO()
     book.save(buffer)
     return Response(
@@ -223,6 +225,10 @@ def xlsx_response(filename: str, sheet_title: str, header: list[str], rows: list
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
+
+
+def xlsx_response(filename: str, sheet_title: str, header: list[str], rows: list[list[Any]]) -> Response:
+    return workbook_response(filename, [(sheet_title, header, rows)])
 
 
 def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
