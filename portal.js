@@ -4,12 +4,14 @@
   var root = document.getElementById("portal");
   var portalType = root.dataset.portal;
   var isLogin = portalType === "login";
-  var isTeacherPortal = portalType === "teacher";
-  var storeKey = isTeacherPortal ? "zm-teacher-session" : "zm-parent-session";
-  var langKey = isLogin ? "zm-login-lang" : isTeacherPortal ? "zm-teacher-lang" : "zm-parent-lang";
+  var isManagerPortal = portalType === "manager";
+  var isTeacherPortal = portalType === "teacher" || isManagerPortal;
+  var storeKey = isManagerPortal ? "zm-manager-session" : isTeacherPortal ? "zm-teacher-session" : "zm-parent-session";
+  var langKey = isLogin ? "zm-login-lang" : isManagerPortal ? "zm-manager-lang" : isTeacherPortal ? "zm-teacher-lang" : "zm-parent-lang";
   var PORTAL_TARGETS = {
     admin: {key: "zm-admin-session", lang: "zm-admin-lang", url: "../admin/"},
     teacher: {key: "zm-teacher-session", lang: "zm-teacher-lang", url: "../teachers/"},
+    manager: {key: "zm-manager-session", lang: "zm-manager-lang", url: "../management/"},
     parent: {key: "zm-parent-session", lang: "zm-parent-lang", url: "../parents/"},
     accountant: {key: "zm-accountant-session", lang: "zm-accountant-lang", url: "../admin/"}
   };
@@ -21,7 +23,7 @@
   var requestForm = {guardian_name: "", email: "", phone: "", child_name: "", child_birth_date: "", relationship_to_child: "", notes: ""};
   var editingReportId = "";
   var teacherControls = null;
-  var formState = {username:"", password:"", invitation_code:"", child_id:"", title:"", body:""};
+  var formState = {username:"", password:"", invitation_code:"", child_id:"", title:"", body:"", activities:"", meals:""};
   var loginAlert = "";
   var expiredNotice = false;
   (function readCodeFromLink() {
@@ -71,6 +73,16 @@
       teacherPortalIntro: "أدِر تقارير الأطفال المعيّنين لك وموادك التعليمية من حسابك.",
       accountLabel: "الحساب",
       activeAccount: "حساب مفعّل",
+      managerTitle: "بوابة الإدارة", managerWelcome: "تابع الأطفال والمجموعات وطلبات التسجيل، واعتمد التقارير، وانشر إعلانات الروضة.",
+      navNotifications: "الإشعارات", navProfile: "حسابي", navReportsAll: "التقارير اليومية", navGuardians: "أولياء الأمور",
+      navMChildren: "الأطفال", navGroups: "المجموعات", navRequests: "طلبات التسجيل", navNotices: "الإعلانات",
+      activities: "الأنشطة والملاحظات", meals: "الوجبات", notifTitle: "الإشعارات", markAll: "تحديد الكل كمقروء", noNotifications: "لا توجد إشعارات.",
+      announcementsTitle: "إعلانات الروضة", profileTitle: "بيانات الحساب", roleLabel: "الصلاحيات", languageLabel: "اللغة",
+      storageTitle: "مساحة التخزين", preview: "معاينة", previewTitle: "هكذا سيظهر المنشور للأهل",
+      noGuardians: "لا توجد بيانات أولياء أمور لهذا الطفل بعد.", you: "أنت", hasAccount: "لديه حساب في البوابة", noAccount: "بلا حساب في البوابة",
+      allChildren: "كل الأطفال", latestReport: "آخر تقرير", noReportsYet: "لا توجد تقارير منشورة بعد.", showReports: "عرض التقارير",
+      guardiansNote: "لإضافة ولي أمر أو سحب صلاحية الاطّلاع، تواصل مع إدارة الروضة.", statReports: "تقارير منشورة", statUnread: "إشعارات جديدة",
+      relFather: "الأب", relMother: "الأم", relGuardian: "ولي أمر", recentReports: "أحدث التقارير",
       navLabel: "التنقل", navHome: "الرئيسية", navChildren: "أطفالي", navPosts: "المنشورات", navMaterial: "المواد التعليمية", navReports: "الأطفال والتقارير", navReview: "الاعتماد",
       visibleToParents: "ظاهر للأهل", hiddenFromParents: "لا يظهر للأهل بعد", statChildren: "الأطفال", statPosts: "منشورات الروضة", statDrafts: "مسودات", statSubmitted: "قيد المراجعة", statPublished: "منشورة للأهل", openSection: "فتح",
       welcomeUser: "مرحباً",
@@ -149,6 +161,16 @@
       teacherPortalIntro: "Manage reports for your assigned children and your learning materials.",
       accountLabel: "Account",
       activeAccount: "Active account",
+      managerTitle: "Management portal", managerWelcome: "Follow children, groups and registration requests, approve reports and publish notices to the families.",
+      navNotifications: "Notifications", navProfile: "My account", navReportsAll: "Daily reports", navGuardians: "Guardians",
+      navMChildren: "Children", navGroups: "Groups", navRequests: "Requests", navNotices: "Notices",
+      activities: "Activities and observations", meals: "Meals", notifTitle: "Notifications", markAll: "Mark all as read", noNotifications: "No notifications.",
+      announcementsTitle: "Kindergarten notices", profileTitle: "Account details", roleLabel: "Permissions", languageLabel: "Language",
+      storageTitle: "Storage space", preview: "Preview", previewTitle: "This is how parents will see the post",
+      noGuardians: "No guardian details for this child yet.", you: "You", hasAccount: "Has a portal account", noAccount: "No portal account",
+      allChildren: "All children", latestReport: "Latest report", noReportsYet: "No published reports yet.", showReports: "Show reports",
+      guardiansNote: "To add a guardian or withdraw access, please contact the kindergarten office.", statReports: "Published reports", statUnread: "New notifications",
+      relFather: "Father", relMother: "Mother", relGuardian: "Guardian", recentReports: "Latest reports",
       navLabel: "Navigation", navHome: "Home", navChildren: "My children", navPosts: "Posts", navMaterial: "Teaching material", navReports: "Children and reports", navReview: "Approvals",
       visibleToParents: "Visible to parents", hiddenFromParents: "Not visible to parents yet", statChildren: "Children", statPosts: "Kindergarten posts", statDrafts: "Drafts", statSubmitted: "In review", statPublished: "Published to parents", openSection: "Open",
       welcomeUser: "Welcome",
@@ -230,6 +252,14 @@
     "Executable and web-page files are not allowed.": {ar:"لا يُسمح برفع الملفات التنفيذية أو صفحات الويب.",en:"Executable and web-page files are not allowed."},
     "The uploaded file contents do not match its file type.": {ar:"محتوى الملف لا يطابق نوعه.",en:"The uploaded file contents do not match its file type."},
     "The file exceeds its size or storage limit.": {ar:"تجاوز الملف الحد المسموح للحجم أو التخزين.",en:"The file exceeds its size or storage limit."}
+  };
+  var NOTIF = {
+    ar: {report_published: "نُشر تقرير جديد عن {s}", report_returned: "أُعيد تقرير {s} إليك للتعديل", report_submitted: "تقرير بانتظار الاعتماد: {s}", post_new: "منشور جديد: {s}", announcement: "إعلان جديد: {s}"},
+    en: {report_published: "A new report about {s} is published", report_returned: "The report about {s} was returned to you", report_submitted: "A report awaits approval: {s}", post_new: "New post: {s}", announcement: "New notice: {s}"}
+  };
+  var ROLE_NAMES = {
+    ar: {parent: "ولي أمر", teacher: "معلمة", manager: "إدارة", admin: "مدير", accountant: "محاسب"},
+    en: {parent: "Parent", teacher: "Teacher", manager: "Management", admin: "Administrator", accountant: "Accountant"}
   };
   var t = function (key) { return copy[lang][key] || key; };
   /* ---- password helpers: strength meter, show/hide, Caps Lock warning ---- */
@@ -332,15 +362,15 @@
     current.focus();
   }
   function portalLabel(name) {
-    return name === "teacher" ? t("teacherTitle") : name === "parent" ? t("parentTitle") : name === "accountant" ? t("accountantTitle") : name;
+    return name === "manager" ? t("managerTitle") : name === "teacher" ? t("teacherTitle") : name === "parent" ? t("parentTitle") : name === "accountant" ? t("accountantTitle") : name;
   }
   function otherPortals() {
     var list = [];
     try { list = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); } catch (e) {}
-    var current = isTeacherPortal ? "teacher" : "parent";
+    var current = isManagerPortal ? "manager" : isTeacherPortal ? "teacher" : "parent";
     return list.filter(function (name) { return name !== current && PORTAL_TARGETS[name] && name !== "admin"; });
   }
-  function portalTitle() { return isLogin ? t("loginTitle") : isTeacherPortal ? t("teacherTitle") : t("parentTitle"); }
+  function portalTitle() { return isLogin ? t("loginTitle") : isManagerPortal ? t("managerTitle") : isTeacherPortal ? t("teacherTitle") : t("parentTitle"); }
   var element = function (tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -428,7 +458,7 @@
       });
     }
     if (token && profile && !isLogin) actions.appendChild(button(t("changePassword"), "outline", toggleChangePassword));
-    if (token && isTeacherPortal) {
+    if (token && isTeacherPortal && !isManagerPortal) {
       var publishLink = element("a", "p-button sun", t("publishSite"));
       publishLink.href = "../admin/";
       actions.appendChild(publishLink);
@@ -459,7 +489,7 @@
     var intro = element("section", "p-auth-intro");
     intro.appendChild(element("span", "p-auth-kicker", t("secureAccess")));
     intro.appendChild(element("h2", "", portalTitle()));
-    intro.appendChild(element("p", "", isLogin ? t("loginIntro") : isTeacherPortal ? t("teacherPortalIntro") : t("parentPortalIntro")));
+    intro.appendChild(element("p", "", isLogin ? t("loginIntro") : isManagerPortal ? t("managerWelcome") : isTeacherPortal ? t("teacherPortalIntro") : t("parentPortalIntro")));
     intro.appendChild(element("div", "p-auth-note", isTeacherPortal ? t("signInHint") : t("parentSignupHint")));
     layout.appendChild(intro);
     var card = element("section", "p-card p-auth-card");
@@ -682,6 +712,7 @@
     nav.setAttribute("aria-label", t("navLabel"));
     var panes = {};
     function show(key) {
+      if (!panes[key]) return;
       activeView = key;
       Object.keys(panes).forEach(function (name) { panes[name].hidden = name !== key; });
       Array.prototype.forEach.call(nav.children, function (item) {
@@ -700,7 +731,15 @@
     defs.forEach(function (def) { main.appendChild(panes[def[0]]); });
     if (!panes[activeView]) activeView = defs[0][0];
     show(activeView);
-    return {panes: panes, show: show};
+    function setBadge(key, count) {
+      Array.prototype.forEach.call(nav.children, function (item) {
+        if (item.dataset.view !== key) return;
+        var old = item.querySelector(".p-count");
+        if (old) old.remove();
+        if (count > 0) item.appendChild(element("span", "p-count", count > 99 ? "99+" : String(count)));
+      });
+    }
+    return {panes: panes, show: show, setBadge: setBadge};
   }
   function statTile(label, view, goto) {
     var tile = element("button", "p-stat");
@@ -712,12 +751,110 @@
     tile.number = number;
     return tile;
   }
+  function dateLabel(value) { return value ? new Date(value).toLocaleDateString(lang === "ar" ? "ar" : "en") : ""; }
+  function notificationText(item) {
+    var map = NOTIF[lang] || NOTIF.ar;
+    return (map[item.kind] || item.kind).replace("{s}", item.subject || "");
+  }
+  function renderNotifications(pane, goto, onCount) {
+    var card = element("section", "p-card");
+    var head = element("div", "p-row p-between");
+    head.appendChild(element("h2", "", t("notifTitle")));
+    var markAll = button(t("markAll"), "outline", function () {
+      request("/api/platform/notifications/read-all", {method: "POST"}).then(load).catch(function (error) { showError(card, error); });
+    });
+    head.appendChild(markAll);
+    card.appendChild(head);
+    var list = element("div", "p-notif-list");
+    card.appendChild(list);
+    pane.appendChild(card);
+    function load() {
+      return request("/api/platform/notifications").then(function (data) {
+        if (onCount) onCount(data.unread);
+        list.innerHTML = "";
+        markAll.hidden = !data.unread;
+        if (!data.items.length) { list.appendChild(element("p", "p-muted", t("noNotifications"))); return; }
+        data.items.forEach(function (item) {
+          var row = element("button", "p-notif" + (item.read ? "" : " unread"));
+          row.type = "button";
+          row.appendChild(element("span", "p-notif-text", notificationText(item)));
+          row.appendChild(element("small", "p-muted", dateLabel(item.created_at)));
+          row.addEventListener("click", function () {
+            var done = item.read ? Promise.resolve() : request("/api/platform/notifications/" + encodeURIComponent(item.id) + "/read", {method: "POST"});
+            done.then(function () { if (item.view) goto(item.view); return load(); }).catch(function (error) { showError(card, error); });
+          });
+          list.appendChild(row);
+        });
+      }).catch(function (error) { list.innerHTML = ""; showError(card, error); });
+    }
+    list.appendChild(element("p", "p-muted", t("loading")));
+    return load();
+  }
+  function renderProfile(pane) {
+    var card = element("section", "p-card");
+    card.appendChild(element("h2", "", t("profileTitle")));
+    var facts = element("dl", "p-facts");
+    function fact(label, value) { facts.appendChild(element("dt", "", label)); facts.appendChild(element("dd", "", value)); }
+    fact(t("username"), profile.username);
+    var names = ROLE_NAMES[lang] || ROLE_NAMES.ar;
+    fact(t("roleLabel"), profile.roles.map(function (role) { return names[role] || role; }).join(lang === "ar" ? "، " : ", "));
+    card.appendChild(facts);
+    var langRow = element("div", "p-row");
+    langRow.appendChild(element("span", "p-muted", t("languageLabel")));
+    [["ar", "العربية"], ["en", "English"]].forEach(function (choice) {
+      var item = button(choice[1], lang === choice[0] ? "sun" : "outline", function () { if (lang !== choice[0]) setLanguage(choice[0]); });
+      item.lang = choice[0];
+      langRow.appendChild(item);
+    });
+    card.appendChild(langRow);
+    var passwordRow = element("div", "p-row");
+    passwordRow.appendChild(button(t("changePassword"), "outline", function () { toggleChangePassword(); window.scrollTo(0, 0); }));
+    card.appendChild(passwordRow);
+    pane.appendChild(card);
+  }
+  function renderAnnouncements(container) {
+    request("/api/platform/announcements").then(function (items) {
+      if (!items.length) return;
+      var card = element("section", "p-card");
+      card.appendChild(element("h2", "", t("announcementsTitle")));
+      items.slice(0, 3).forEach(function (item) {
+        var row = element("article", "p-report");
+        row.appendChild(element("h3", "", item.title));
+        row.appendChild(element("small", "p-muted", dateLabel(item.created_at)));
+        if (item.body) row.appendChild(element("p", "", item.body));
+        card.appendChild(row);
+      });
+      container.appendChild(card);
+    }).catch(function () {});
+  }
+  function renderStorage(pane) {
+    var card = element("section", "p-card");
+    card.appendChild(element("h2", "", t("storageTitle")));
+    var bar = element("progress", "p-storage");
+    bar.max = 100; bar.value = 0;
+    var text = element("p", "p-muted", t("loading"));
+    card.appendChild(bar); card.appendChild(text);
+    pane.insertBefore(card, pane.firstChild);
+    request("/api/platform/teacher/storage").then(function (usage) {
+      bar.value = Math.min(100, Math.round(usage.used_bytes * 100 / usage.limit_bytes));
+      text.textContent = fileSizeLabel(usage.used_bytes) + " / " + fileSizeLabel(usage.limit_bytes);
+    }).catch(function (error) { text.remove(); showError(card, error); });
+  }
+  function appendReportDetails(item, report) {
+    [["activities", report.activities], ["meals", report.meals]].forEach(function (pair) {
+      if (!pair[1]) return;
+      var line = element("p", "p-detail");
+      line.appendChild(element("strong", "", t(pair[0]) + ": "));
+      line.appendChild(document.createTextNode(pair[1]));
+      item.appendChild(line);
+    });
+  }
   function renderDashboardWelcome(main) {
     var welcome = element("section", "p-dashboard-welcome");
     var copy = element("div");
     copy.appendChild(element("span", "p-auth-kicker", t("portalOverview")));
     copy.appendChild(element("h2", "", t("welcomeUser") + " " + profile.username));
-    copy.appendChild(element("p", "", isTeacherPortal ? t("teacherWelcome") : t("parentWelcome")));
+    copy.appendChild(element("p", "", isManagerPortal ? t("managerWelcome") : isTeacherPortal ? t("teacherWelcome") : t("parentWelcome")));
     welcome.appendChild(copy);
     welcome.appendChild(element("span", "p-badge p-status-active", t("activeAccount")));
     main.appendChild(welcome);
@@ -746,6 +883,7 @@
         body.dir = report.language.split("-")[0] === "ar" ? "rtl" : "ltr";
       }
       card.appendChild(body);
+      appendReportDetails(card, report);
       container.appendChild(card);
     });
   }
@@ -855,7 +993,21 @@
       var fileLabel = element("label", "p-field", t("postFiles")); fileLabel.appendChild(fileInput); form.appendChild(fileLabel);
       var message = element("p", "p-alert"); message.setAttribute("role", "status");
       var submit = element("button", "p-button sun", t("publishPost")); submit.type = "submit";
-      form.appendChild(submit); form.appendChild(message);
+      var previewBox = element("div", "p-preview");
+      previewBox.hidden = true;
+      var previewButton = button(t("preview"), "outline", function () {
+        previewBox.innerHTML = "";
+        previewBox.hidden = false;
+        previewBox.appendChild(element("h3", "", t("previewTitle")));
+        var article = element("article", "p-report");
+        var kind = scope.value === "general" ? t("scopeGeneral") : (childSelect.selectedIndex > 0 ? childSelect.options[childSelect.selectedIndex].text : t("scopeChild"));
+        article.appendChild(element("span", "p-badge", kind));
+        article.appendChild(element("h3", "", title.value.trim() || "—"));
+        article.appendChild(element("p", "", body.value));
+        Array.prototype.forEach.call(fileInput.files, function (file) { article.appendChild(element("small", "p-muted", "— " + file.name + " (" + fileSizeLabel(file.size) + ")")); article.appendChild(element("br")); });
+        previewBox.appendChild(article);
+      });
+      form.appendChild(previewButton); form.appendChild(submit); form.appendChild(previewBox); form.appendChild(message);
       form.addEventListener("submit", function (event) {
         event.preventDefault();
         if (fileInput.files.length > 5) { message.className = "p-alert error"; message.textContent = t("postFiles"); return; }
@@ -880,46 +1032,136 @@
     loadPosts();
   }
   function renderParent(shellMain) {
-    var views = viewShell(shellMain, [["home", "navHome"], ["children", "navChildren"], ["posts", "navPosts"]]);
+    var views = viewShell(shellMain, [["home", "navHome"], ["children", "navChildren"], ["reports", "navReportsAll"], ["posts", "navPosts"], ["notifications", "navNotifications"], ["guardians", "navGuardians"], ["profile", "navProfile"]]);
+    var data = {children: [], reports: {}};
     var home = views.panes.home;
     renderDashboardWelcome(home);
     var stats = element("div", "p-stats");
-    var childTile = statTile(t("statChildren"), "children", views.show);
-    var postTile = statTile(t("statPosts"), "posts", views.show);
-    stats.appendChild(childTile); stats.appendChild(postTile);
+    var tiles = {
+      children: statTile(t("statChildren"), "children", views.show),
+      reports: statTile(t("statReports"), "reports", views.show),
+      unread: statTile(t("statUnread"), "notifications", views.show),
+      posts: statTile(t("statPosts"), "posts", views.show)
+    };
+    Object.keys(tiles).forEach(function (key) { stats.appendChild(tiles[key]); });
     home.appendChild(stats);
-    request("/api/platform/children").then(function (list) { childTile.number.textContent = list.length; }).catch(function () { childTile.number.textContent = "–"; });
-    request("/api/platform/parent/posts").then(function (list) { postTile.number.textContent = list.length; }).catch(function () { postTile.number.textContent = "–"; });
-    var main = views.panes.children;
+    renderAnnouncements(home);
+    var recentCard = element("section", "p-card");
+    home.appendChild(recentCard);
     renderParentPosts(views.panes.posts);
-    var listCard = element("section", "p-card");
-    listCard.appendChild(element("h2", "", t("children")));
-    listCard.appendChild(element("p", "p-muted", t("loading")));
-    main.appendChild(listCard);
-    request("/api/platform/children").then(function (children) {
-      listCard.innerHTML = "";
-      listCard.appendChild(element("h2", "", t("children")));
-      if (!children.length) {
-        listCard.appendChild(element("p", "p-muted", t("noChildren")));
-        return;
-      }
-      var grid = element("div", "p-grid");
-      children.forEach(function (child) {
-        var card = element("article", "p-card p-child");
-        var childHead = element("div", "p-child-head");
-        childHead.appendChild(element("span", "p-avatar sun", (child.display_name || "?").charAt(0)));
-        childHead.appendChild(element("h3", "", child.display_name));
-        card.appendChild(childHead);
-        card.appendChild(element("p", "p-muted", t("loading")));
-        grid.appendChild(card);
-        request("/api/platform/children/" + encodeURIComponent(child.id) + "/reports").then(function (reports) {
-          card.querySelectorAll(".p-muted").forEach(function (node) { node.remove(); });
-          renderReports(card, reports);
-          if (!reports.length) card.appendChild(element("p", "p-muted", t("noReports")));
-        }).catch(function (error) { card.querySelectorAll(".p-muted").forEach(function (node) { node.remove(); }); showError(card, error); });
+    request("/api/platform/parent/posts").then(function (list) { tiles.posts.number.textContent = list.length; }).catch(function () { tiles.posts.number.textContent = "–"; });
+    renderNotifications(views.panes.notifications, views.show, function (count) { tiles.unread.number.textContent = count; views.setBadge("notifications", count); })
+      .catch(function () { tiles.unread.number.textContent = "–"; });
+    renderProfile(views.panes.profile);
+
+    var filterId = "";
+    var childPane = views.panes.children, reportPane = views.panes.reports, guardPane = views.panes.guardians;
+    [childPane, reportPane, guardPane, recentCard].forEach(function (pane) { pane.appendChild(element("p", "p-muted", t("loading"))); });
+
+    function ownReports(childId) {
+      var all = [];
+      data.children.forEach(function (child) {
+        if (childId && child.id !== childId) return;
+        (data.reports[child.id] || []).forEach(function (report) { all.push({child: child, report: report}); });
       });
-      listCard.appendChild(grid);
-    }).catch(function (error) { listCard.innerHTML = ""; listCard.appendChild(element("h2", "", t("children"))); showError(listCard, error); });
+      all.sort(function (a, b) { return String(b.report.published_at || b.report.created_at).localeCompare(String(a.report.published_at || a.report.created_at)); });
+      return all;
+    }
+    function reportArticle(entry, showChild) {
+      var item = element("article", "p-report");
+      var meta = element("div", "p-report-meta");
+      if (showChild) meta.appendChild(element("span", "p-badge", entry.child.display_name));
+      meta.appendChild(element("small", "p-muted", dateLabel(entry.report.published_at || entry.report.created_at)));
+      item.appendChild(meta);
+      item.appendChild(element("h3", "", entry.report.title));
+      var body = element("p", "", entry.report.body);
+      if (entry.report.language) { body.lang = entry.report.language; body.dir = entry.report.language.split("-")[0] === "ar" ? "rtl" : "ltr"; }
+      item.appendChild(body);
+      appendReportDetails(item, entry.report);
+      return item;
+    }
+    function drawHome() {
+      recentCard.innerHTML = "";
+      recentCard.appendChild(element("h2", "", t("recentReports")));
+      var latest = ownReports("").slice(0, 3);
+      if (!latest.length) recentCard.appendChild(element("p", "p-muted", data.children.length ? t("noReportsYet") : t("noChildren")));
+      latest.forEach(function (entry) { recentCard.appendChild(reportArticle(entry, data.children.length > 1)); });
+      tiles.children.number.textContent = data.children.length;
+      tiles.reports.number.textContent = ownReports("").length;
+    }
+    function drawChildren() {
+      childPane.innerHTML = "";
+      if (!data.children.length) { var empty = element("section", "p-card"); empty.appendChild(element("p", "p-muted", t("noChildren"))); childPane.appendChild(empty); return; }
+      var grid = element("div", "p-grid");
+      data.children.forEach(function (child) {
+        var card = element("article", "p-card p-child");
+        var head = element("div", "p-child-head");
+        head.appendChild(element("span", "p-avatar sun", (child.display_name || "?").charAt(0)));
+        head.appendChild(element("h3", "", child.display_name));
+        card.appendChild(head);
+        var list = data.reports[child.id] || [];
+        card.appendChild(element("p", "p-muted", t("latestReport")));
+        card.appendChild(element("p", "", list.length ? list[0].title + " · " + dateLabel(list[0].published_at || list[0].created_at) : t("noReportsYet")));
+        card.appendChild(button(t("showReports"), "outline", function () { filterId = child.id; drawReports(); views.show("reports"); window.scrollTo(0, 0); }));
+        grid.appendChild(card);
+      });
+      childPane.appendChild(grid);
+    }
+    function drawReports() {
+      reportPane.innerHTML = "";
+      var card = element("section", "p-card");
+      card.appendChild(element("h2", "", t("navReportsAll")));
+      if (data.children.length > 1) {
+        var select = element("select");
+        select.setAttribute("aria-label", t("child"));
+        select.appendChild(new Option(t("allChildren"), ""));
+        data.children.forEach(function (child) { select.appendChild(new Option(child.display_name, child.id)); });
+        select.value = filterId;
+        select.addEventListener("change", function () { filterId = select.value; drawReports(); });
+        var wrap = element("div", "p-field"); wrap.appendChild(select); card.appendChild(wrap);
+      }
+      var entries = ownReports(filterId);
+      if (!entries.length) card.appendChild(element("p", "p-muted", t("noReportsYet")));
+      entries.forEach(function (entry) { card.appendChild(reportArticle(entry, data.children.length > 1 && !filterId)); });
+      reportPane.appendChild(card);
+    }
+    function drawGuardians() {
+      guardPane.innerHTML = "";
+      if (!data.children.length) { var empty = element("section", "p-card"); empty.appendChild(element("p", "p-muted", t("noChildren"))); guardPane.appendChild(empty); return; }
+      var relation = {father: t("relFather"), mother: t("relMother"), guardian: t("relGuardian")};
+      data.children.forEach(function (child) {
+        var card = element("section", "p-card");
+        card.appendChild(element("h2", "", child.display_name));
+        var list = element("div", "p-content-list");
+        card.appendChild(list);
+        card.appendChild(element("p", "p-muted", t("guardiansNote")));
+        guardPane.appendChild(card);
+        request("/api/platform/parent/children/" + encodeURIComponent(child.id) + "/guardians").then(function (people) {
+          if (!people.length) list.appendChild(element("p", "p-muted", t("noGuardians")));
+          people.forEach(function (person) {
+            var row = element("div", "p-content-item");
+            var text = element("div");
+            text.appendChild(element("strong", "", person.name));
+            text.appendChild(element("small", "p-muted", relation[person.relation] || person.relation));
+            row.appendChild(text);
+            row.appendChild(element("span", "p-badge" + (person.is_me ? " p-status-active" : ""), person.is_me ? t("you") : person.has_account ? t("hasAccount") : t("noAccount")));
+            list.appendChild(row);
+          });
+        }).catch(function (error) { showError(card, error); });
+      });
+    }
+    request("/api/platform/children").then(function (children) {
+      data.children = children;
+      return Promise.all(children.map(function (child) {
+        return request("/api/platform/children/" + encodeURIComponent(child.id) + "/reports").then(function (list) { data.reports[child.id] = list; });
+      }));
+    }).then(function () {
+      [childPane, reportPane, guardPane].forEach(function (pane) { pane.innerHTML = ""; });
+      drawHome(); drawChildren(); drawReports(); drawGuardians();
+    }).catch(function (error) {
+      [childPane, reportPane, guardPane, recentCard].forEach(function (pane) { pane.innerHTML = ""; showError(pane, error); });
+      tiles.children.number.textContent = tiles.reports.number.textContent = "–";
+    });
   }
   function downloadTeacherContent(contentId, adminMode, filename) {
     var basePath = adminMode ? "/api/platform/admin/teacher-content/" : "/api/platform/teacher/content/";
@@ -1040,10 +1282,14 @@
     if (canTeach) defs.push(["reports", "navReports"]);
     if (canTeach || isAdmin) defs.push(["posts", "navPosts"], ["material", "navMaterial"]);
     if (canReview) defs.push(["review", "navReview"]);
+    defs.push(["notifications", "navNotifications"], ["profile", "navProfile"]);
     var views = viewShell(shellMain, defs);
     renderDashboardWelcome(views.panes.home);
     var stats = element("div", "p-stats");
     views.panes.home.appendChild(stats);
+    renderAnnouncements(views.panes.home);
+    renderNotifications(views.panes.notifications, views.show, function (count) { views.setBadge("notifications", count); }).catch(function () {});
+    renderProfile(views.panes.profile);
     if (canTeach) {
       var tiles = {
         children: statTile(t("statChildren"), "reports", views.show),
@@ -1069,6 +1315,7 @@
     var main = views.panes.reports;
     renderTeacherPosts(views.panes.posts, false);
     renderTeacherContent(views.panes.material, false);
+    renderStorage(views.panes.material);
     var childrenCard = element("section", "p-card");
     childrenCard.appendChild(element("h2", "", t("children")));
     childrenCard.appendChild(element("p", "p-muted", t("loading")));
@@ -1103,6 +1350,14 @@
         body.value = formState.body;
         body.addEventListener("input", function () { formState.body = body.value; });
         var bodyLabel = element("label", "p-field", t("body")); bodyLabel.appendChild(body); form.appendChild(bodyLabel);
+        var activities = element("textarea");
+        activities.maxLength = 1000; activities.rows = 3; activities.value = formState.activities;
+        activities.addEventListener("input", function () { formState.activities = activities.value; });
+        var activitiesLabel = element("label", "p-field", t("activities")); activitiesLabel.appendChild(activities); form.appendChild(activitiesLabel);
+        var meals = element("input");
+        meals.type = "text"; meals.maxLength = 500; meals.value = formState.meals;
+        meals.addEventListener("input", function () { formState.meals = meals.value; });
+        var mealsLabel = element("label", "p-field", t("meals")); mealsLabel.appendChild(meals); form.appendChild(mealsLabel);
         var attachmentLabel = element("label", "p-field", t("reportAttachments"));
         var attachmentInput = element("input");
         attachmentInput.type = "file"; attachmentInput.multiple = true;
@@ -1118,7 +1373,7 @@
         cancelEdit.type = "button"; cancelEdit.hidden = !editingReportId;
         form.lastChild.appendChild(cancelEdit);
         form.appendChild(message);
-        teacherControls = {select:select,title:title,body:body,form:form,save:save,submit:submit,cancel:cancelEdit,message:message};
+        teacherControls = {select:select,title:title,body:body,activities:activities,meals:meals,form:form,save:save,submit:submit,cancel:cancelEdit,message:message};
         function saveReport(submitForReview) {
           if (!select.value || !title.value.trim() || !body.value.trim()) {
             message.className = "p-alert error";
@@ -1140,6 +1395,7 @@
           var uploadedAttachments = [];
           var reportPayload = {
             title: title.value.trim(), body: body.value.trim(),
+            activities: activities.value.trim(), meals: meals.value.trim(),
             submit_for_review: submitForReview && attachmentFiles.length === 0
           };
           if (!updating) reportPayload.child_id = select.value;
@@ -1169,15 +1425,15 @@
               if (submitForReview && attachmentFiles.length) {
                 return request("/api/platform/teacher/reports/" + encodeURIComponent(reportId), {
                   method:"PATCH",
-                  body:JSON.stringify({title:title.value.trim(),body:body.value.trim(),submit_for_review:true})
+                  body:JSON.stringify({title:title.value.trim(),body:body.value.trim(),activities:activities.value.trim(),meals:meals.value.trim(),submit_for_review:true})
                 });
               }
             }).then(function () {
               message.className = "p-alert success";
               message.textContent = updating ? t("reportUpdated") : submitForReview ? t("reportSent") : t("reportSaved");
-              title.value = ""; body.value = "";
+              title.value = ""; body.value = ""; activities.value = ""; meals.value = "";
               attachmentInput.value = "";
-              formState.title = ""; formState.body = "";
+              formState.title = ""; formState.body = ""; formState.activities = ""; formState.meals = "";
               editingReportId = "";
               cancelEdit.hidden = true;
               select.disabled = false;
@@ -1199,8 +1455,8 @@
         form.addEventListener("submit", function (event) { event.preventDefault(); saveReport(true); });
         cancelEdit.addEventListener("click", function () {
           editingReportId = "";
-          formState.title = ""; formState.body = ""; formState.child_id = "";
-          title.value = ""; body.value = ""; attachmentInput.value = ""; select.value = ""; select.disabled = false;
+          formState.title = ""; formState.body = ""; formState.child_id = ""; formState.activities = ""; formState.meals = "";
+          title.value = ""; body.value = ""; activities.value = ""; meals.value = ""; attachmentInput.value = ""; select.value = ""; select.disabled = false;
           cancelEdit.hidden = true; message.textContent = "";
         });
         if (editingReportId) select.disabled = true;
@@ -1228,13 +1484,17 @@
         body.lang = report.language || "ar";
         body.dir = body.lang.split("-")[0] === "ar" ? "rtl" : "ltr";
         item.appendChild(body);
+        appendReportDetails(item, report);
         if (report.status === "draft" || report.status === "rejected") {
           item.appendChild(button(t("edit"), "outline", function () {
             editingReportId = report.id;
             formState.child_id = report.child_id;
             formState.title = report.title;
             formState.body = report.body;
+            formState.activities = report.activities || ""; formState.meals = report.meals || "";
             if (teacherControls) {
+              teacherControls.activities.value = formState.activities;
+              teacherControls.meals.value = formState.meals;
               teacherControls.select.value = report.child_id;
               teacherControls.select.disabled = true;
               teacherControls.title.value = report.title;
@@ -1276,9 +1536,13 @@
       if (!reports.length) card.appendChild(element("p", "p-muted", t("noReview")));
       reports.forEach(function (report) {
         var item = element("article", "p-report");
+        var meta = element("div", "p-report-meta");
+        if (childNames[report.child_id]) meta.appendChild(element("span", "p-badge", childNames[report.child_id]));
+        if (report.created_at) meta.appendChild(element("small", "p-muted", dateLabel(report.created_at)));
+        item.appendChild(meta);
         item.appendChild(element("h3", "", report.title));
-        if (report.created_at) item.appendChild(element("small", "p-muted", new Date(report.created_at).toLocaleDateString(lang === "ar" ? "ar" : "en")));
         item.appendChild(element("p", "", report.body));
+        appendReportDetails(item, report);
         ["published", "rejected"].forEach(function (status) {
           item.appendChild(button(t(status === "published" ? "approve" : "reject"), status === "published" ? "sun" : "outline", function () {
             request("/api/platform/review/reports/" + encodeURIComponent(report.id), {
@@ -1293,9 +1557,11 @@
   function loadDashboard() {
     return request("/api/platform/auth/me").then(function (data) {
       profile = data;
-      var allowed = isTeacherPortal
-        ? data.roles.indexOf("teacher") !== -1 || data.roles.indexOf("manager") !== -1 || data.roles.indexOf("admin") !== -1
-        : data.roles.indexOf("parent") !== -1;
+      var allowed = isManagerPortal
+        ? data.roles.indexOf("manager") !== -1 || data.roles.indexOf("admin") !== -1
+        : isTeacherPortal
+          ? data.roles.indexOf("teacher") !== -1 || data.roles.indexOf("manager") !== -1 || data.roles.indexOf("admin") !== -1
+          : data.roles.indexOf("parent") !== -1;
       if (!allowed) {
         token = ""; sessionStorage.removeItem(storeKey);
         window.location.replace("../login/");
@@ -1308,8 +1574,7 @@
       document.documentElement.lang = lang;
       document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
       var main = shell();
-      if (isTeacherPortal) renderTeacher(main);
-      else renderParent(main);
+      drawPortal(main);
     }).catch(function (error) {
       token = ""; sessionStorage.removeItem(storeKey);
       loginScreen();
@@ -1325,13 +1590,27 @@
       window.location.href = "../login/";
     });
   }
+  function drawPortal(main) {
+    if (isManagerPortal) renderManager(main);
+    else if (isTeacherPortal) renderTeacher(main);
+    else renderParent(main);
+  }
+  function renderManager(shellMain) {
+    if (typeof window.ZMManagement !== "function") { shellMain.appendChild(element("p", "p-alert error", t("genericError"))); return; }
+    window.ZMManagement({
+      element: element, request: request, t: t, button: button, showError: showError, errorMessage: errorMessage,
+      viewShell: viewShell, statTile: statTile, profile: function () { return profile; }, lang: function () { return lang; },
+      renderNotifications: renderNotifications, renderProfile: renderProfile, renderAnnouncements: renderAnnouncements,
+      renderDashboardWelcome: renderDashboardWelcome, loadReviewQueue: loadReviewQueue, dateLabel: dateLabel, childNames: childNames
+    })(shellMain);
+  }
   function render() {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
     document.title = portalTitle() + " | " + t("school");
     if (token && profile) {
       var main = shell();
-      if (isTeacherPortal) renderTeacher(main); else renderParent(main);
+      drawPortal(main);
     } else if (token) {
       loadDashboard();
     } else if (!isLogin) {
