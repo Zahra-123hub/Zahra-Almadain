@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -158,6 +158,7 @@ class ChargeCreate(BaseModel):
 
 class ChargeUpdate(BaseModel):
     amount: Decimal = Money
+    expected_version: int | None = Field(default=None, ge=0, le=1_000_000_000)  # the version the caller saw: refuse when somebody changed the line since
 
 
 class GenerateRequest(BaseModel):
@@ -174,6 +175,34 @@ class ChildClassIn(BaseModel):
 
 
 # --- serialisation -----------------------------------------------------------
+
+
+def touch(row: Any, who: str) -> None:
+    """Stamps a change on a row: the version grows, the time and the name of the person are kept."""
+    row.version = (row.version or 1) + 1
+    row.updated_at = datetime.now(timezone.utc)
+    row.updated_by = who[:80]
+
+
+def check_version(row: Any | None, expected: int | None, now_value: str = "") -> None:
+    """Two people on one row: a save that was made on an old copy of the row is refused (409) and says who changed it and when.
+    `expected` None = the caller does not ask for this check; 0 = the caller saw no row."""
+    if expected is None:
+        return
+    if row is None:
+        if expected != 0:
+            raise HTTPException(409, "حُذف هذا السطر قبل لحظات. حدّث الصفحة لترى الوضع الحالي.")
+        return
+    if expected == (row.version or 1):
+        return
+    who = row.updated_by or getattr(row, "entered_by", "") or getattr(row, "recorded_by", "") or "شخص آخر"
+    stamp = row.updated_at or getattr(row, "created_at", None)
+    when = " (" + stamp.strftime("%Y-%m-%d %H:%M") + ")" if stamp else ""
+    raise HTTPException(
+        409,
+        f"غيّر {who} هذا السطر{when} بعد أن فتحته." + (f" القيمة الحالية: {now_value}." if now_value else "")
+        + " حدّث الصفحة لترى آخر نسخة؛ إن حفظتَ مرة أخرى حلّت تعديلاتك محلّ تعديله.",
+    )
 
 
 NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?$")
@@ -250,6 +279,9 @@ def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
         "remaining": None if remaining is None else str(remaining),
         "status": status_of(charge.amount, paid, charge.needs_review),
         "note": charge.note,
+        "version": charge.version or 1,
+        "updated_by": charge.updated_by,
+        "updated_at": charge.updated_at.isoformat() if charge.updated_at else None,
         "needs_review": charge.needs_review,
         "raw_text": charge.raw_text,
         "source": charge.source,
@@ -583,10 +615,12 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
     ) -> dict[str, Any]:
         charge = get_charge(session, charge_id)
         ensure_open(session, (charge.year, charge.month))
+        check_version(charge, payload.expected_version, f"{charge.amount} {charge.currency}")
         if money(payload.amount) < paid_amount(charge):
             raise HTTPException(422, "الرسم المطلوب لا يمكن أن يكون أقل من المبلغ المدفوع.")
         old = charge.amount
         charge.amount = money(payload.amount)
+        touch(charge, actor.name)
         log(session, actor, "charge.update", charge.id, f"{old} → {charge.amount} {charge.currency}")
         session.commit()
         session.refresh(charge)
@@ -600,6 +634,7 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
     ) -> dict[str, Any]:
         charge = get_charge(session, charge_id)
         charge.needs_review = False
+        touch(charge, actor.name)
         log(session, actor, "charge.reviewed", charge.id, "")
         session.commit()
         session.refresh(charge)
@@ -801,17 +836,25 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
             paid[code] = money(total)
         return {"paid": {code: str(value) for code, value in paid.items()}}
 
-    @router.get("/audit")
-    def audit(
-        response: Response,
-        limit: int = 100,
-        _actor: FeesActor = Depends(guard),
-        session: Session = Depends(get_session),
+    def audit_rows(
+        session: Session, actor: FeesActor, limit: int, actor_name: str, action: str, date_from: date | None, date_to: date | None, q: str
     ) -> list[dict[str, str]]:
-        response.headers["Cache-Control"] = "no-store"
-        entries = session.scalars(
-            select(FeeAuditLog).order_by(FeeAuditLog.at.desc()).limit(min(max(limit, 1), 500))
-        ).all()
+        """The log, newest first. An accountant only ever sees their own actions; the administrator can look at anybody."""
+        query = select(FeeAuditLog).order_by(FeeAuditLog.at.desc())
+        wanted = actor.name if actor.role != "admin" else actor_name.strip()
+        if wanted:
+            query = query.where(FeeAuditLog.actor_name == wanted)
+        if action.strip():
+            query = query.where(FeeAuditLog.action == action.strip())
+        if date_from is not None:
+            query = query.where(FeeAuditLog.at >= datetime(date_from.year, date_from.month, date_from.day))
+        if date_to is not None:
+            end = date_to + timedelta(days=1)
+            query = query.where(FeeAuditLog.at < datetime(end.year, end.month, end.day))
+        if q.strip():
+            like = "%" + q.strip().lower().replace("%", "").replace("_", "") + "%"
+            query = query.where(or_(func.lower(FeeAuditLog.details).like(like), func.lower(FeeAuditLog.action).like(like), func.lower(FeeAuditLog.actor_name).like(like)))
+        entries = session.scalars(query.limit(min(max(limit, 1), 500))).all()
         return [
             {
                 "at": entry.at.isoformat() if entry.at else "",
@@ -823,12 +866,44 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
             for entry in entries
         ]
 
+    @router.get("/audit")
+    def audit(
+        response: Response,
+        limit: int = 100,
+        actor_name: str = "",
+        action: str = "",
+        date_from: date | None = None,
+        date_to: date | None = None,
+        q: str = "",
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[dict[str, str]]:
+        response.headers["Cache-Control"] = "no-store"
+        return audit_rows(session, actor, limit, actor_name, action, date_from, date_to, q)
+
+    @router.get("/audit/actors")
+    def audit_actors(
+        response: Response,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> list[str]:
+        """Who appears in the log (the administrator sees everybody, an accountant only themselves)."""
+        response.headers["Cache-Control"] = "no-store"
+        if actor.role != "admin":
+            return [actor.name]
+        return [name for (name,) in session.execute(select(FeeAuditLog.actor_name).distinct().order_by(FeeAuditLog.actor_name)).all() if name]
+
     @router.get("/audit.xlsx")
     def export_audit(
+        actor_name: str = "",
+        action: str = "",
+        date_from: date | None = None,
+        date_to: date | None = None,
+        q: str = "",
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> Response:
-        entries = audit(Response(), 500, actor, session)
+        entries = audit_rows(session, actor, 500, actor_name, action, date_from, date_to, q)
         return xlsx_response("system-log.xlsx", "Log", ["Time", "User", "Action", "Entity", "Details"],
                              [[e["at"].replace("T", " ")[:16], e["actor"], e["action"], e["entity_id"], e["details"]] for e in entries])
 

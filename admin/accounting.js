@@ -156,7 +156,7 @@ var ACC_ACTION_LABEL = {
   "charge.create":"رسم جديد", "charge.update":"تعديل رسم", "charge.delete":"حذف رسم", "charge.generate":"توليد رسوم",
   "salary.create":"راتب جديد", "salary.update":"تعديل راتب", "salary.delete":"حذف راتب", "salary.generate":"توليد رواتب",
   "entry.create":"سطر جدول", "entry.update":"تعديل سطر", "entry.delete":"حذف سطر",
-  "rate.auto":"سعر صرف تلقائي", "receipt.add":"إضافة إيصال", "receipt.delete":"حذف إيصال", "export.month":"تصدير شهر", "cash.opening":"رأس المال", "cash.count":"جرد الصندوق", "period.close":"إغلاق شهر", "period.reopen":"إعادة فتح شهر", "rate.set":"سعر صرف"
+  "rate.auto":"سعر صرف تلقائي", "reset.part":"تصفير جدول", "charge.reviewed":"مراجعة رسم", "salary.reviewed":"مراجعة راتب", "employee.create":"إضافة موظف", "employee.update":"تعديل موظف", "employee.remove":"حذف موظف", "child.create":"إضافة طفل", "child.update":"تعديل طفل", "child.remove":"حذف طفل", "receipt.add":"إضافة إيصال", "receipt.delete":"حذف إيصال", "export.month":"تصدير شهر", "cash.opening":"رأس المال", "cash.count":"جرد الصندوق", "period.close":"إغلاق شهر", "period.reopen":"إعادة فتح شهر", "rate.set":"سعر صرف"
 };
 
 function tabOverview(opts){
@@ -454,10 +454,11 @@ function tabSalaries(){
     return h("div", {class:"a-card"}, [h("h3", {text:"الرواتب بـ" + ACC_CURRENCY_NAME[code]}),
       h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [h("thead", {}, [h("tr", {}, heads.map(function(t){ return h("th", {text:t}); }))]), tbody, foot]))])]);
   }
-  function salaryBody(fields){
+  function salaryBody(fields, version){
     function num(el){ return el.value === "" ? null : el.value; }  // empty stays empty, never 0
     return JSON.stringify({employee_name:fields.name ? fields.name.value.trim() : null, job_title:fields.job.value.trim(), base:num(fields.base), bonus:num(fields.bonus),
-      advance:num(fields.advance), deduction:num(fields.deduction), paid_on:fields.date.value || null, paid_by:fields.paid_by ? fields.paid_by.value.trim() : null});
+      advance:num(fields.advance), deduction:num(fields.deduction), paid_on:fields.date.value || null, paid_by:fields.paid_by ? fields.paid_by.value.trim() : null,
+      expected_version:version});  // refused when somebody saved this line after it was loaded here
   }
   function salaryInline(r){
     var f = {name:h("input", {type:"text", maxlength:"120", value:r.employee_name, placeholder:"الاسم", "aria-label":"اسم الموظف", list:"acc-staff"}),
@@ -466,7 +467,7 @@ function tabSalaries(){
       deduction:accNumber(r.deduction, {"aria-label":"الخصومات"}), date:h("input", {type:"date", value:r.paid_on || "", "aria-label":"تاريخ الاستلام"}),
       paid_by:h("input", {type:"text", maxlength:"120", value:r.paid_by || "", placeholder:"من صرف", "aria-label":"من صرف الراتب", list:"acc-persons"})};
     f.save = h("button", {type:"button", class:"a-btn sun", text:"حفظ", onclick:async function(){
-      try{ await request("/api/admin/accounting/salaries/" + encodeURIComponent(r.id), {method:"PATCH", body:salaryBody(f)}); setMsg(msg, "تم حفظ التصحيح. اضغط «تمت المراجعة» بعد التأكد من السطر.", "ok"); await load(); }
+      try{ await request("/api/admin/accounting/salaries/" + encodeURIComponent(r.id), {method:"PATCH", body:salaryBody(f, r.version)}); setMsg(msg, "تم حفظ التصحيح. اضغط «تمت المراجعة» بعد التأكد من السطر.", "ok"); await load(); }
       catch(error){ setMsg(msg, errText(error), "err"); }
     }});
     return f;
@@ -485,11 +486,11 @@ function tabSalaries(){
     form.addEventListener("submit", async function(event){
       event.preventDefault();
       try{
-        await request("/api/admin/accounting/salaries/" + encodeURIComponent(r.id), {method:"PATCH", body:salaryBody({name:null, job:job, base:base, bonus:bonus, advance:adv, deduction:ded, date:paid})});
+        await request("/api/admin/accounting/salaries/" + encodeURIComponent(r.id), {method:"PATCH", body:salaryBody({name:null, job:job, base:base, bonus:bonus, advance:adv, deduction:ded, date:paid}, r.version)});
         setMsg(msg, "تم حفظ التعديل.", "ok"); await load();
       }catch(error){ setMsg(msg, errText(error), "err"); }
     });
-    return h("tr", {class:"a-detail-row"}, [h("td", {colspan:String(cols), class:"a-detail"}, [form])]);
+    return h("tr", {class:"a-detail-row"}, [h("td", {colspan:String(cols), class:"a-detail"}, [form, h("small", {class:"hint a-who", text:accWhoText(r)}), accHistoryPanel("salary", r.id)])]);
   }
   function render(){ tables.innerHTML = ""; (filters.currency ? [filters.currency] : ACC_CURRENCIES).forEach(function(code){ tables.appendChild(currencyTable(code)); }); }
   async function load(){
@@ -656,7 +657,10 @@ function tabSheet(type, opts){
       var currency = currencySel ? currencySel.value : line.currency;
       var body = entryBody(item, currency, details.value, note.value, inc, exp, person.value);
       if(currency !== line.currency){ if(line.id) body.replaces = line.id; }  // the row moves to the other currency
-      else if(item.custom && line.id) body.id = line.id;
+      else{
+        if(item.custom && line.id) body.id = line.id;
+        body.expected_version = line.version || 0;  // refused when somebody saved this row after it was loaded here
+      }
       await request("/api/admin/accounting/entries", {method:"PUT", body:JSON.stringify(body)});
       delete dirty[rowKey];
     }
@@ -672,6 +676,7 @@ function tabSheet(type, opts){
         errorBox.textContent = why; row.classList.add("has-error");
         (dirty[rowKey] = dirty[rowKey] || snapshot()).error = why;
         accToast(why, "err");
+        if(why.indexOf("حدّث الصفحة") !== -1 || why.indexOf("Refresh") !== -1) load();  // fetch the other person's version; what was typed here stays in the row
       }
     }}), errorBox];
     var removes = item.custom || !item.auto;  // a row without an automatic value is simply deleted; an automatic one goes back to it
@@ -682,9 +687,11 @@ function tabSheet(type, opts){
           line.rolled ? h("span", {class:"a-badge partial", text:"مجمّع تلقائياً", title:"مجموع ما كُتب في الجداول الأدق (الأسبوعي واليومي)"}) : ""])
       : h("td", {class:"name"}, [h("small", {class:"hint", text:"↳ " + item.label})]);
     if(first && item.auto && line.manual) label.appendChild(h("small", {class:"hint", text:"القيمة التلقائية: " + money(item.key === "registration" ? line.auto_income : line.auto_expense)}));
+    if(line.id && accWhoText(line)) label.appendChild(h("small", {class:"hint a-who", text:accWhoText(line)}));
     if(line.id && !item.auto && !line.rolled && (nonZero(line.expense) || line.receipts || line.receipt_no)){
       actions.push(h("button", {type:"button", class:"a-btn ghost a-receipt-btn", text:line.receipts ? "الإيصالات (" + line.receipts + ")" : "إيصال", onclick:function(){ toggleReceipts(row, item, line); }}));
     }
+    if(line.id && !line.rolled) actions.push(h("button", {type:"button", class:"a-btn ghost a-receipt-btn", text:"السجل", onclick:function(){ toggleHistory(row, line); }}));
     var hasData = !!line.id || nonZero(line.income) || nonZero(line.expense);
     var row = h("tr", {class:(item.auto ? "is-auto " : "") + (item.custom ? "is-custom " : "") + (hasData ? "has-data" : "idle")}, [label, h("td", {}, [details]), h("td", {}, [note]), h("td", {}, [person])].concat(amountCells).concat([currencyCell, h("td", {}, [h("div", {class:"a-row", style:"margin:0"}, actions)])]));
     if(line.needs_receipt) label.appendChild(h("span", {class:"a-badge due", text:"بلا إيصال"}));
@@ -751,6 +758,13 @@ function tabSheet(type, opts){
       await request("/api/admin/accounting/entries", {method:"PUT", body:JSON.stringify(body)});
     }, line.receipt_no, !!(data && data.locked) || readOnly, function(){ load(); });
     row.parentNode.insertBefore(h("tr", {class:"a-receipt-row"}, [h("td", {colspan:String(row.children.length)}, [panel])]), row.nextSibling);
+  }
+  /* Who did what to this row, under it. */
+  function toggleHistory(row, line){
+    var next = row.nextSibling;
+    if(next && next.classList && next.classList.contains("a-history-row")){ next.remove(); return; }
+    var after = row.nextSibling && row.nextSibling.classList && row.nextSibling.classList.contains("a-receipt-row") ? row.nextSibling.nextSibling : row.nextSibling;
+    row.parentNode.insertBefore(h("tr", {class:"a-history-row"}, [h("td", {colspan:String(row.children.length)}, [accHistoryPanel("entry", line.id)])]), after);
   }
   function readOnlySheet(card){
     card.classList.add("is-readonly");
