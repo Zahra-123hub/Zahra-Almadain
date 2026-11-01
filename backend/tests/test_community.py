@@ -1,5 +1,6 @@
 """Notifications, management notices, groups, the management role and the new report fields."""
 
+import io
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -171,34 +172,40 @@ class CommunityTests(ControlsBase):
         headers = {"Authorization": "Bearer " + entry.json()["access_token"]}
         self.assertEqual(self.client.get(M + "/stats", headers=headers).status_code, 200)
 
-    # ---- exports ----
-    def test_fee_export_is_a_safe_csv(self):
+    # ---- exports (real Excel files) ----
+    def workbook(self, response):
+        from openpyxl import load_workbook
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("spreadsheetml", response.headers["content-type"])
+        self.assertIn("attachment", response.headers["content-disposition"])
+        return load_workbook(io.BytesIO(response.content)).active
+
+    def test_fee_export_is_a_real_excel_file(self):
         self.charge(month=2)
         with Session(self.engine) as session:
             child = session.scalar(select(Child).where(Child.display_name == "Amal"))
             child.display_name = "=SUM(A1)"
             session.commit()
-        sheet = self.client.get("/api/admin/fees/export.csv?year=2026&month=2", headers=self.acc)
-        self.assertEqual(sheet.status_code, 200, sheet.text)
-        self.assertIn("text/csv", sheet.headers["content-type"])
-        self.assertIn("attachment", sheet.headers["content-disposition"])
-        text = sheet.content.decode("utf-8")
-        self.assertTrue(text.startswith("﻿#,Child"))
-        self.assertIn("'=SUM(A1)", text)  # a formula cannot run when the file is opened in a spreadsheet
-        self.assertIn("1000.00", text)  # numbers stay numbers
+        sheet = self.workbook(self.client.get("/api/admin/fees/export.xlsx?year=2026&month=2", headers=self.acc))
+        self.assertEqual([c.value for c in sheet[1]][:3], ["#", "Child", "Class"])  # one column per field, not everything in column A
+        row = [c.value for c in sheet[2]]
+        self.assertEqual(row[1], "=SUM(A1)")  # stored as text, so it can never run as a formula
+        self.assertEqual(sheet["B2"].data_type, "s")
+        self.assertEqual(row[6], 1000)  # the amount is a number
+        self.assertEqual(sheet.freeze_panes, "A2")
         for headers in (self.teacher, self.parent, self.manager):
-            self.assertEqual(self.client.get("/api/admin/fees/export.csv", headers=headers).status_code, 403)
-        self.assertEqual(self.client.get("/api/admin/fees/export.csv").status_code, 401)
+            self.assertEqual(self.client.get("/api/admin/fees/export.xlsx", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/admin/fees/export.xlsx").status_code, 401)
 
     def test_salary_and_log_exports(self):
-        salaries = self.client.get("/api/admin/accounting/salaries/export.csv?year=2026&month=2", headers=self.acc)
-        self.assertEqual(salaries.status_code, 200, salaries.text)
-        self.assertTrue(salaries.content.decode("utf-8").startswith("﻿#,Employee"))
+        salaries = self.workbook(self.client.get("/api/admin/accounting/salaries/export.xlsx?year=2026&month=2", headers=self.acc))
+        self.assertEqual([c.value for c in salaries[1]][:2], ["#", "Employee"])
         self.charge(month=3)
-        log = self.client.get("/api/admin/fees/audit.csv", headers=self.acc)
-        self.assertEqual(log.status_code, 200)
-        self.assertIn("charge.create", log.content.decode("utf-8"))
-        self.assertEqual(self.client.get("/api/admin/fees/audit.csv", headers=self.teacher).status_code, 403)
+        log = self.workbook(self.client.get("/api/admin/fees/audit.xlsx", headers=self.acc))
+        self.assertEqual([c.value for c in log[1]], ["Time", "User", "Action", "Entity", "Details"])
+        self.assertIn("charge.create", [c.value for c in log[2]])
+        self.assertEqual(self.client.get("/api/admin/fees/audit.xlsx", headers=self.teacher).status_code, 403)
 
     # ---- files and security (admin only) ----
     def test_admin_manages_the_private_files(self):

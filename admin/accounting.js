@@ -391,12 +391,12 @@ function tabOverview(){
   function exportQuery(){ return "year=" + encodeURIComponent(year.value) + (exportMonth.value !== "0" ? "&month=" + exportMonth.value : "") + "&currency=" + currencySel.value; }
   function exportButton(label, path, name){
     return h("button", {type:"button", class:"a-btn ghost", text:label, onclick:function(){
-      downloadFile(path + "?" + exportQuery(), name + "-" + year.value + (exportMonth.value !== "0" ? "-" + exportMonth.value : "") + ".csv").catch(function(error){ setMsg(msg, errText(error), "err"); });
+      downloadFile(path + "?" + exportQuery(), name + "-" + year.value + (exportMonth.value !== "0" ? "-" + exportMonth.value : "") + ".xlsx").catch(function(error){ setMsg(msg, errText(error), "err"); });
     }});
   }
-  var exportRow = h("div", {class:"a-card"}, [h("h4", {text:"تصدير إلى Excel (CSV)"}),
-    h("p", {class:"hint", text:"يُنزَّل ملف بحسب السنة والشهر والعملة المختارة أعلاه. للطباعة أو PDF افتح الجدول الشهري واختر «طباعة» من المتصفح."}),
-    h("div", {class:"a-row"}, [accField("الشهر", exportMonth), exportButton("اشتراكات الأطفال", "/api/admin/fees/export.csv", "fees"), exportButton("الرواتب", "/api/admin/accounting/salaries/export.csv", "salaries")])]);
+  var exportRow = h("div", {class:"a-card"}, [h("h4", {text:"تصدير إلى Excel"}),
+    h("p", {class:"hint", text:"يُنزَّل ملف Excel بحسب السنة والشهر والعملة المختارة أعلاه. للطباعة أو PDF افتح الجدول الشهري واختر «طباعة» من المتصفح."}),
+    h("div", {class:"a-row"}, [accField("الشهر", exportMonth), exportButton("اشتراكات الأطفال", "/api/admin/fees/export.xlsx", "fees"), exportButton("الرواتب", "/api/admin/accounting/salaries/export.xlsx", "salaries")])]);
   return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"نظرة عامة على المحاسبة"}),
     h("p", {class:"hint", text:"الأرقام هنا تتحدّث تلقائياً من الإدخالات الجديدة فقط (الاشتراكات والدفعات والرواتب وجداول المحاسبة). بدون إدخالات تكون كلها صفراً."}),
     h("div", {class:"a-form-grid"}, [accField("السنة", year), accField("العملة", currencySel)]), resetRow, msg]), body, exportRow]);

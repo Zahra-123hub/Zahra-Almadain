@@ -67,12 +67,12 @@ var EN_TEXT = {
   "رابط صفحة إنستغرام":"Instagram page URL",
   "البريد الإلكتروني":"Email address",
   "معلومات التواصل والإعلان":"Contact information and announcements",
-  "الملفات":"Files", "الأمان":"Security", "ملفات المعلمات":"Teachers' files", "تصدير CSV":"Export CSV", "تنزيل":"Download", "السابق":"Previous", "التالي":"Next",
+  "الملفات":"Files", "الأمان":"Security", "ملفات المعلمات":"Teachers' files", "تصدير Excel":"Export to Excel", "تنزيل":"Download", "السابق":"Previous", "التالي":"Next",
   "لا توجد ملفات مرفوعة بعد.":"No files uploaded yet.", "تم حذف الملف.":"The file was deleted.", "الملف":"File", "صاحبه":"Owner", "الحجم":"Size", "التاريخ":"Date",
   "حسابات فعّالة":"Active accounts", "حسابات موقوفة":"Blocked accounts", "حسابات بانتظار الموافقة":"Accounts awaiting approval", "جلسات مفتوحة الآن":"Open sessions now",
   "تسجيلات دخول آخر ٢٤ ساعة":"Sign-ins in the last 24 hours", "محاولات دخول فاشلة آخر ٢٤ ساعة":"Failed sign-ins in the last 24 hours",
   "الحسابات الفعّالة حسب النوع":"Active accounts by type", "التخزين":"Storage", "ملفات خاصة":"Private files", "المساحة المستعملة":"Space used",
-  "تصدير إلى Excel (CSV)":"Export to Excel (CSV)", "كل الأشهر":"All months", "اشتراكات الأطفال":"Children's fees",
+  "تصدير إلى Excel":"Export to Excel", "كل الأشهر":"All months", "اشتراكات الأطفال":"Children's fees",
   "يُنزَّل ملف بحسب السنة والشهر والعملة المختارة أعلاه. للطباعة أو PDF افتح الجدول الشهري واختر «طباعة» من المتصفح.":"A file is downloaded for the year, month and currency chosen above. To print or save a PDF, open the monthly sheet and choose Print in the browser.",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
@@ -560,7 +560,7 @@ function tabLog(){
   search.addEventListener("input", draw);
   request("/api/admin/fees/audit?limit=500").then(function(list){ rows = list; draw(); }).catch(function(error){ setMsg(msg, errText(error), "err"); });
   fill = null;
-  var exportButton = h("button", {type:"button", class:"a-btn ghost", text:"تصدير CSV", onclick:function(){ downloadFile("/api/admin/fees/audit.csv", "system-log.csv").catch(function(error){ setMsg(msg, errText(error), "err"); }); }});
+  var exportButton = h("button", {type:"button", class:"a-btn ghost", text:"تصدير Excel", onclick:function(){ downloadFile("/api/admin/fees/audit.xlsx", "system-log.xlsx").catch(function(error){ setMsg(msg, errText(error), "err"); }); }});
   return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"سجل النظام"}),
     h("p", {class:"hint", text:"آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله."}), h("div", {class:"a-row"}, [h("label", {class:"a-field", style:"flex:1 1 260px"}, [h("span", {text:"بحث"}), search]), exportButton]), msg, body])]);
 }
