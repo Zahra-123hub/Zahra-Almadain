@@ -7,7 +7,7 @@ Notifications carry only a kind and a short subject (a child's name or a title);
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Iterable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -22,7 +22,9 @@ from app.models import (
     Child,
     ChildGuardian,
     DailyReport,
+    LoginAttempt,
     Notification,
+    PortalSession,
     RegistrationRequest,
     Role,
     TeacherContent,
@@ -89,7 +91,14 @@ class GroupRenameIn(BaseModel):
     new_name: str = Field(min_length=1, max_length=60)
 
 
-def build_router(get_principal: Callable, require_role: Callable, require_manage: Callable, storage_limit: int) -> APIRouter:
+def build_router(
+    get_principal: Callable,
+    require_role: Callable,
+    require_manage: Callable,
+    storage_limit: int,
+    require_admin: Callable,
+    file_response: Callable,
+) -> APIRouter:
     router = APIRouter()
 
     # ------------------------------------------------------------------------- notifications (every platform account)
@@ -282,5 +291,89 @@ def build_router(get_principal: Callable, require_role: Callable, require_manage
             raise HTTPException(404, "Group not found.")
         session.commit()
         return {"children": result.rowcount}
+
+    # ------------------------------------------------------------------------- admin: private files of the teachers
+    @router.get("/api/admin/platform/files")
+    def list_files(
+        response: Response, _username: str = Depends(require_admin), session: Session = Depends(get_session)
+    ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "no-store"
+        rows = session.execute(
+            select(
+                TeacherContent.id, TeacherContent.category, TeacherContent.original_name, TeacherContent.byte_size,
+                TeacherContent.created_at, Account.username,
+            )
+            .join(Account, Account.id == TeacherContent.owner_id)
+            .order_by(TeacherContent.created_at.desc())
+            .limit(500)
+        ).all()
+        owners = session.execute(
+            select(Account.username, func.count(), func.coalesce(func.sum(TeacherContent.byte_size), 0))
+            .join(Account, Account.id == TeacherContent.owner_id)
+            .group_by(Account.username)
+            .order_by(Account.username)
+        ).all()
+        return {
+            "limit_bytes": storage_limit,
+            "items": [
+                {"id": str(r[0]), "category": r[1], "name": r[2], "size": int(r[3]), "created_at": r[4].isoformat() if r[4] else None, "owner": r[5]}
+                for r in rows
+            ],
+            "owners": [{"owner": o[0], "files": o[1], "bytes": int(o[2])} for o in owners],
+        }
+
+    @router.get("/api/admin/platform/files/{content_id}/download")
+    def download_file(
+        content_id: uuid.UUID, response: Response, _username: str = Depends(require_admin), session: Session = Depends(get_session)
+    ) -> Response:
+        content = session.get(TeacherContent, content_id)
+        if content is None:
+            raise HTTPException(404, "File not found.")
+        return file_response(content, response)
+
+    @router.delete("/api/admin/platform/files/{content_id}", status_code=204)
+    def delete_file(
+        content_id: uuid.UUID, _username: str = Depends(require_admin), session: Session = Depends(get_session)
+    ) -> Response:
+        content = session.get(TeacherContent, content_id)
+        if content is None:
+            raise HTTPException(404, "File not found.")
+        session.delete(content)
+        session.commit()
+        return Response(status_code=204)
+
+    # ------------------------------------------------------------------------- admin: a security overview (numbers only)
+    @router.get("/api/admin/platform/security")
+    def security_overview(
+        response: Response, _username: str = Depends(require_admin), session: Session = Depends(get_session)
+    ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "no-store"
+        now = datetime.now(timezone.utc)
+        day_ago = now - timedelta(hours=24)
+
+        def count(query) -> int:
+            return session.scalar(query) or 0
+
+        by_role = session.execute(
+            select(Role.name, func.count(func.distinct(Account.id)))
+            .join(Role.accounts)
+            .where(Account.is_active.is_(True))
+            .group_by(Role.name)
+            .order_by(Role.name)
+        ).all()
+        return {
+            "accounts_active": count(select(func.count()).select_from(Account).where(Account.is_active.is_(True), Account.approval_status == "active")),
+            "accounts_blocked": count(select(func.count()).select_from(Account).where(Account.is_active.is_(False))),
+            "accounts_pending": count(select(func.count()).select_from(Account).where(Account.approval_status != "active")),
+            "by_role": {name: number for name, number in by_role},
+            "sessions_open": count(
+                select(func.count()).select_from(PortalSession).where(PortalSession.revoked_at.is_(None), PortalSession.expires_at > now)
+            ),
+            "sign_ins_24h": count(select(func.count()).select_from(PortalSession).where(PortalSession.created_at >= day_ago)),
+            # every failed sign-in leaves two marks (one for the address, one for the name)
+            "failed_sign_ins_24h": (count(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.attempted_at >= day_ago)) + 1) // 2,
+            "files": count(select(func.count()).select_from(TeacherContent)),
+            "stored_bytes": int(count(select(func.coalesce(func.sum(TeacherContent.byte_size), 0)))),
+        }
 
     return router

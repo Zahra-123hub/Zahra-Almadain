@@ -773,7 +773,6 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
 
 app.include_router(fees.build_router(require_fees_user))
 app.include_router(accounting.build_router(require_fees_user))
-app.include_router(community.build_router(get_platform_principal, require_platform_role, require_manage, MAX_TEACHER_CONTENT_BYTES))
 
 
 @app.get("/healthz")
@@ -2957,3 +2956,10 @@ def list_parent_child_reports(
         .order_by(DailyReport.published_at.desc())
     ).all()
     return [report_data(report) for report in reports]
+
+
+app.include_router(
+    community.build_router(
+        get_platform_principal, require_platform_role, require_manage, MAX_TEACHER_CONTENT_BYTES, require_admin, private_content_response
+    )
+)
