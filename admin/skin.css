@@ -36,3 +36,14 @@ body.skin-portal .a-nextbar,body.skin-portal .a-statusbar{border-radius:16px}
 .a-stat strong{font-size:2rem;line-height:1.2;color:var(--head)}
 .a-stat span{color:var(--muted);font-weight:700}
 @media(max-width:600px){.a-welcome{flex-direction:column;align-items:flex-start}.a-stat{padding:14px 16px}.a-stat strong{font-size:1.6rem}}
+
+/* the tabs of the admin area: the pill navigation of the portals, under the header */
+.a-tabswrap{width:min(100% - 32px,980px);margin:18px auto 0}
+body.skin-solo .a-tabswrap{display:none}
+body.skin-portal .a-tabswrap .a-tabs{display:flex;gap:6px;overflow-x:auto;padding:6px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 26px #1029560b;scrollbar-width:none}
+body.skin-portal .a-tabswrap .a-tabs::-webkit-scrollbar{display:none}
+body.skin-portal .a-tabswrap .a-tabs button{flex:1 0 auto;min-height:44px;padding:8px 16px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:inherit;font-weight:750;white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
+body.skin-portal .a-tabswrap .a-tabs button:hover{background:#17408f12;color:var(--ink)}
+body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true]{background:var(--navy);color:#fff}
+@media(prefers-color-scheme:dark){body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true]{background:var(--sun);color:#1b2a55}}
+body.skin-portal .a-tabswrap + .a-main{padding-top:18px}
