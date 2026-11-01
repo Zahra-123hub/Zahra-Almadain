@@ -47,3 +47,27 @@ body.skin-portal .a-tabswrap .a-tabs button:hover{background:#17408f12;color:var
 body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true]{background:var(--navy);color:#fff}
 @media(prefers-color-scheme:dark){body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true]{background:var(--sun);color:#1b2a55}}
 body.skin-portal .a-tabswrap + .a-main{padding-top:18px}
+
+/* the header: the same markup and the same rules as the header of the portals (parents, teachers, management) */
+body.skin-portal .p-header{position:sticky;top:0;z-index:20;padding:18px max(18px,env(safe-area-inset-left)) 18px max(18px,env(safe-area-inset-right));background:linear-gradient(120deg,#12327a,#1d4ea0);color:#fff;box-shadow:0 2px 14px #10295626;backdrop-filter:blur(6px)}
+body.skin-portal .p-header-inner{width:min(100% - 32px,980px);margin-inline:auto;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+body.skin-portal .p-brand{display:flex;align-items:center;gap:14px;color:#fff;text-decoration:none}
+body.skin-portal .p-brand img{width:56px;height:56px;min-width:0;padding:5px;border-radius:50%;background:#fff;object-fit:contain;box-shadow:0 0 0 3px #ffffff47}
+body.skin-portal .p-brand h1{margin:0;font-size:1.2rem;line-height:1.3;color:#fff}
+body.skin-portal .p-brand span{display:block;color:#dce8ff;font-size:.85rem}
+body.skin-portal .p-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+body.skin-portal .p-account-identity{display:grid;line-height:1.25;margin-inline-end:4px}
+body.skin-portal .p-account-label{color:#dce8ff;font-size:.76rem}
+body.skin-portal .p-account-identity strong{color:#fff;overflow-wrap:anywhere}
+body.skin-portal .p-avatar{flex:none;display:inline-grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#ffffff26;color:#fff;font-weight:800;font-size:1.05rem;border:1px solid #ffffff55}
+body.skin-portal .p-avatar[hidden],body.skin-portal .p-account-identity[hidden]{display:none}
+body.skin-portal .p-button{display:inline-block;border:0;border-radius:999px;background:var(--navy);color:#fff;font:inherit;font-size:.92rem;font-weight:750;padding:8px 16px;cursor:pointer;text-decoration:none;transition:transform .15s,box-shadow .15s,filter .15s}
+body.skin-portal .p-button:hover{transform:translateY(-1px);filter:brightness(1.06)}
+body.skin-portal .p-button.sun{background:var(--sun);color:#1b2a55;box-shadow:0 6px 16px #fdb91340}
+body.skin-portal .p-actions .p-button.outline{background:transparent;border:1px solid #ffffff88;color:#fff}
+body.skin-portal .p-actions .p-button.outline:hover{background:#ffffff1f;transform:none}
+body.skin-portal .p-lang{display:inline-flex;gap:0;padding:3px;border:1px solid #ffffff59;border-radius:999px;background:#ffffff1a}
+body.skin-portal .p-lang button{min-width:76px;height:32px;padding:0 14px;border:0;border-radius:999px;background:transparent;color:#ffffffd9;font:inherit;font-size:.86rem;font-weight:700;line-height:1;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s}
+body.skin-portal .p-lang button:hover{background:#ffffff1f;color:#fff}
+body.skin-portal .p-lang button[aria-pressed=true],body.skin-portal .p-lang button[aria-pressed=true]:hover{background:var(--sun);color:#1b2a55;box-shadow:0 2px 8px #00000047}
+@media(max-width:560px){body.skin-portal .p-header{position:static;padding-block:14px}body.skin-portal .p-header-inner{align-items:flex-start}body.skin-portal .p-actions{width:100%}body.skin-portal .p-actions .p-button{flex:1 1 auto;text-align:center}body.skin-portal .p-lang button{min-width:58px;padding:0 10px}body.skin-portal .p-brand img{width:46px;height:46px;padding:4px}}

@@ -13,6 +13,8 @@ if(!ADMIN_TOKEN){
   if(!TEACHER_MODE && !ACCOUNTANT_MODE) ADMIN_TOKEN = "";
   if(ACCOUNTANT_MODE && !TEACHER_MODE) tab = "fees";
 }
+// the portals this account may enter (shown as links in the header, like in the portals)
+if(!PORTALS.length){ try{ PORTALS = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); }catch(e){} }
 function clearSessions(){
   ADMIN_TOKEN = "";
   try{ sessionStorage.removeItem("zm-admin-session"); sessionStorage.removeItem("zm-teacher-session"); sessionStorage.removeItem("zm-accountant-session"); sessionStorage.removeItem("zm-parent-session"); sessionStorage.removeItem("zm-portals"); }catch(e){}
@@ -348,6 +350,7 @@ var EN_TEXT = {
   "اشتراكات غير مسدّدة":"Fees not fully paid",
   "رواتب لم تُدفع":"Salaries not paid",
   "لوحة التحكم":"Control panel",
+  "تسجيل الخروج":"Sign out", "مرحباً":"Hello", "تغيير كلمة المرور":"Change password",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -542,7 +545,7 @@ function applyAdminLanguage(){
   document.querySelectorAll(".a-lang button").forEach(function(button){ button.setAttribute("aria-pressed", String((button.textContent === "ع" ? "ar" : "en") === ADMIN_LANG)); });
 }
 function languageSwitch(){
-  var group = h("div", {class:"a-lang", role:"group", "aria-label":"اللغة / Language"});
+  var group = h("div", {class:"a-lang p-lang", role:"group", "aria-label":"اللغة / Language"});
   [["ar","العربية"],["en","English"]].forEach(function(choice){
     var button = h("button", {type:"button", lang:choice[0], "aria-pressed":String(ADMIN_LANG === choice[0]), text:choice[1]});
     button.addEventListener("click", function(){ setAdminLanguage(choice[0]); });
@@ -1737,14 +1740,16 @@ function draw(){
   var accounting = ACCOUNTANT_MODE || tab === "fees";
   document.body.classList.toggle("skin-portal", skin);
   document.body.classList.toggle("skin-solo", ACCOUNTANT_MODE && TABS.length <= 1);
-  var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ clearSessions(); start(); }});
-  var view = h("a", {class:"a-btn sun", href:"../", target:"_blank", rel:"noopener", style:"text-decoration:none", text:"عرض الموقع"});
+  var out = h("button", {type:"button", class:"p-button outline", text:"تسجيل الخروج", onclick:function(){ clearSessions(); start(); }});
+  var view = h("a", {class:"p-button sun", href:"../", target:"_blank", rel:"noopener", text:"عرض الموقع"});
   var switches = [];  // links to the other portals this account may use
   [["manager", "../management/", "بوابة الإدارة"], ["teacher", "../teachers/", "بوابة المعلمات"], ["parent", "../parents/", "بوابة أولياء الأمور"]].forEach(function(p){
-    if((TEACHER_MODE || ACCOUNTANT_MODE) && PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"a-btn ghost", href:p[1], style:"color:#fff;border-color:#fff;text-decoration:none", text:p[2]}));
+    if(PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"p-button outline", href:p[1], text:p[2]}));
   });
-  var back = TEACHER_MODE && !PORTALS.length ? h("a", {class:"a-btn ghost", href:"../teachers/", style:"color:#fff;border-color:#fff;text-decoration:none", text:"العودة إلى بوابتي"}) : null;
-  var changePw = (TEACHER_MODE || ACCOUNTANT_MODE) ? h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"تغيير كلمة المرور", onclick:function(){ toggleChangePassword(); }}) : null;
+  var back = TEACHER_MODE && !PORTALS.length ? h("a", {class:"p-button outline", href:"../teachers/", text:"العودة إلى بوابتي"}) : null;
+  var changePw = (TEACHER_MODE || ACCOUNTANT_MODE) ? h("button", {type:"button", class:"p-button outline", text:"تغيير كلمة المرور", onclick:function(){ toggleChangePassword(); }}) : null;
+  var avatar = h("span", {class:"p-avatar", id:"a-avatar", hidden:"hidden"});
+  var identity = h("div", {class:"p-account-identity", hidden:"hidden"}, [h("span", {class:"p-account-label", text:"مرحباً"}), h("strong", {id:"a-hello-name"})]);
   var tabs = h("div", {class:"a-tabs", role:"tablist"});
   TABS.forEach(function(t){
     var b = h("button", {type:"button", role:"tab", "aria-selected":String(tab === t[0]), text:t[1]});
@@ -1753,11 +1758,16 @@ function draw(){
   var main = h("div", {class:"a-main"}); fill = null;
   main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
   adminName().then(function(name){
-    var hello = document.getElementById("a-hello");
-    if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }
+    if(!name) return;
+    document.getElementById("a-hello-name").textContent = name;
+    avatar.textContent = name.charAt(0).toUpperCase();
+    avatar.hidden = false; identity.hidden = false;
   });
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("div", {class:"a-brand"}, [h("img", {class:"a-logo", src:"../images/logo.png?v=2", alt:"شعار روضة زهرة المدائن"}), h("div", {class:"a-brand-text"}, [h("h2", {text:accounting ? "بوابة المحاسبة" : "لوحة التحكم"}), h("span", {text:"روضة زهرة المدائن"})])]), h("span", {class:"a-hello", id:"a-hello", hidden:"hidden"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
-  root.insertBefore(h("div", {class:"a-tabswrap"}, [tabs]), main);
+  var header = h("header", {class:"p-header"}, [h("div", {class:"p-header-inner"}, [
+    h("a", {class:"p-brand", href:"../"}, [h("img", {src:"../images/logo.png?v=2", alt:"شعار روضة زهرة المدائن"}),
+      h("div", {}, [h("h1", {text:accounting ? "بوابة المحاسبة" : "لوحة التحكم"}), h("span", {text:"روضة زهرة المدائن"})])]),
+    h("div", {class:"p-actions"}, [avatar, identity, languageSwitch()].concat(switches, [back, changePw, view, out]))])]);
+  root.append(header, h("div", {class:"a-tabswrap"}, [tabs]), main);
 }
 /* A signed-in teacher/accountant changes their own password here (the admin password lives on the server). */
 function toggleChangePassword(){
