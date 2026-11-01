@@ -72,7 +72,7 @@
       accountLabel: "الحساب",
       activeAccount: "حساب مفعّل",
       navLabel: "التنقل", navHome: "الرئيسية", navChildren: "أطفالي", navPosts: "المنشورات", navMaterial: "المواد التعليمية", navReports: "الأطفال والتقارير", navReview: "الاعتماد",
-      statChildren: "الأطفال", statPosts: "منشورات الروضة", statDrafts: "مسودات", statSubmitted: "قيد المراجعة", statPublished: "منشورة للأهل", openSection: "فتح",
+      visibleToParents: "ظاهر للأهل", hiddenFromParents: "لا يظهر للأهل بعد", statChildren: "الأطفال", statPosts: "منشورات الروضة", statDrafts: "مسودات", statSubmitted: "قيد المراجعة", statPublished: "منشورة للأهل", openSection: "فتح",
       welcomeUser: "مرحباً",
       portalOverview: "لوحة المتابعة",
       signInHint: "استخدمي بيانات الحساب التي زوّدتك بها الروضة.",
@@ -150,7 +150,7 @@
       accountLabel: "Account",
       activeAccount: "Active account",
       navLabel: "Navigation", navHome: "Home", navChildren: "My children", navPosts: "Posts", navMaterial: "Teaching material", navReports: "Children and reports", navReview: "Approvals",
-      statChildren: "Children", statPosts: "Kindergarten posts", statDrafts: "Drafts", statSubmitted: "In review", statPublished: "Published to parents", openSection: "Open",
+      visibleToParents: "Visible to parents", hiddenFromParents: "Not visible to parents yet", statChildren: "Children", statPosts: "Kindergarten posts", statDrafts: "Drafts", statSubmitted: "In review", statPublished: "Published to parents", openSection: "Open",
       welcomeUser: "Welcome",
       portalOverview: "Overview",
       signInHint: "Use the account details provided by the kindergarten.",
@@ -676,6 +676,7 @@
     main.appendChild(layout);
   }
   var activeView = "home";
+  var childNames = {};
   function viewShell(main, defs) {
     var nav = element("nav", "p-nav");
     nav.setAttribute("aria-label", t("navLabel"));
@@ -1076,7 +1077,8 @@
     reportCard.appendChild(element("h2", "", t("reports")));
     reportCard.appendChild(element("p", "p-muted", t("loading")));
     main.appendChild(reportCard);
-    request("/api/platform/teacher/children").then(function (children) {
+    var childrenLoaded = request("/api/platform/teacher/children").then(function (children) {
+      children.forEach(function (child) { childNames[child.id] = child.display_name; });
       childrenCard.innerHTML = "";
       childrenCard.appendChild(element("h2", "", t("children")));
       if (!children.length) childrenCard.appendChild(element("p", "p-muted", t("notAssigned")));
@@ -1205,7 +1207,7 @@
         childrenCard.appendChild(form);
       }
     }).catch(function (error) { childrenCard.innerHTML = ""; childrenCard.appendChild(element("h2", "", t("children"))); showError(childrenCard, error); });
-    loadTeacherReports(reportCard);
+    childrenLoaded.then(function () { loadTeacherReports(reportCard); });
     if (canReview) loadReviewQueue(views.panes.review);
   }
   function loadTeacherReports(card) {
@@ -1216,7 +1218,12 @@
       else reports.forEach(function (report) {
         var item = element("article", "p-report");
         item.appendChild(element("h3", "", report.title));
-        item.appendChild(element("span", "p-badge", statusLabel(report.status)));
+        var meta = element("div", "p-report-meta");
+        meta.appendChild(element("span", "p-badge", statusLabel(report.status)));
+        meta.appendChild(element("span", "p-badge " + (report.status === "published" ? "p-status-active" : "p-hidden"), report.status === "published" ? t("visibleToParents") : t("hiddenFromParents")));
+        if (childNames[report.child_id]) meta.appendChild(element("small", "p-muted", childNames[report.child_id]));
+        if (report.created_at) meta.appendChild(element("small", "p-muted", new Date(report.created_at).toLocaleDateString(lang === "ar" ? "ar" : "en")));
+        item.appendChild(meta);
         var body = element("p", "", report.body);
         body.lang = report.language || "ar";
         body.dir = body.lang.split("-")[0] === "ar" ? "rtl" : "ltr";
@@ -1270,6 +1277,7 @@
       reports.forEach(function (report) {
         var item = element("article", "p-report");
         item.appendChild(element("h3", "", report.title));
+        if (report.created_at) item.appendChild(element("small", "p-muted", new Date(report.created_at).toLocaleDateString(lang === "ar" ? "ar" : "en")));
         item.appendChild(element("p", "", report.body));
         ["published", "rejected"].forEach(function (status) {
           item.appendChild(button(t(status === "published" ? "approve" : "reject"), status === "published" ? "sun" : "outline", function () {

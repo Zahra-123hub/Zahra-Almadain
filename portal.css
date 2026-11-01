@@ -285,3 +285,6 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-stat span{color:var(--muted);font-weight:700}
 @media (prefers-color-scheme: dark){.p-nav-item:hover{background:#ffffff14}.p-nav-item[aria-current=page]{background:var(--sun);color:#1b2a55}.p-stat strong{color:#eaf1ff}}
 @media (max-width:560px){.p-nav{margin-bottom:14px}.p-nav-item{padding-inline:14px}.p-stat{padding:14px 16px}.p-stat strong{font-size:1.6rem}}
+.p-report-meta{justify-content:flex-start}
+.p-badge.p-hidden{background:#fff1d6;color:#7a4a00}
+@media (prefers-color-scheme: dark){.p-badge.p-hidden{background:#4a3a14;color:#ffd78a}}
