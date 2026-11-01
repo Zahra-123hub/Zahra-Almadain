@@ -549,6 +549,7 @@
         error.textContent = "";
         if (signupMode && password.value !== confirm.value) { error.className = "p-alert error"; error.textContent = t("passwordMismatch"); return; }
         submit.disabled = true;
+        submit.classList.add("p-loading");
         var path = signupMode ? "/api/platform/auth/redeem-invitation" : isLogin ? "/api/auth/entry" : "/api/platform/auth/login";
         var payload = {username: username.value.trim(), password: password.value};
         if (signupMode) {
@@ -580,6 +581,7 @@
         }).catch(function (err) {
           error.textContent = errorMessage(err);
           submit.disabled = false;
+          submit.classList.remove("p-loading");
         });
       });
       card.appendChild(form);
@@ -658,6 +660,7 @@
           error.className = "p-alert error";
           error.textContent = errorMessage(err);
           submit.disabled = false;
+          submit.classList.remove("p-loading");
         });
       });
       card.appendChild(form);

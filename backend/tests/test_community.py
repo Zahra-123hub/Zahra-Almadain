@@ -161,3 +161,12 @@ class CommunityTests(ControlsBase):
         base = self.client.get(P + "/teacher/storage", headers=self.teacher).json()
         self.assertEqual((base["used_bytes"], base["limit_bytes"]), (0, 250 * 1024 * 1024))
         self.assertEqual(self.client.get(P + "/teacher/storage", headers=self.parent).status_code, 403)
+
+    def test_admin_creates_a_manager_who_enters_the_management_portal(self):
+        made = self.client.post(M + "/teacher-accounts", headers=self.admin, json={"username": "boss", "password": "Xk93-vbnm-Lp20q-zz", "role": "manager"})
+        self.assertEqual(made.status_code, 201, made.text)
+        entry = self.client.post("/api/auth/entry", json={"username": "boss", "password": "Xk93-vbnm-Lp20q-zz"})
+        self.assertEqual(entry.status_code, 200, entry.text)
+        self.assertEqual(entry.json()["portals"], ["manager"])
+        headers = {"Authorization": "Bearer " + entry.json()["access_token"]}
+        self.assertEqual(self.client.get(M + "/stats", headers=headers).status_code, 200)

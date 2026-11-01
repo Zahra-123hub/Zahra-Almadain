@@ -353,7 +353,7 @@ class PreferredLanguageRequest(BaseModel):
 
 
 class TeacherAccountCreateRequest(BaseModel):
-    role: str = Field(default="teacher", pattern="^(teacher|accountant|admin|parent)$")
+    role: str = Field(default="teacher", pattern="^(teacher|manager|accountant|admin|parent)$")
     # Parents only: the child this parent account belongs to (more can be linked later in the children tab).
     child_id: uuid.UUID | None = None
     # Real name and job: saved as the staff member (employee) tied to this account.
