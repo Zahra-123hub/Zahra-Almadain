@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import os
+import uuid
 import unittest
 from unittest.mock import patch
 
@@ -630,13 +631,19 @@ class PlatformApiTests(unittest.TestCase):
         # The post attachments stay out of the teacher's personal file list.
         self.assertEqual(self.client.get("/api/platform/teacher/content", headers=teacher).json(), [])
 
-    def test_private_post_needs_an_assigned_child_and_rejects_bad_input(self):
+    def test_private_post_needs_a_saved_child_and_rejects_bad_input(self):
         ids, teacher, parent_one, _parent_two = self._post_setup()
-        unassigned = self.client.post(
+        # every saved child can be written about by every teacher (there is no assignment step any more)
+        other = self.client.post(
             "/api/platform/teacher/posts", headers=teacher,
-            data={"scope": "child", "child_id": ids["second"], "title": "Nope", "body": "x"},
+            data={"scope": "child", "child_id": ids["second"], "title": "Second child", "body": "x"},
         )
-        self.assertEqual(unassigned.status_code, 404)
+        self.assertEqual(other.status_code, 201, other.text)
+        unknown = self.client.post(
+            "/api/platform/teacher/posts", headers=teacher,
+            data={"scope": "child", "child_id": str(uuid.uuid4()), "title": "Nope", "body": "x"},
+        )
+        self.assertEqual(unknown.status_code, 404)
         self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "child", "title": "No child", "body": "x"}).status_code, 422)
         self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "everyone", "title": "t", "body": "x"}).status_code, 422)
         self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Empty", "body": ""}).status_code, 422)
@@ -1058,7 +1065,7 @@ class PlatformApiTests(unittest.TestCase):
             self.client.get(
                 "/api/platform/teacher/children", headers=teacher_headers
             ).json(),
-            [child],
+            sorted([child, other_child], key=lambda item: item["display_name"]),  # every saved child, assigned or not
         )
         report = self.client.post(
             "/api/platform/teacher/reports",
@@ -1072,17 +1079,17 @@ class PlatformApiTests(unittest.TestCase):
         )
         self.assertEqual(report.status_code, 201)
         self.assertEqual(report.json()["status"], "submitted")
-        unassigned_report = self.client.post(
+        unknown_report = self.client.post(
             "/api/platform/teacher/reports",
             headers=teacher_headers,
             json={
-                "child_id": other_child["id"],
+                "child_id": str(uuid.uuid4()),
                 "title": "Not allowed",
-                "body": "This child was not assigned.",
+                "body": "This child does not exist.",
                 "submit_for_review": True,
             },
         )
-        self.assertEqual(unassigned_report.status_code, 404)
+        self.assertEqual(unknown_report.status_code, 404)
 
         invitation = self.client.post(
             f"/api/platform/children/{child['id']}/guardian-invitations",

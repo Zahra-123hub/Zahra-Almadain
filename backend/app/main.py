@@ -2350,15 +2350,8 @@ def list_teacher_children(
     session: Session = Depends(get_session),
 ) -> list[dict[str, str]]:
     response.headers["Cache-Control"] = "no-store"
-    children = session.scalars(
-        select(Child)
-        .join(teacher_child_links, teacher_child_links.c.child_id == Child.id)
-        .where(
-            teacher_child_links.c.account_id == principal.account.id,
-            Child.is_active.is_(True),
-        )
-        .order_by(Child.display_name)
-    ).all()
+    # every child the management has saved is listed for every teacher (no assignment step)
+    children = session.scalars(select(Child).where(Child.is_active.is_(True)).order_by(Child.display_name)).all()
     return [{"id": str(child.id), "display_name": child.display_name} for child in children]
 
 
@@ -2616,14 +2609,9 @@ def create_teacher_report(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
-    assigned = session.execute(
-        select(teacher_child_links.c.child_id).where(
-            teacher_child_links.c.account_id == principal.account.id,
-            teacher_child_links.c.child_id == payload.child_id,
-        )
-    ).first()
-    if assigned is None:
-        raise HTTPException(404, "Assigned child not found.")
+    known = session.scalar(select(Child.id).where(Child.id == payload.child_id, Child.is_active.is_(True)))
+    if known is None:
+        raise HTTPException(404, "Child profile not found.")
     title, body = payload.title.strip(), payload.body.strip()
     if not title or not body:
         raise HTTPException(422, "Report title and text are required.")
@@ -2807,15 +2795,7 @@ async def create_teacher_post(
     if scope == "child":
         if child_id is None:
             raise HTTPException(422, "Select the child this private post is for.")
-        assigned = session.scalar(
-            select(Child.id)
-            .join(teacher_child_links, teacher_child_links.c.child_id == Child.id)
-            .where(
-                Child.id == child_id, Child.is_active.is_(True),
-                teacher_child_links.c.account_id == principal.account.id,
-            )
-        )
-        if assigned is None:
+        if session.scalar(select(Child.id).where(Child.id == child_id, Child.is_active.is_(True))) is None:
             raise HTTPException(404, "Child profile not found.")
     else:
         child_id = None
