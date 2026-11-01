@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import main
-from app.models import Account, Child, ChildGuardian, Role, parent_child_links, teacher_child_links
+from app.models import Account, Child, ChildGuardian, Role, TeacherContent, parent_child_links, teacher_child_links
 from tests.test_accounting_controls import PASSWORD, ControlsBase
 
 M = "/api/admin/platform"
@@ -170,3 +170,62 @@ class CommunityTests(ControlsBase):
         self.assertEqual(entry.json()["portals"], ["manager"])
         headers = {"Authorization": "Bearer " + entry.json()["access_token"]}
         self.assertEqual(self.client.get(M + "/stats", headers=headers).status_code, 200)
+
+    # ---- exports ----
+    def test_fee_export_is_a_safe_csv(self):
+        self.charge(month=2)
+        with Session(self.engine) as session:
+            child = session.scalar(select(Child).where(Child.display_name == "Amal"))
+            child.display_name = "=SUM(A1)"
+            session.commit()
+        sheet = self.client.get("/api/admin/fees/export.csv?year=2026&month=2", headers=self.acc)
+        self.assertEqual(sheet.status_code, 200, sheet.text)
+        self.assertIn("text/csv", sheet.headers["content-type"])
+        self.assertIn("attachment", sheet.headers["content-disposition"])
+        text = sheet.content.decode("utf-8")
+        self.assertTrue(text.startswith("﻿#,Child"))
+        self.assertIn("'=SUM(A1)", text)  # a formula cannot run when the file is opened in a spreadsheet
+        self.assertIn("1000.00", text)  # numbers stay numbers
+        for headers in (self.teacher, self.parent, self.manager):
+            self.assertEqual(self.client.get("/api/admin/fees/export.csv", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/admin/fees/export.csv").status_code, 401)
+
+    def test_salary_and_log_exports(self):
+        salaries = self.client.get("/api/admin/accounting/salaries/export.csv?year=2026&month=2", headers=self.acc)
+        self.assertEqual(salaries.status_code, 200, salaries.text)
+        self.assertTrue(salaries.content.decode("utf-8").startswith("﻿#,Employee"))
+        self.charge(month=3)
+        log = self.client.get("/api/admin/fees/audit.csv", headers=self.acc)
+        self.assertEqual(log.status_code, 200)
+        self.assertIn("charge.create", log.content.decode("utf-8"))
+        self.assertEqual(self.client.get("/api/admin/fees/audit.csv", headers=self.teacher).status_code, 403)
+
+    # ---- files and security (admin only) ----
+    def test_admin_manages_the_private_files(self):
+        with Session(self.engine) as session:
+            owner = session.scalar(select(Account.id).where(Account.username == "teacher1"))
+            session.add(TeacherContent(owner_id=owner, category="other", original_name="plan.pdf", media_type="application/pdf", byte_size=12, contents=b"%PDF-1.4 abcd"))
+            session.commit()
+        listing = self.client.get(M + "/files", headers=self.admin).json()
+        self.assertEqual([(i["name"], i["owner"], i["size"]) for i in listing["items"]], [("plan.pdf", "teacher1", 12)])
+        self.assertEqual(listing["owners"], [{"owner": "teacher1", "files": 1, "bytes": 12}])
+        file_id = listing["items"][0]["id"]
+        download = self.client.get(f"{M}/files/{file_id}/download", headers=self.admin)
+        self.assertEqual((download.status_code, download.content), (200, b"%PDF-1.4 abcd"))
+        self.assertIn("attachment", download.headers["content-disposition"])
+        for headers in (self.manager, self.teacher, self.parent, self.acc):
+            self.assertIn(self.client.get(M + "/files", headers=headers).status_code, (401, 403))
+            self.assertIn(self.client.delete(f"{M}/files/{file_id}", headers=headers).status_code, (401, 403))
+        self.assertEqual(self.client.delete(f"{M}/files/{file_id}", headers=self.admin).status_code, 204)
+        self.assertEqual(self.client.delete(f"{M}/files/{file_id}", headers=self.admin).status_code, 404)
+        self.assertEqual(self.client.get(M + "/files", headers=self.admin).json()["items"], [])
+
+    def test_security_overview_is_numbers_for_the_admin_only(self):
+        data = self.client.get(M + "/security", headers=self.admin)
+        self.assertEqual(data.status_code, 200, data.text)
+        body = data.json()
+        self.assertGreaterEqual(body["sessions_open"], 5)
+        self.assertEqual(body["by_role"]["parent"], 2)
+        self.assertEqual((body["accounts_blocked"], body["files"]), (0, 0))
+        for headers in (self.manager, self.teacher, self.acc):
+            self.assertIn(self.client.get(M + "/security", headers=headers).status_code, (401, 403))

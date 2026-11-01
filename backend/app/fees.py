@@ -6,6 +6,9 @@ USD and SYP are kept strictly apart; amounts of different currencies are never a
 
 from __future__ import annotations
 
+import csv
+import io
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -172,6 +175,30 @@ class ChildClassIn(BaseModel):
 
 
 # --- serialisation -----------------------------------------------------------
+
+
+NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?$")
+
+
+def csv_response(filename: str, header: list[str], rows: list[list[Any]]) -> Response:
+    """A CSV file for Excel (UTF-8 with a mark so Arabic opens right). Text that a spreadsheet could read as a formula is defused."""
+
+    def safe(value: Any) -> str:
+        text = "" if value is None else str(value)
+        if text[:1] in ("=", "+", "-", "@", "\t", "\r") and not NUMBER_RE.match(text):
+            return "'" + text
+        return text
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([safe(cell) for cell in header])
+    for row in rows:
+        writer.writerow([safe(cell) for cell in row])
+    return Response(
+        content="\ufeff" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 def charge_row(charge: FeeCharge, child: Child) -> dict[str, Any]:
@@ -344,6 +371,25 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             "totals": totals_by_currency(rows),
             "classes": classes,
         }
+
+    @router.get("/export.csv")
+    def export_fees(
+        year: int | None = None,
+        month: int | None = None,
+        class_name: str = "",
+        currency: str = "",
+        status: str = "",
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        data = list_fees(Response(), year, month, class_name, currency, status, None, actor, session)
+        header = ["#", "Child", "Class", "Year", "Month", "Currency", "Amount", "Paid", "Remaining", "Status", "Last payment", "Receipts", "Notes"]
+        rows = [
+            [r["n"], r["child_name"], r["class_name"], r["year"], r["month"], r["currency"], r["amount"] or "", r["paid"], r["remaining"] or "",
+             r["status"], r["last_paid_on"] or "", " ".join(r["receipts"]), " | ".join(r["notes"])]
+            for r in data["rows"]
+        ]
+        return csv_response(f"fees-{year or 'all'}-{month or 'all'}.csv", header, rows)
 
     @router.get("/children")
     def fee_children(
@@ -749,5 +795,14 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             }
             for entry in entries
         ]
+
+    @router.get("/audit.csv")
+    def export_audit(
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        entries = audit(Response(), 500, actor, session)
+        return csv_response("system-log.csv", ["Time", "User", "Action", "Entity", "Details"],
+                            [[e["at"], e["actor"], e["action"], e["entity_id"], e["details"]] for e in entries])
 
     return router
