@@ -316,3 +316,57 @@ class WorkflowTests(ControlsBase):
         self.assertNotIn("Typed Only", [c["display_name"] for c in self.client.get(F + "/children", headers=self.acc).json()])
         self.enroll("Typed Only")
         self.assertEqual(self.client.post(F + "/charges", headers=self.acc, json={"child_name": "typed only", "year": 2026, "month": 1, "amount": "10", "currency": "SYP"}).status_code, 201)
+
+    # ---- the net after the conversion is exact ----
+    def test_the_converted_net_is_made_from_exact_amounts(self):
+        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": "2026-01-01", "syp_per_usd": "12181.8547"})
+        self.entry("2026-01-12", "buffet", income="555")
+        self.entry("2026-01-12", "buffet", income="0.51", currency="USD")
+        self.entry("2026-01-12", "operating", expense="30000")
+        sheet = self.sheet("2026-01-12")
+        dollars = sheet["converted"]["USD"]
+        # 0.5556 - 2.4627 = -1.9071: the rounded income and expense (0.56 and 2.46) must not be subtracted again
+        self.assertEqual((dollars["income"], dollars["expense"], dollars["net"]), ("0.56", "2.46", "-1.91"))
+        pounds = sheet["converted"]["SYP"]
+        self.assertEqual((pounds["income"], pounds["expense"], pounds["net"]), ("6767.75", "30000.00", "-23232.25"))
+        self.assertEqual((sheet["totals"]["SYP"]["net"], sheet["totals"]["USD"]["net"]), ("-29445.00", "0.51"))
+
+    # ---- zeroing a table on purpose ----
+    def reset_part(self, scopes, year=2026, month=1, confirm="RESET", headers=None):
+        return self.client.post(A + "/reset-part", headers=headers or self.admin, json={"year": year, "month": month, "scopes": scopes, "confirm": confirm})
+
+    def test_the_administrator_can_zero_one_part_of_one_month(self):
+        self.capital()
+        charge = self.charge(month=1, amount="1000")
+        self.pay(charge, "400", "2026-01-10")
+        self.charge(month=2, amount="500")
+        self.hire("Rima")
+        self.client.post(A + "/salaries", headers=self.acc, json={"employee_name": "Rima", "year": 2026, "month": 1, "currency": "SYP", "base": "500"})
+        entry_id = self.saved_row(self.entry("2026-01-12", "operating", expense="40"), "operating")["id"]
+        self.upload(entry_id)
+        self.entry("2026-02-03", "operating", expense="7")
+        # only the sheet rows (and their receipts): the fees and the salary stay
+        done = self.reset_part(["entries"])
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual((done.json()["entries"], done.json()["receipts"], done.json()["salaries"], done.json()["fees"]), (1, 1, 0, 0))
+        self.assertEqual(self.client.get(f"{A}/entries/{entry_id}/receipts", headers=self.acc).status_code, 404)
+        self.assertEqual(self.sheet("2026-02-03")["totals"]["SYP"]["expense"], "7.00")  # another month is untouched
+        again = self.reset_part(["salaries", "fees"])
+        self.assertEqual((again.json()["salaries"], again.json()["fees"], again.json()["payments"]), (1, 1, 1))
+        listing = self.client.get(F + "?year=2026&month=2", headers=self.acc).json()["rows"]
+        self.assertEqual(len(listing), 1)  # February still has its fee line
+        self.assertEqual(self.client.get(f"{F}?year=2026&month=1", headers=self.acc).json()["rows"], [])
+
+    def test_zeroing_needs_the_administrator_the_word_and_an_open_month(self):
+        self.charge(month=1, amount="1000")
+        for headers in (self.acc, self.mgr, self.teacher, self.parent):
+            self.assertIn(self.reset_part(["fees"], headers=headers).status_code, (401, 403))
+        self.assertEqual(self.reset_part(["fees"], confirm="").status_code, 422)
+        self.assertEqual(self.reset_part(["fees"], confirm="reset").status_code, 422)
+        self.assertEqual(self.reset_part(["everything"]).status_code, 422)
+        self.assertEqual(self.reset_part([]).status_code, 422)
+        self.assertEqual(self.reset_part(["fees"], month=13).status_code, 422)
+        self.assertEqual(len(self.client.get(F + "?year=2026&month=1", headers=self.acc).json()["rows"]), 1)  # nothing was removed
+        self.assertEqual(self.close().status_code, 201)
+        self.assertEqual(self.reset_part(["fees"]).status_code, 423)  # a closed month stays as it was
+        self.assertEqual(len(self.client.get(F + "?year=2026&month=1", headers=self.acc).json()["rows"]), 1)

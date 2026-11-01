@@ -269,6 +269,13 @@ class ChildIn(BaseModel):
     guardians: list[GuardianIn] = Field(min_length=1, max_length=2)  # one parent, or both
 
 
+class PartResetIn(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+    scopes: list[str] = Field(min_length=1, max_length=3)
+    confirm: str = Field(default="", max_length=20)
+
+
 class PeriodIn(BaseModel):
     year: int = Field(ge=2000, le=2100)
     month: int = Field(ge=1, le=12)
@@ -731,10 +738,16 @@ def unified_sheet(session: Session, period_type: str, year: int, month: int, wee
         if found is not None:
             rate, rate_date, source, stale = found
             converted = {"rate": rate_text(rate), "rate_date": rate_date.isoformat(), "source": source, "stale": stale}
+            def unrounded(amount: Decimal, source: str, target: str) -> Decimal:
+                if source == target:
+                    return amount
+                return amount * rate if source == "USD" else amount / rate
+
             for target in CURRENCIES:
-                income = sum((convert(Decimal(totals[c]["income"]), c, target, rate) for c in CURRENCIES), ZERO)
-                expense = sum((convert(Decimal(totals[c]["expense"]), c, target, rate) for c in CURRENCIES), ZERO)
-                entry: dict[str, Any] = {"income": str(income), "expense": str(expense), "net": str(income - expense)}
+                income_exact = sum((unrounded(Decimal(totals[c]["income"]), c, target) for c in CURRENCIES), ZERO)
+                expense_exact = sum((unrounded(Decimal(totals[c]["expense"]), c, target) for c in CURRENCIES), ZERO)
+                # the net comes from the exact amounts and is rounded once: 0.5556 - 2.4627 = -1.91, not 0.56 - 2.46 = -1.90
+                entry: dict[str, Any] = {"income": str(money(income_exact)), "expense": str(money(expense_exact)), "net": str(money(income_exact - expense_exact))}
                 if balance is not None and all(balance.get(c) for c in CURRENCIES):
                     for edge in ("opening", "closing"):
                         entry[edge] = str(sum((convert(Decimal(balance[c][edge]), c, target, rate) for c in CURRENCIES), ZERO))
@@ -1620,6 +1633,46 @@ def build_router(
         log(session, actor, "child.remove", child.id, "")
         session.commit()
         return Response(status_code=204)
+
+    # ---- zeroing a table on purpose ------------------------------------------
+
+    @router.post("/reset-part")
+    def reset_part(
+        payload: PartResetIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, int]:
+        """Admin only: empties one or more parts of ONE month so its table starts at 0 again:
+        `entries` (the rows typed in the day / week / month sheets and their receipts), `salaries`, `fees` (fee lines and their payments).
+        Children, employees and accounts stay. A closed month cannot be emptied. Needs the word RESET."""
+        if actor.role != "admin":
+            raise HTTPException(403, "تصفير الجداول للمدير فقط.")
+        if payload.confirm.strip() != "RESET":
+            raise HTTPException(422, "اكتب كلمة RESET للتأكيد.")
+        wanted = set(payload.scopes)
+        if not wanted <= {"entries", "salaries", "fees"}:
+            raise HTTPException(422, "جزء غير معروف.")
+        first, last = sheet_range("month", payload.year, payload.month, None)
+        ensure_open(session, (payload.year, payload.month))
+        counts = {"entries": 0, "receipts": 0, "salaries": 0, "fees": 0, "payments": 0}
+        if "entries" in wanted:
+            ids = list(session.scalars(select(AccountingEntry.id).where(
+                ((AccountingEntry.period_type == "month") & (AccountingEntry.year == payload.year) & (AccountingEntry.month == payload.month))
+                | ((AccountingEntry.period_type != "month") & (AccountingEntry.week_start >= first) & (AccountingEntry.week_start <= last))
+            )).all())
+            if ids:
+                counts["receipts"] = session.execute(delete(EntryReceipt).where(EntryReceipt.entry_id.in_(ids))).rowcount or 0
+                counts["entries"] = session.execute(delete(AccountingEntry).where(AccountingEntry.id.in_(ids))).rowcount or 0
+        if "salaries" in wanted:
+            counts["salaries"] = session.execute(delete(SalaryLine).where(SalaryLine.year == payload.year, SalaryLine.month == payload.month)).rowcount or 0
+        if "fees" in wanted:
+            charge_ids = list(session.scalars(select(FeeCharge.id).where(FeeCharge.year == payload.year, FeeCharge.month == payload.month)).all())
+            if charge_ids:
+                counts["payments"] = session.execute(delete(FeePayment).where(FeePayment.charge_id.in_(charge_ids))).rowcount or 0
+                counts["fees"] = session.execute(delete(FeeCharge).where(FeeCharge.id.in_(charge_ids))).rowcount or 0
+        log(session, actor, "reset.part", f"{payload.month}/{payload.year}", f"{sorted(wanted)} {counts}")
+        session.commit()
+        return counts
 
     # ---- closed months -------------------------------------------------------
 

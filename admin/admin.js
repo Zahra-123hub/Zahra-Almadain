@@ -256,6 +256,21 @@ var EN_TEXT = {
   "إضافة الأطفال وأولياء أمورهم وتعديلهم من مهام الإدارة. هنا تحدّد الاشتراكات وتسجّل الدفعات للأطفال المسجَّلين فقط.":"Adding children and their parents and changing them is the work of the management. Here you set the fees and record the payments for saved children only.",
   "الموظف «":"The employee «",
   "الأدوار":"Roles", "العدد أكبر من المسموح":"more than allowed",
+  "تصفير الجدول":"Zero the table",
+  "يمسح الأجزاء المختارة من الشهر المعروض فتبدأ أرقامه من الصفر. الأطفال والموظفون والحسابات تبقى. لا يعمل على شهر مغلق ولا يمكن التراجع عنه، وكل تصفير يُسجَّل.":"Empties the chosen parts of the month shown so its figures start at zero. Children, employees and accounts stay. It does not work on a closed month, cannot be undone, and every reset is logged.",
+  "تصفير الأجزاء المختارة":"Zero the chosen parts",
+  "اختر شهراً محدداً أولاً.":"Choose a specific month first.",
+  "اختر جزءاً واحداً على الأقل.":"Choose at least one part.",
+  "كل أسطر الرواتب في هذا الشهر":"All salary lines of this month",
+  "كل الاشتراكات والدفعات في هذا الشهر":"All fees and payments of this month",
+  "الحركات المكتوبة في الجداول (اليومي والأسبوعي والشهري) وإيصالاتها":"The rows typed in the sheets (daily, weekly and monthly) and their receipts",
+  "أسطر الرواتب":"Salary lines",
+  "الاشتراكات والدفعات":"Fees and payments",
+  "طباعة قسائم الرواتب (صفحة لكل موظف)":"Print payslips (one page per employee)",
+  "قسيمة راتب":"Payslip",
+  "لا توجد رواتب لطباعتها في هذه الفترة.":"There are no salaries to print in this period.",
+  "تصفير الجداول للمدير فقط.":"Only the administrator can zero tables.",
+  "جزء غير معروف.":"Unknown part.",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -1584,7 +1599,8 @@ function tabFees(){
   ]);
   init();
   fill = null;
-  return h("section", {}, [filterCard, addForm, genForm, tables]);
+  var resetBox = accResetCard({scopes:[["fees", "كل الاشتراكات والدفعات في هذا الشهر", true]], period:function(){ return {year:Number(filters.year), month:Number(filters.month)}; }, onDone:load});
+  return h("section", {}, [filterCard, addForm, genForm, tables, resetBox]);
 }
 
 var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]

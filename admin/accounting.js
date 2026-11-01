@@ -522,6 +522,25 @@ function tabSalaries(){
     });
     accPrint("كشف رواتب الموظفين والمدرسات", function(part){ return "الفترة: " + esc(period) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
   }
+  /* One separate page per employee (a payslip), so salaries can be handed out and printed apart from every other table. */
+  async function printSlips(){
+    var codes = filters.currency ? [filters.currency] : ACC_CURRENCIES;
+    try{ if(await accFillSavedSalaries(filters.year, filters.month, codes, msg)) await load(); }
+    catch(error){ setMsg(msg, errText(error), "err"); return; }
+    var period = (filters.month ? MONTHS_AR[Number(filters.month) - 1] + " " : "") + (filters.year || "");
+    var rows = data.rows.filter(function(r){ return codes.indexOf(r.currency) !== -1 && r.net !== null && r.net !== undefined; });
+    if(!rows.length){ setMsg(msg, "لا توجد رواتب لطباعتها في هذه الفترة.", "err"); return; }
+    var parts = rows.map(function(r){
+      function line(label, value, strong){ return "<tr><td class='l'>" + label + "</td><td class='n'>" + (strong ? "<b>" + value + "</b>" : value) + "</td></tr>"; }
+      return {code:r.currency, name:r.employee_name, cols:[45, 55], html:"<table><tbody>" +
+        line("اسم الموظف / المدرسة", esc(r.employee_name)) + line("المسمى الوظيفي", esc(r.job_title || "—")) +
+        line("الراتب الأساسي", money(r.base) + " " + r.currency) + line("المكافآت / الإضافي", money(r.bonus || "0") + " " + r.currency) +
+        line("السلف", money(r.advance || "0") + " " + r.currency) + line("الخصومات", money(r.deduction || "0") + " " + r.currency) +
+        line("الصافي المستحق", money(r.net) + " " + r.currency, true) +
+        line("تاريخ التسليم", esc(r.paid_on || "—")) + line("سلّمه", esc(r.paid_by || "")) + "</tbody></table>"};
+    });
+    accPrint("قسيمة راتب", function(part){ return "الموظف: " + esc(part.name) + " &nbsp;|&nbsp; الفترة: " + esc(period) + " &nbsp;|&nbsp; العملة: " + esc(ACC_CURRENCY_NAME[part.code]); }, parts, msg);
+  }
   var filterCard = h("div", {class:"a-card"}, [h("h3", {text:"كشف رواتب الموظفين والمدرسات"}),
     h("p", {class:"hint", text:"الصافي المستحق = الراتب الأساسي + المكافآت − السلف − الخصومات. يُحسب تلقائياً."}),
     h("div", {class:"a-form-grid"}, [accField("السنة", fYear), accField("الشهر", fMonth), accField("العملة", fCurrency), h("label", {class:"a-field a-check-field"}, [fReview, h("span", {text:"فقط ما يحتاج مراجعة"})])]),
@@ -539,10 +558,11 @@ function tabSalaries(){
           setMsg(msg, "تم إنشاء " + created + " سطر راتب، وتخطّي " + skipped + " (موجود مسبقاً). الموظفون بلا راتب محفوظ لا يُنشأ لهم سطر.", "ok"); await load();
         }catch(error){ setMsg(msg, errText(error), "err"); }
       }}),
-      h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);
+      h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print}),
+      h("button", {type:"button", class:"a-btn ghost", text:"طباعة قسائم الرواتب (صفحة لكل موظف)", onclick:printSlips})]), msg]);
   syncNew(); updatePreview(); loadEmployees(); load();
   fill = null;
-  return h("section", {}, [filterCard, addForm, tables]);
+  return h("section", {}, [filterCard, addForm, tables, accResetCard({scopes:[["salaries", "كل أسطر الرواتب في هذا الشهر", true]], period:function(){ return {year:Number(fYear.value), month:Number(fMonth.value)}; }, onDone:load})]);
 }
 
 /* ------------------------------------------------- monthly / weekly sheet */
@@ -902,7 +922,12 @@ function tabSheet(type, opts){
     h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn", text:"تصدير PDF / طباعة", onclick:print})]), msg]);
   load();
   fill = null;
-  return h("section", {}, [head, capital, tables]);
+  function resetPeriod(){
+    var month = isWeek ? Number(String(filters.day || "").slice(5, 7)) : Number(filters.month);
+    return {year:isWeek ? Number(String(filters.day || "").slice(0, 4)) : Number(filters.year), month:month};
+  }
+  var resetBox = readOnly ? "" : accResetCard({scopes:[["entries", "الحركات المكتوبة في الجداول (اليومي والأسبوعي والشهري) وإيصالاتها", true], ["salaries", "أسطر الرواتب", false], ["fees", "الاشتراكات والدفعات", false]], period:resetPeriod, onDone:load});
+  return h("section", {}, [head, capital, tables, resetBox]);
 }
 
 /* ----------------------------------------------------------- saved staff names */
