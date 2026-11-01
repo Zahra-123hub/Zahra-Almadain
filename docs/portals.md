@@ -5,7 +5,7 @@ Four sign-in areas share one account system (`/login`). After sign-in the server
 
 | Portal | Path | Roles | Files |
 |---|---|---|---|
-| Login | `/login/` | all | `portal.js`, `portal.css` |
+| Login | `/login/` | all | `portal.js`, `portal-text.js`, `portal.css` |
 | Parents | `/parents/` | parent | `portal.js` |
 | Teachers | `/teachers/` | teacher (admin sees posts and material of everybody) | `portal.js` |
 | Management | `/management/` | manager, admin | `management.js` (+ helpers from `portal.js`) |
@@ -22,7 +22,7 @@ each call is authorised again by the server (`require_platform_role`, `require_m
   whether parents can see it), posts with a preview, teaching material with the storage meter (250 MB), notifications.
 - **Management**: numbers, children with group, teachers and parent accounts (assign and remove), groups (rename), registration requests
   (approve with a one-time code, reject), approval of reports, notices for parents and teachers.
-- **Admin**: everything above plus accounts and roles, website content, settings, the system log (read only) and accounting.
+- **Admin**: everything above plus accounts and roles, website content, settings, the system log (read only, CSV), the teachers' files (download, delete), a security overview (numbers only) and accounting (CSV export of fees and salaries).
 
 ## Reports travel through three states
 
@@ -50,4 +50,11 @@ inside `backend/`.
 ## Cache versions
 
 After a change to `portal.js`, `management.js`, `portal.css` or the admin files raise the `?v=` number in the HTML files that load them
-(`login/`, `teachers/`, `parents/`, `management/`, `admin/index.html`).
+ (`login/`, `teachers/`, `parents/`, `management/`, `admin/index.html`).
+
+## Files
+
+- `portal-text.js`: every word of the portals in Arabic and English (change texts here only).
+- `portal.js`: session, navigation, parent and teacher screens, shared parts (notifications, profile, notices).
+- `management.js`: the management screens.
+- `admin/admin.js`, `admin/accounting.js`: the admin dashboard and the accounting area (CSV export, system log, files, security).
