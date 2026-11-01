@@ -409,3 +409,51 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
   .a-kid-parent .a-form-grid{grid-template-columns:1fr}
   .a-kid-parent input[type=date],.a-child input[type=date]{min-width:0}
 }
+
+/* ===== Guided accounting workflow ===== */
+.a-badge.due{background:#ffdcd9;color:#a02420}
+@media(prefers-color-scheme:dark){.a-badge.due{background:#4d1f22;color:#ffb3ae}}
+.a-msg.warn{color:#b36b00}
+@media(prefers-color-scheme:dark){.a-msg.warn{color:#ffd78a}}
+.a-period{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 14px}
+.a-period select,.a-period input{min-height:42px;border:2px solid var(--line);border-radius:10px;padding:4px 10px;background:var(--bg2);color:var(--ink);font:inherit}
+.a-period input[type=number]{width:96px}
+.a-steps{display:flex;gap:6px;overflow-x:auto;padding:6px;margin:0 0 12px;border:2px solid var(--line);border-radius:16px;background:var(--surface);scrollbar-width:thin}
+.a-step{position:relative;flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:5px 12px;border:2px solid transparent;border-radius:12px;background:transparent;color:var(--ink);font:inherit;font-weight:700;white-space:nowrap;cursor:pointer}
+.a-step:hover{background:#17408f14}
+.a-step[aria-selected=true]{border-color:var(--head);background:#17408f12}
+.a-step-n{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);font-size:.8rem;font-weight:800}
+.a-step.s-done .a-step-n{background:var(--green);border-color:var(--green);color:#fff}
+.a-step.s-in_progress .a-step-n{border-color:var(--sun);background:#fdb91340}
+.a-step.is-next .a-step-n{border-color:var(--sun);box-shadow:0 0 0 3px #fdb91355}
+.a-step-dot{position:absolute;top:5px;inset-inline-end:5px;width:10px;height:10px;border-radius:50%;background:var(--red);border:2px solid var(--surface)}
+.a-nextbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px;padding:10px 14px;border:2px dashed var(--sun);border-radius:14px;background:#fdb91312}
+.a-progress{height:12px;margin:8px 0;border-radius:99px;background:var(--line);overflow:hidden}
+.a-progress span{display:block;height:100%;background:var(--green);border-radius:99px;transition:width .3s}
+.a-flow{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.a-flow-step{display:flex;align-items:flex-start;gap:12px;padding:12px;border:2px solid var(--line);border-radius:14px;background:var(--bg2)}
+.a-flow-step.is-next{border-color:var(--sun);background:#fdb91312}
+.a-flow-step.has-issue{border-inline-start:6px solid var(--red)}
+.a-flow-step.s-done{opacity:.85}
+.a-flow-n{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:2px solid var(--line);font-weight:800}
+.a-flow-step.s-done .a-flow-n{background:var(--green);border-color:var(--green);color:#fff}
+.a-flow-step.s-in_progress .a-flow-n{border-color:var(--sun);background:#fdb91340}
+.a-flow-body{flex:1 1 auto;min-width:0;display:grid;gap:2px}
+.a-flow-title{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.a-flow-title .a-badge{margin-top:0}
+.a-issues{margin:4px 0 0;padding-inline-start:18px}
+.a-issue{color:var(--red);font-weight:700;font-size:.92rem}
+.a-checks .a-check{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.a-check-mark{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:2px solid var(--line);font-weight:800}
+.a-check.s-done .a-check-mark{background:var(--green);border-color:var(--green);color:#fff}
+.a-check.s-in_progress .a-check-mark{border-color:var(--sun)}
+.a-check-body{flex:1 1 auto;display:grid;gap:2px}
+.a-receipt-row td{background:#17408f0d;padding:12px!important}
+.a-receipt-panel{display:grid;gap:8px}
+.a-receipt{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.a-receipt-panel .a-row{margin-top:4px}
+.a-receipt-panel input[type=text]{flex:1 1 200px;min-height:42px}
+.a-hintcard .hint{margin:0}
+@media(max-width:600px){.a-step-t{font-size:.9rem}.a-flow-step{flex-wrap:wrap}.a-flow-step>.a-btn{width:100%}.a-period input[type=number]{width:84px}}
+.a-period select,.a-period input{width:auto!important;flex:0 0 auto}
+.a-period strong{margin-inline-end:6px}

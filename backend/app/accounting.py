@@ -284,7 +284,7 @@ class EntryIn(BaseModel):
     expense: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
     manual: bool = True
     person: str = Field(default="", max_length=120)  # who spent / received the money
-    receipt_no: str = Field(default="", max_length=60)  # number of the paper receipt
+    receipt_no: str | None = Field(default=None, max_length=60)  # number of the paper receipt (left as it is when not sent)
     replaces: uuid.UUID | None = None  # the row in the other currency this one takes over (the row changed its currency)
 
 
@@ -1287,7 +1287,8 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         entry.details = payload.details.strip()
         entry.note = payload.note.strip()
         entry.person = payload.person.strip()
-        entry.receipt_no = payload.receipt_no.strip()
+        if payload.receipt_no is not None:
+            entry.receipt_no = payload.receipt_no.strip()
         entry.entered_by = actor.name[:80]
         entry.income, entry.expense = money(payload.income), money(payload.expense)
         entry.manual = payload.manual
