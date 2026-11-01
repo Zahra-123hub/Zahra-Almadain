@@ -24,10 +24,15 @@ each call is authorised again by the server (`require_platform_role`, `require_m
   (approve with a one-time code, reject), approval of reports, notices for parents and teachers.
 - **Admin**: everything above plus accounts and roles, website content, settings, the system log (read only, CSV), the teachers' files (download, delete), a security overview (numbers only) and accounting (CSV export of fees and salaries).
 
-## Reports travel through three states
+## Where a finished report goes
 
-`draft` -> `submitted` (teacher sends it) -> `published` (management approves; parents see it from now on) or `rejected` (back to the teacher).
-Parents never get drafts or submitted reports.
+A teacher chooses for every report:
+
+- **Save draft** - stays with the teacher, nobody else sees it.
+- **Send to the management for review** - state `submitted`; the management reviews it and publishes it to the parents (or returns it). The management is notified.
+- **Send to parents directly** - state `published` at once (after a confirmation question); the parents of that child see it and are notified, the management is told (`report_direct`) but is not asked. The teacher cannot change it afterwards.
+
+Only one destination per report (the server refuses both). Attachments of a report stay private to the teacher and the management in every case. A returned (`rejected`) report can be sent again to either side.
 
 ## Notifications
 

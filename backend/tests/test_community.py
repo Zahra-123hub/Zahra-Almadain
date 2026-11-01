@@ -249,3 +249,57 @@ class CommunityTests(ControlsBase):
         self.assertEqual(done.status_code, 200, done.text)
         self.assertEqual(sorted(done.json()["roles"]), sorted(every))
         self.assertEqual(self.client.patch(f"{M}/accounts/{account['id']}", headers=self.admin, json={"roles": every + ["janitor"]}).status_code, 422)
+
+    # ---- where a finished report goes: the management or straight to the parents ----
+    def report(self, **extra):
+        body = {"child_id": self.amal, "title": "يوم ممتع", "body": "لعب", **extra}
+        return self.client.post(P + "/teacher/reports", headers=self.teacher, json=body)
+
+    def parent_reports(self, headers, child=None):
+        return self.client.get(f"{P}/children/{child or self.amal}/reports", headers=headers).json()
+
+    def test_a_report_can_go_straight_to_the_parents(self):
+        made = self.report(publish_to_parents=True)
+        self.assertEqual(made.status_code, 201, made.text)
+        self.assertEqual((made.json()["status"], bool(made.json()["published_at"])), ("published", True))
+        self.assertEqual([r["title"] for r in self.parent_reports(self.parent)], ["يوم ممتع"])  # the parents see it at once
+        self.assertEqual(self.kinds(self.parent), ["report_published"])
+        self.assertEqual(self.kinds(self.parent2), [])  # the parents of another child hear nothing
+        self.assertEqual(self.kinds(self.manager), ["report_direct"])  # the management is told, not asked
+        self.assertEqual(self.inbox(self.manager)["items"][0]["subject"], "Amal")
+        self.assertEqual(self.client.get(P + "/review/reports", headers=self.manager).json(), [])  # nothing to review
+        # once the parents have it the teacher cannot change it any more
+        edit = self.client.patch(P + "/teacher/reports/" + made.json()["id"], headers=self.teacher, json={"title": "x", "body": "y"})
+        self.assertEqual(edit.status_code, 404)
+
+    def test_a_report_can_go_to_the_management_first_as_before(self):
+        made = self.report(submit_for_review=True)
+        self.assertEqual(made.json()["status"], "submitted")
+        self.assertEqual(self.parent_reports(self.parent), [])  # not visible to the parents yet
+        self.assertEqual(self.kinds(self.manager), ["report_submitted"])
+        self.assertEqual(self.kinds(self.parent), [])
+        done = self.client.patch(P + "/review/reports/" + made.json()["id"], headers=self.manager, json={"status": "published"})
+        self.assertEqual(done.status_code, 200)
+        self.assertEqual(len(self.parent_reports(self.parent)), 1)
+
+    def test_a_draft_stays_with_the_teacher_and_can_be_sent_later_to_either_side(self):
+        draft = self.report().json()
+        self.assertEqual(draft["status"], "draft")
+        self.assertEqual((self.parent_reports(self.parent), self.kinds(self.manager)), ([], []))
+        later = self.client.patch(P + "/teacher/reports/" + draft["id"], headers=self.teacher, json={"title": "t", "body": "b", "publish_to_parents": True})
+        self.assertEqual((later.status_code, later.json()["status"]), (200, "published"))
+        self.assertEqual(len(self.parent_reports(self.parent)), 1)
+        other = self.report(title="second").json()
+        again = self.client.patch(P + "/teacher/reports/" + other["id"], headers=self.teacher, json={"title": "t", "body": "b", "submit_for_review": True})
+        self.assertEqual(again.json()["status"], "submitted")
+        # a returned report can be sent to the parents too
+        self.client.patch(P + "/review/reports/" + other["id"], headers=self.manager, json={"status": "rejected"})
+        back = self.client.patch(P + "/teacher/reports/" + other["id"], headers=self.teacher, json={"title": "t", "body": "b2", "publish_to_parents": True})
+        self.assertEqual(back.json()["status"], "published")
+
+    def test_one_destination_only(self):
+        both = self.report(submit_for_review=True, publish_to_parents=True)
+        self.assertEqual(both.status_code, 422)
+        self.assertEqual(self.client.get(P + "/teacher/reports", headers=self.teacher).json(), [])  # nothing was created
+        self.assertEqual(self.report(child_id=self.omar, publish_to_parents=True).status_code, 201)  # every saved child (no assignment step)
+        self.assertEqual(self.client.post(P + "/teacher/reports", headers=self.parent, json={"child_id": self.amal, "title": "t", "body": "b", "publish_to_parents": True}).status_code, 403)

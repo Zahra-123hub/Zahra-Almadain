@@ -65,7 +65,9 @@
       networkError: "تعذّر الاتصال بالخادم. قد يكون الخادم يستيقظ (حتى دقيقة بعد فترة توقف)، أو أن الاتصال بالإنترنت ضعيف. انتظر قليلاً ثم حاول مرة أخرى.",
       genericError: "تعذر إكمال الطلب. حاول مرة أخرى.",
       title: "عنوان التقرير", body: "ملخص اليوم", child: "الطفل",
-      selectChild: "اختاري طفلاً", saveDraft: "حفظ كمسودة", submit: "إرسال للمراجعة",
+      selectChild: "اختاري طفلاً", saveDraft: "حفظ كمسودة", submit: "إرسال للإدارة للمراجعة", sendToParents: "إرسال للأهل مباشرة",
+      confirmDirect: "سيصل هذا التقرير إلى أهل الطفل فوراً دون مراجعة الإدارة، ولا يمكنك تعديله بعد ذلك. هل تريدين المتابعة؟", reportPublishedToParents: "وصل التقرير إلى أهل الطفل.",
+      reportRouteHelp: "اختاري وجهة التقرير: «إرسال للإدارة للمراجعة» يصل إلى الإدارة لتراجعه ثم تنشره للأهل، و«إرسال للأهل مباشرة» يصل إلى أهل الطفل فوراً. «حفظ كمسودة» يبقيه عندك.",
       reportSaved: "تم حفظ التقرير.", reportSent: "أرسل التقرير للمراجعة.",
       status: "الحالة", draft: "مسودة", submitted: "بانتظار المراجعة",
       published: "منشور للأهل", rejected: "يحتاج تعديلاً", archived: "مؤرشف",
@@ -153,7 +155,9 @@
       networkError: "Could not reach the server. It may be waking up (up to a minute after being idle), or the connection is weak. Wait a moment and try again.",
       genericError: "The request could not be completed. Please try again.",
       title: "Report title", body: "Daily summary", child: "Child",
-      selectChild: "Select a child", saveDraft: "Save draft", submit: "Submit for review",
+      selectChild: "Select a child", saveDraft: "Save draft", submit: "Send to the management for review", sendToParents: "Send to parents directly",
+      confirmDirect: "This report reaches the parents of the child at once, without review by the management, and you cannot change it afterwards. Continue?", reportPublishedToParents: "The report reached the parents of the child.",
+      reportRouteHelp: "Choose where the report goes: Send to the management for review reaches the management, who review it and publish it to the parents; Send to parents directly reaches the parents of the child at once. Save draft keeps it with you.",
       reportSaved: "Report saved.", reportSent: "Report submitted for review.",
       status: "Status", draft: "Draft", submitted: "Awaiting review",
       published: "Published for parents", rejected: "Needs revision", archived: "Archived",
@@ -221,8 +225,8 @@
     "The file exceeds its size or storage limit.": {ar:"تجاوز الملف الحد المسموح للحجم أو التخزين.",en:"The file exceeds its size or storage limit."}
   };
   var NOTIF = {
-    ar: {report_published: "نُشر تقرير جديد عن {s}", report_returned: "أُعيد تقرير {s} إليك للتعديل", report_submitted: "تقرير بانتظار الاعتماد: {s}", post_new: "منشور جديد: {s}", announcement: "إعلان جديد: {s}"},
-    en: {report_published: "A new report about {s} is published", report_returned: "The report about {s} was returned to you", report_submitted: "A report awaits approval: {s}", post_new: "New post: {s}", announcement: "New notice: {s}"}
+    ar: {report_published: "نُشر تقرير جديد عن {s}", report_returned: "أُعيد تقرير {s} إليك للتعديل", report_submitted: "تقرير بانتظار الاعتماد: {s}", report_direct: "نشرت معلمة تقريراً مباشرة لأهل {s}", post_new: "منشور جديد: {s}", announcement: "إعلان جديد: {s}"},
+    en: {report_published: "A new report about {s} is published", report_returned: "The report about {s} was returned to you", report_submitted: "A report awaits approval: {s}", report_direct: "A teacher published a report straight to the parents of {s}", post_new: "New post: {s}", announcement: "New notice: {s}"}
   };
   var ROLE_NAMES = {
     ar: {parent: "ولي أمر", teacher: "معلمة", manager: "إدارة", admin: "مدير", accountant: "محاسب"},

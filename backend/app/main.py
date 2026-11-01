@@ -333,7 +333,8 @@ class DailyReportRequest(BaseModel):
     body: str = Field(min_length=1, max_length=3000)
     activities: str = Field(default="", max_length=1000)
     meals: str = Field(default="", max_length=500)
-    submit_for_review: bool = False
+    submit_for_review: bool = False  # to the management: they review it and publish it to the parents
+    publish_to_parents: bool = False  # straight to the parents of the child (the management is told)
 
 
 class DailyReportUpdateRequest(BaseModel):
@@ -342,6 +343,7 @@ class DailyReportUpdateRequest(BaseModel):
     activities: str = Field(default="", max_length=1000)
     meals: str = Field(default="", max_length=500)
     submit_for_review: bool = False
+    publish_to_parents: bool = False
 
 
 class ReportStatusRequest(BaseModel):
@@ -2601,6 +2603,26 @@ def list_teacher_reports(
     return [report_data(report) for report in reports]
 
 
+def route_report(session: Session, report: DailyReport, to_review: bool, to_parents: bool) -> None:
+    """Where a finished report goes. Not finished: a draft. To the management: they review it and publish it.
+    Straight to the parents: the parents of the child see it at once and the management is told."""
+    if to_review and to_parents:
+        raise HTTPException(422, "Choose the management or the parents, not both.")
+    name = child_name(session, report.child_id)
+    if to_parents:
+        report.status = "published"
+        report.published_at = datetime.now(timezone.utc)
+        community.notify(session, community.parents_of(session, report.child_id), "report_published", name, "reports")
+        community.notify(session, community.accounts_with_role(session, "manager", "admin"), "report_direct", name, "")
+    elif to_review:
+        report.status = "submitted"
+        report.published_at = None
+        community.notify(session, community.accounts_with_role(session, "manager", "admin"), "report_submitted", name, "review")
+    else:
+        report.status = "draft"
+        report.published_at = None
+
+
 @app.post("/api/platform/teacher/reports", status_code=201)
 def create_teacher_report(
     payload: DailyReportRequest,
@@ -2623,11 +2645,10 @@ def create_teacher_report(
         activities=payload.activities.strip(),
         meals=payload.meals.strip(),
         language=principal.account.preferred_language,
-        status="submitted" if payload.submit_for_review else "draft",
+        status="draft",
     )
     session.add(report)
-    if payload.submit_for_review:
-        community.notify(session, community.accounts_with_role(session, "manager", "admin"), "report_submitted", child_name(session, payload.child_id), "review")
+    route_report(session, report, payload.submit_for_review, payload.publish_to_parents)
     session.commit()
     session.refresh(report)
     return report_data(report)
@@ -2659,10 +2680,7 @@ def update_teacher_report(
     report.activities = payload.activities.strip()
     report.meals = payload.meals.strip()
     report.language = principal.account.preferred_language
-    report.status = "submitted" if payload.submit_for_review else "draft"
-    report.published_at = None
-    if payload.submit_for_review:
-        community.notify(session, community.accounts_with_role(session, "manager", "admin"), "report_submitted", child_name(session, report.child_id), "review")
+    route_report(session, report, payload.submit_for_review, payload.publish_to_parents)
     session.commit()
     session.refresh(report)
     return report_data(report)
