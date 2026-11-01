@@ -235,3 +235,17 @@ class CommunityTests(ControlsBase):
         self.assertEqual((body["accounts_blocked"], body["files"]), (0, 0))
         for headers in (self.manager, self.teacher, self.acc):
             self.assertIn(self.client.get(M + "/security", headers=headers).status_code, (401, 403))
+
+    def test_an_account_can_hold_every_role_at_once(self):
+        accounts = self.client.get(M + "/accounts", headers=self.admin).json()
+        account = next(a for a in accounts if a["username"] == "parent2")
+        every = ["admin", "manager", "teacher", "accountant", "parent"]
+        with Session(self.engine) as session:
+            for name in ("admin",):
+                if session.scalar(select(Role).where(Role.name == name)) is None:
+                    session.add(Role(name=name))
+            session.commit()
+        done = self.client.patch(f"{M}/accounts/{account['id']}", headers=self.admin, json={"roles": every})
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual(sorted(done.json()["roles"]), sorted(every))
+        self.assertEqual(self.client.patch(f"{M}/accounts/{account['id']}", headers=self.admin, json={"roles": every + ["janitor"]}).status_code, 422)

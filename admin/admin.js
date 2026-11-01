@@ -255,6 +255,7 @@ var EN_TEXT = {
   "إضافة الموظفين وتعديل بياناتهم ورواتبهم الأساسية وحذفهم من مهام الإدارة، وليست من مهام المحاسبة. هنا تختار من المسجَّلين فقط.":"Adding employees, changing their details and basic salaries and removing them is the work of the management, not of the accounting. Here you only pick from the saved people.",
   "إضافة الأطفال وأولياء أمورهم وتعديلهم من مهام الإدارة. هنا تحدّد الاشتراكات وتسجّل الدفعات للأطفال المسجَّلين فقط.":"Adding children and their parents and changing them is the work of the management. Here you set the fees and record the payments for saved children only.",
   "الموظف «":"The employee «",
+  "الأدوار":"Roles", "العدد أكبر من المسموح":"more than allowed",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -481,12 +482,12 @@ async function request(path, options){
 }
 /* The server's list of field problems, said in words the person can act on. */
 function validationText(problems){
-  var NAMES = {income:"الوارد", expense:"الصادر", amount:"المبلغ", details:"التفاصيل", note:"الملاحظات", person:"الاسم", item_label:"اسم البند", receipt_no:"رقم الإيصال", base:"الراتب", bonus:"المكافأة", advance:"السلفة", deduction:"الخصم", name:"الاسم", paid_by:"من سلّم الراتب"};
+  var NAMES = {income:"الوارد", expense:"الصادر", amount:"المبلغ", details:"التفاصيل", note:"الملاحظات", person:"الاسم", item_label:"اسم البند", receipt_no:"رقم الإيصال", base:"الراتب", bonus:"المكافأة", advance:"السلفة", deduction:"الخصم", name:"الاسم", paid_by:"من سلّم الراتب", roles:"الأدوار"};
   return problems.map(function(item){
     var field = item.loc && item.loc.length ? item.loc[item.loc.length - 1] : "";
     var type = String(item.type || "");
     var why = /decimal_max_places|decimal_places/.test(type) ? "خانتان عشريتان كحد أقصى" : /max_digits|decimal_max_digits|whole_digits/.test(type) ? "الرقم كبير جداً" :
-      /string_too_long|too_long/.test(type) ? "النص أطول من المسموح" : /greater_than|less_than|too_small|too_big/.test(type) ? "قيمة غير مسموحة" : /missing/.test(type) ? "مطلوب" : "قيمة غير صالحة";
+      /string_too_long/.test(type) ? "النص أطول من المسموح" : /too_long/.test(type) ? "العدد أكبر من المسموح" : /greater_than|less_than|too_small|too_big/.test(type) ? "قيمة غير مسموحة" : /missing/.test(type) ? "مطلوب" : "قيمة غير صالحة";
     return (NAMES[field] || field || "") + (NAMES[field] || field ? ": " : "") + why;
   }).join("، ");
 }
