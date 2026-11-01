@@ -475,3 +475,6 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-history-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--line)}
 .a-history-line:first-of-type{border-top:0}
 .a-history-row td{background:#17408f0d;padding:10px 12px!important}
+.a-statusbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px;padding:10px 14px;border:2px solid var(--line);border-radius:14px;background:var(--surface)}
+.a-statusbar.s-done{border-color:var(--green)}
+.a-statusbar .a-badge{margin-top:0}

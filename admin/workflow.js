@@ -18,6 +18,7 @@ var ACC_STEP_TEXT = {
   archive: ["التصدير والأرشيف", "ملف كامل للشهر المغلق وسجل التصدير"]
 };
 var ACC_STATUS_TEXT = {pending: "معلّقة", in_progress: "قيد التنفيذ", done: "مكتملة"};
+var ACC_CONFIRMABLE = ["basics", "staff", "fees", "income", "expenses", "payroll", "reconcile"];
 var ACC_STEP = "dashboard";
 var ACC_PERIOD = {year: new Date().getFullYear(), month: new Date().getMonth() + 1};
 var ACC_FLOW = null;
@@ -101,6 +102,7 @@ function tabDashboard(){
         h("div", {class:"a-flow-body"}, [
           h("div", {class:"a-flow-title"}, [h("strong", {text:ACC_STEP_TEXT[step.key][0]}), h("span", {class:"a-badge " + (step.status === "done" ? "paid" : step.status === "in_progress" ? "partial" : "open"), text:ACC_STATUS_TEXT[step.status]}), step.key === next ? h("span", {class:"a-badge due", text:"التالية"}) : "", progress]),
           h("small", {class:"hint", text:ACC_STEP_TEXT[step.key][1]}),
+          step.confirmed ? h("small", {class:"a-who", text:(accEnglish() ? "Confirmed by hand: " : "أُكّدت يدوياً: ") + step.confirmed.by + " · " + accWhen(step.confirmed.at) + (step.confirmed.note ? " — " + step.confirmed.note : "")}) : "",
           issues.length ? h("ul", {class:"a-issues"}, issues) : ""]),
         h("button", {type:"button", class:step.key === next ? "a-btn sun" : "a-btn ghost", text:"فتح", onclick:function(){ ACC_GO(step.key); }})]));
     });
@@ -575,6 +577,38 @@ function tabAccounting(){
   var monthSel = accSelect(accMonths(false), String(ACC_PERIOD.month));
   monthSel.setAttribute("aria-label", "الشهر");
   var banner = h("div", {});
+  var statusBox = h("div", {});
+
+  /* The state of the open step. A step that cannot complete by itself (no expenses this month, a fee that will be paid next month,
+     a cash difference that is known) is confirmed by a person on purpose; the open points stay listed and nothing is hidden. */
+  function drawStatus(){
+    statusBox.innerHTML = "";
+    var step = accStepOf(ACC_STEP);
+    if(!step || ACC_CONFIRMABLE.indexOf(ACC_STEP) === -1) return;
+    var locked = !!(ACC_FLOW && ACC_FLOW.locked);
+    var items = [h("span", {class:"a-badge " + (step.status === "done" ? "paid" : step.status === "in_progress" ? "partial" : "open"), text:ACC_STATUS_TEXT[step.status]})];
+    function changeConfirmation(promise){
+      promise.then(function(){ return ACC_REFRESH(); }).then(function(){ if(ACC_STEP === "dashboard") ACC_GO("dashboard"); })
+        .catch(function(error){ accToast(errText(error), "err"); });
+    }
+    if(step.confirmed){
+      items.push(h("span", {text:(accEnglish() ? "Confirmed complete by " : "أكّد اكتمالها: ") + step.confirmed.by + " · " + accWhen(step.confirmed.at)}));
+      if(step.confirmed.note) items.push(h("small", {class:"hint", dir:"auto", text:step.confirmed.note}));
+      if(!locked) items.push(h("button", {type:"button", class:"a-btn ghost", text:"إلغاء التأكيد", onclick:function(){
+        changeConfirmation(request("/api/admin/accounting/workflow/confirm?year=" + ACC_PERIOD.year + "&month=" + ACC_PERIOD.month + "&step=" + ACC_STEP, {method:"DELETE"}));
+      }}));
+    }else if(step.status !== "done"){
+      step.issues.forEach(function(issue){ items.push(h("small", {class:"a-issue", text:accIssueText(issue)})); });
+      if(!locked) items.push(h("button", {type:"button", class:"a-btn sun", text:"تأكيد اكتمال هذه الخطوة", onclick:function(){
+        var note = window.prompt(accEnglish() ? "Note (optional), for example: no expenses this month" : "ملاحظة (اختيارية)، مثلاً: لا توجد مصروفات هذا الشهر", "");
+        if(note === null) return;
+        changeConfirmation(request("/api/admin/accounting/workflow/confirm", {method:"POST", body:JSON.stringify({year:ACC_PERIOD.year, month:ACC_PERIOD.month, step:ACC_STEP, note:note})}).then(function(){ accToast("تم تأكيد اكتمال الخطوة.", "ok"); }));
+      }}));
+    }else{
+      items.push(h("span", {class:"hint", text:"اكتملت تلقائياً من البيانات."}));
+    }
+    statusBox.appendChild(h("div", {class:"a-statusbar s-" + step.status}, items));
+  }
 
   function pill(key, number){
     var step = key === "dashboard" ? null : accStepOf(key);
@@ -597,6 +631,7 @@ function tabAccounting(){
       var open = current && current.status !== "done" ? "الخطوة الحالية: " + ACC_STEP_TEXT[ACC_STEP][0] + " (" + ACC_STATUS_TEXT[current.status] + ")" : "";
       banner.appendChild(h("div", {class:"a-nextbar"}, [h("span", {text:(open ? open + " · " : "") + "التالي في الترتيب: "}), h("button", {type:"button", class:"a-btn ghost", text:ACC_STEP_TEXT[next][0], onclick:function(){ ACC_GO(next); }})]));
     }
+    drawStatus();
   }
   ACC_REFRESH = function(){
     return request("/api/admin/accounting/workflow?" + accPeriodQuery()).then(function(data){ ACC_FLOW = data; drawStepper(); return data; }, function(){ ACC_FLOW = null; drawStepper(); return null; });
@@ -644,5 +679,5 @@ function tabAccounting(){
   fill = null;
   return h("section", {}, [
     h("div", {class:"a-card a-period"}, [h("strong", {text:"الشهر قيد العمل"}), monthSel, year, refresh]),
-    stepper, banner, panel]);
+    stepper, banner, statusBox, panel]);
 }

@@ -156,7 +156,7 @@ var ACC_ACTION_LABEL = {
   "charge.create":"رسم جديد", "charge.update":"تعديل رسم", "charge.delete":"حذف رسم", "charge.generate":"توليد رسوم",
   "salary.create":"راتب جديد", "salary.update":"تعديل راتب", "salary.delete":"حذف راتب", "salary.generate":"توليد رواتب",
   "entry.create":"سطر جدول", "entry.update":"تعديل سطر", "entry.delete":"حذف سطر",
-  "rate.auto":"سعر صرف تلقائي", "reset.part":"تصفير جدول", "charge.reviewed":"مراجعة رسم", "salary.reviewed":"مراجعة راتب", "employee.create":"إضافة موظف", "employee.update":"تعديل موظف", "employee.remove":"حذف موظف", "child.create":"إضافة طفل", "child.update":"تعديل طفل", "child.remove":"حذف طفل", "receipt.add":"إضافة إيصال", "receipt.delete":"حذف إيصال", "export.month":"تصدير شهر", "cash.opening":"رأس المال", "cash.count":"جرد الصندوق", "period.close":"إغلاق شهر", "period.reopen":"إعادة فتح شهر", "rate.set":"سعر صرف"
+  "rate.auto":"سعر صرف تلقائي", "step.confirm":"تأكيد خطوة", "step.unconfirm":"إلغاء تأكيد خطوة", "reset.part":"تصفير جدول", "charge.reviewed":"مراجعة رسم", "salary.reviewed":"مراجعة راتب", "employee.create":"إضافة موظف", "employee.update":"تعديل موظف", "employee.remove":"حذف موظف", "child.create":"إضافة طفل", "child.update":"تعديل طفل", "child.remove":"حذف طفل", "receipt.add":"إضافة إيصال", "receipt.delete":"حذف إيصال", "export.month":"تصدير شهر", "cash.opening":"رأس المال", "cash.count":"جرد الصندوق", "period.close":"إغلاق شهر", "period.reopen":"إعادة فتح شهر", "rate.set":"سعر صرف"
 };
 
 function tabOverview(opts){

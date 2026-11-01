@@ -599,3 +599,19 @@ class SiteVisit(Base):
     language: Mapped[str] = mapped_column(String(5), default="", server_default="")
     visitor: Mapped[str] = mapped_column(String(32), index=True)  # a fingerprint that changes every day
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class StepConfirmation(Base):
+    """A person says on purpose: this step of this month is complete (for example: no expenses this month, the open fees are known).
+    It marks the step as done in the workflow; it never hides problems and never lets a month with flagged lines be closed."""
+
+    __tablename__ = "step_confirmations"
+    __table_args__ = (UniqueConstraint("year", "month", "step", name="uq_step_confirmation"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    month: Mapped[int] = mapped_column(Integer)
+    step: Mapped[str] = mapped_column(String(20))
+    confirmed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    confirmed_at: Mapped[datetime] = mapped_column(server_default=func.now())
