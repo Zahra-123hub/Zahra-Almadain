@@ -1147,20 +1147,23 @@
         var message = element("p", "p-alert");
         var save = element("button", "p-button outline", t("saveDraft")); save.type = "button";
         var submit = element("button", "p-button sun", t("submit")); submit.type = "submit";
+        var direct = element("button", "p-button outline", t("sendToParents")); direct.type = "button";
+        form.appendChild(element("p", "p-muted", t("reportRouteHelp")));
         form.appendChild(element("div", "p-row"));
-        form.lastChild.appendChild(save); form.lastChild.appendChild(submit);
+        form.lastChild.appendChild(save); form.lastChild.appendChild(submit); form.lastChild.appendChild(direct);
         var cancelEdit = element("button", "p-button outline", t("cancelEdit"));
         cancelEdit.type = "button"; cancelEdit.hidden = !editingReportId;
         form.lastChild.appendChild(cancelEdit);
         form.appendChild(message);
-        teacherControls = {select:select,title:title,body:body,activities:activities,meals:meals,form:form,save:save,submit:submit,cancel:cancelEdit,message:message};
-        function saveReport(submitForReview) {
+        teacherControls = {select:select,title:title,body:body,activities:activities,meals:meals,form:form,save:save,submit:submit,direct:direct,cancel:cancelEdit,message:message};
+        function saveReport(target) {
+          var toParents = target === "parents", toReview = target === true || target === "review";
           if (!select.value || !title.value.trim() || !body.value.trim()) {
             message.className = "p-alert error";
             message.textContent = t("selectChild") + " · " + t("title") + " · " + t("body");
             return Promise.resolve();
           }
-          save.disabled = true; submit.disabled = true; message.textContent = "";
+          save.disabled = true; submit.disabled = true; direct.disabled = true; message.textContent = "";
           var updating = !!editingReportId;
           var path = updating
             ? "/api/platform/teacher/reports/" + encodeURIComponent(editingReportId)
@@ -1169,14 +1172,15 @@
           if (attachmentFiles.length > 5) {
             message.className = "p-alert error";
             message.textContent = t("reportAttachmentsHelp");
-            save.disabled = false; submit.disabled = false;
+            save.disabled = false; submit.disabled = false; direct.disabled = false;
             return Promise.resolve();
           }
           var uploadedAttachments = [];
           var reportPayload = {
             title: title.value.trim(), body: body.value.trim(),
             activities: activities.value.trim(), meals: meals.value.trim(),
-            submit_for_review: submitForReview && attachmentFiles.length === 0
+            submit_for_review: toReview && attachmentFiles.length === 0,
+            publish_to_parents: toParents && attachmentFiles.length === 0
           };
           if (!updating) reportPayload.child_id = select.value;
           return request(path, {method:updating ? "PATCH" : "POST",body:JSON.stringify(reportPayload)}).then(function (report) {
@@ -1202,15 +1206,15 @@
                 });
               });
             }, Promise.resolve()).then(function () {
-              if (submitForReview && attachmentFiles.length) {
+              if ((toReview || toParents) && attachmentFiles.length) {
                 return request("/api/platform/teacher/reports/" + encodeURIComponent(reportId), {
                   method:"PATCH",
-                  body:JSON.stringify({title:title.value.trim(),body:body.value.trim(),activities:activities.value.trim(),meals:meals.value.trim(),submit_for_review:true})
+                  body:JSON.stringify({title:title.value.trim(),body:body.value.trim(),activities:activities.value.trim(),meals:meals.value.trim(),submit_for_review:toReview,publish_to_parents:toParents})
                 });
               }
             }).then(function () {
               message.className = "p-alert success";
-              message.textContent = updating ? t("reportUpdated") : submitForReview ? t("reportSent") : t("reportSaved");
+              message.textContent = updating && !toParents && !toReview ? t("reportUpdated") : toParents ? t("reportPublishedToParents") : toReview ? t("reportSent") : t("reportSaved");
               title.value = ""; body.value = ""; activities.value = ""; meals.value = "";
               attachmentInput.value = "";
               formState.title = ""; formState.body = ""; formState.activities = ""; formState.meals = "";
@@ -1229,9 +1233,10 @@
               attachmentInput.files = transfer.files;
             }
             message.className = "p-alert error"; message.textContent = errorMessage(error);
-          }).finally(function () { save.disabled = false; submit.disabled = false; });
+          }).finally(function () { save.disabled = false; submit.disabled = false; direct.disabled = false; });
         }
         save.addEventListener("click", function () { saveReport(false); });
+        direct.addEventListener("click", function () { if (window.confirm(t("confirmDirect"))) saveReport("parents"); });
         form.addEventListener("submit", function (event) { event.preventDefault(); saveReport(true); });
         cancelEdit.addEventListener("click", function () {
           editingReportId = "";
