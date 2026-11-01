@@ -25,6 +25,18 @@ var ACC_SUBSEL = {};
 var ACC_GO = function(){};
 var ACC_REFRESH = function(){ return Promise.resolve(); };
 
+/* A short message at the bottom of the screen: a result must be seen even when the table is scrolled far from its top. */
+function accToast(text, kind){
+  var box = document.getElementById("a-toast");
+  if(!box){ box = document.createElement("div"); box.id = "a-toast"; box.setAttribute("role", "status"); box.setAttribute("aria-live", "polite"); document.body.appendChild(box); }
+  box.textContent = uiText(text);
+  box.className = "a-toast " + (kind === "err" ? "err" : "ok") + " show";
+  clearTimeout(accToast.timer);
+  accToast.timer = setTimeout(function(){ box.classList.remove("show"); }, kind === "err" ? 7000 : 3000);
+}
+window.addEventListener("beforeunload", function(event){
+  if(typeof window.accSheetDirtyCount === "function" && window.accSheetDirtyCount()){ event.preventDefault(); event.returnValue = ""; }
+});
 function accEnglish(){ return typeof ADMIN_LANG !== "undefined" && ADMIN_LANG === "en"; }
 /* "3 expenses have no receipt": the number goes into the sentence, so the two languages are written out here. */
 function accIssueText(issue){
@@ -455,6 +467,10 @@ function tabAccounting(){
     panel.appendChild(content);
   }
   ACC_GO = function(key){
+    if(typeof window.accSheetDirtyCount === "function" && window.accSheetDirtyCount()){
+      if(!window.confirm(accEnglish() ? "You have changes in the sheet that are not saved. Leave and lose them?" : "لديك تعديلات في الجدول لم تُحفظ بعد. هل تريد المغادرة وفقدانها؟")) return;
+      window.accSheetDirtyCount = null;
+    }
     ACC_STEP = ACC_STEP_TEXT[key] ? key : "dashboard";
     drawStepper(); drawPanel();
     window.scrollTo(0, 0);

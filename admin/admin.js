@@ -223,6 +223,22 @@ var EN_TEXT = {
   "يعرف النظام سعر اليوم بنفسه: يجلبه من الإنترنت مرة واحدة كل يوم ويحفظه، ويحوّل به الدولار إلى ليرة والعكس. لا تحتاج إلى إدخاله. السعر اليدوي يتقدّم على التلقائي ليوم واحد فقط.":"The system knows today's rate by itself: it fetches it from the internet once a day and keeps it, and converts dollars to pounds and back with it. You do not need to enter it. A rate typed by hand wins over the automatic one for that day only.",
   "سعر اليوم مُدخل يدوياً. استعمل «العودة إلى السعر التلقائي» لاستبداله بسعر الإنترنت.":"Today's rate was entered by hand. Use Back to the automatic rate to replace it with the internet rate.",
   "تعذّر الوصول إلى مصدر أسعار الصرف الآن. جرّب بعد قليل أو أدخل السعر يدوياً.":"The exchange-rate source cannot be reached right now. Try again in a moment or enter the rate by hand.",
+  "حفظ كل التعديلات":"Save all changes",
+  "تم الحفظ.":"Saved.",
+  "المبلغ غير صالح: اكتب أرقاماً إنجليزية فقط وبدون فواصل الآلاف (مثال: 30000.50).":"The amount is not valid: type English digits only and no thousands separators (example: 30000.50).",
+  "اكتب في عدة أسطر ثم احفظها كلها بضغطة واحدة. التعديلات غير المحفوظة لا تضيع عند تحديث الجدول.":"Type in several rows, then save them all with one click. Unsaved edits are not lost when the table refreshes.",
+  "الوارد":"Income",
+  "الصادر":"Expense",
+  "المبلغ":"Amount",
+  "التفاصيل":"Details",
+  "الملاحظات":"Notes",
+  "اسم البند":"Item name",
+  "خانتان عشريتان كحد أقصى":"two decimals at most",
+  "الرقم كبير جداً":"the number is too large",
+  "النص أطول من المسموح":"the text is longer than allowed",
+  "قيمة غير مسموحة":"value not allowed",
+  "مطلوب":"required",
+  "قيمة غير صالحة":"invalid value",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -391,7 +407,14 @@ function setUiText(el, text){
   el.dataset.arText = text;
   el.textContent = uiText(text);
 }
-function setMsg(el, text, kind){ setUiText(el, text); el.className = "a-msg" + (kind ? " " + kind : ""); }
+function setMsg(el, text, kind){
+  setUiText(el, text); el.className = "a-msg" + (kind ? " " + kind : "");
+  // a result that appears above or below what the person is looking at is also shown at the bottom of the screen
+  if(kind && typeof accToast === "function" && el.getBoundingClientRect){
+    var box = el.getBoundingClientRect();
+    if(box.bottom < 0 || box.top > window.innerHeight) accToast(el.textContent, kind);
+  }
+}
 function setMsgLanguages(el, ar, en, kind){
   el.dataset.arText = ar;
   el.dataset.enText = en;
@@ -433,8 +456,23 @@ async function request(path, options){
   var response = await fetch(API_BASE + path, Object.assign({}, options, {headers: headers}));
   var result = null;
   try{ result = await response.json(); }catch(e){}
-  if(!response.ok) throw fail(result && result.detail ? result.detail : "تعذّر تنفيذ العملية على الخادم.");
+  if(!response.ok){
+    var detail = result && result.detail;
+    if(Array.isArray(detail)) throw fail(validationText(detail));
+    throw fail(detail ? detail : "تعذّر تنفيذ العملية على الخادم.");
+  }
   return result;
+}
+/* The server's list of field problems, said in words the person can act on. */
+function validationText(problems){
+  var NAMES = {income:"الوارد", expense:"الصادر", amount:"المبلغ", details:"التفاصيل", note:"الملاحظات", person:"الاسم", item_label:"اسم البند", receipt_no:"رقم الإيصال", base:"الراتب", bonus:"المكافأة", advance:"السلفة", deduction:"الخصم", name:"الاسم", paid_by:"من سلّم الراتب"};
+  return problems.map(function(item){
+    var field = item.loc && item.loc.length ? item.loc[item.loc.length - 1] : "";
+    var type = String(item.type || "");
+    var why = /decimal_max_places|decimal_places/.test(type) ? "خانتان عشريتان كحد أقصى" : /max_digits|decimal_max_digits|whole_digits/.test(type) ? "الرقم كبير جداً" :
+      /string_too_long|too_long/.test(type) ? "النص أطول من المسموح" : /greater_than|less_than|too_small|too_big/.test(type) ? "قيمة غير مسموحة" : /missing/.test(type) ? "مطلوب" : "قيمة غير صالحة";
+    return (NAMES[field] || field || "") + (NAMES[field] || field ? ": " : "") + why;
+  }).join("، ");
 }
 async function api(method, url, body){
   var resource = url.replace("/admin/api/", "");
