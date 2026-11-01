@@ -67,6 +67,9 @@ var EN_TEXT = {
   "رابط صفحة إنستغرام":"Instagram page URL",
   "البريد الإلكتروني":"Email address",
   "معلومات التواصل والإعلان":"Contact information and announcements",
+  "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
+  "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
+  "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
   "إضافة طفل":"Add a child", "الأطفال وأولياء الأمور":"Children and parents", "بيانات الطفل":"Child details", "اسم الطفل":"Child's name", "تاريخ الميلاد":"Date of birth",
   "الأب":"Father", "الأم":"Mother", "ولي أمر آخر":"Another guardian", "الصفة":"Role", "الهاتف":"Phone", "حساب بوابة الأهل":"Parents' portal account",
   "حفظ الطفل":"Save child", "＋ حفظ الطفل":"＋ Save child", "الأب والأم":"Father and mother", "ولي أمر واحد":"One parent", "حذف من القائمة":"Remove from list",
@@ -488,6 +491,30 @@ function tabSettings(){
   return page;
 }
 
+/* The system log: who did what in the money area (every change of fees, payments, payroll, closings). Read only. */
+function tabLog(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var body = h("div", {});
+  var search = h("input", {type:"search", placeholder:"ابحث في السجل (المستخدم، العملية، التفاصيل)", "aria-label":"بحث"});
+  var rows = [];
+  var labels = typeof ACC_ACTION_LABEL !== "undefined" ? ACC_ACTION_LABEL : {};
+  function draw(){
+    body.innerHTML = "";
+    var word = search.value.trim().toLowerCase();
+    var shown = rows.filter(function(row){ return !word || (row.actor + " " + (labels[row.action] || row.action) + " " + row.details).toLowerCase().indexOf(word) !== -1; });
+    if(!shown.length){ body.appendChild(h("div", {class:"a-empty", text:rows.length ? "لا توجد نتيجة لهذا البحث." : "لا توجد عمليات مسجّلة بعد."})); return; }
+    body.appendChild(h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+      h("thead", {}, [h("tr", {}, ["الوقت", "المستخدم", "العملية", "التفاصيل"].map(function(t){ return h("th", {text:t}); }))]),
+      h("tbody", {}, shown.map(function(row){
+        return h("tr", {}, [h("td", {dir:"ltr", text:String(row.at).replace("T", " ").slice(0, 16)}), h("td", {text:row.actor}), h("td", {text:labels[row.action] || row.action}), h("td", {dir:"auto", text:row.details})]);
+      }))]))]));
+  }
+  search.addEventListener("input", draw);
+  request("/api/admin/fees/audit?limit=500").then(function(list){ rows = list; draw(); }).catch(function(error){ setMsg(msg, errText(error), "err"); });
+  fill = null;
+  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"سجل النظام"}),
+    h("p", {class:"hint", text:"آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله."}), search, msg, body])]);
+}
 function tabAccounts(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var username = h("input", {type:"text", id:"a-teacher-username", autocomplete:"username", minlength:"3", maxlength:"80", pattern:"[A-Za-z0-9_.\\-]{3,80}"});
@@ -495,6 +522,7 @@ function tabAccounts(){
   var roleSelect = h("select", {id:"a-new-role", "aria-label":"نوع الحساب"});
   roleSelect.appendChild(new Option("معلمة", "teacher"));
   roleSelect.appendChild(new Option("محاسب", "accountant"));
+  roleSelect.appendChild(new Option("إدارة (الأطفال والاعتماد والإعلانات)", "manager"));
   roleSelect.appendChild(new Option("ولي أمر", "parent"));
   roleSelect.appendChild(new Option("مدير (صلاحيات كاملة)", "admin"));
   var childSelect = h("select", {id:"a-new-child", "aria-label":"الطفل"});
@@ -701,7 +729,7 @@ function tabAccounts(){
     var result = h("div", {});
     var roleBoxes = {};
     var rolesRow = h("div", {class:"a-field", style:"grid-column:1 / -1"}, [h("span", {text:"الأدوار (يمكن اختيار أكثر من دور)"})]);
-    [["admin", "مدير"], ["teacher", "معلمة"], ["accountant", "محاسب"], ["parent", "ولي أمر"]].forEach(function(r){
+    [["admin", "مدير"], ["manager", "إدارة"], ["teacher", "معلمة"], ["accountant", "محاسب"], ["parent", "ولي أمر"]].forEach(function(r){
       var box = h("input", {type:"checkbox"});
       box.checked = account.roles.indexOf(r[0]) !== -1;
       roleBoxes[r[0]] = box;
@@ -1255,7 +1283,7 @@ function tabFees(){
   return h("section", {}, [filterCard, addForm, genForm, tables]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["settings","الإعدادات"]]
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["log","سجل النظام"],["settings","الإعدادات"]]
   .filter(function(t){
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
     return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && t[0] === "fees");
@@ -1274,7 +1302,7 @@ function draw(){
   var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ clearSessions(); start(); }});
   var view = h("a", {class:"a-btn sun", href:"../", target:"_blank", rel:"noopener", style:"text-decoration:none", text:"عرض الموقع"});
   var switches = [];  // links to the other portals this account may use
-  [["teacher", "../teachers/", "بوابة المعلمات"], ["parent", "../parents/", "بوابة أولياء الأمور"]].forEach(function(p){
+  [["manager", "../management/", "بوابة الإدارة"], ["teacher", "../teachers/", "بوابة المعلمات"], ["parent", "../parents/", "بوابة أولياء الأمور"]].forEach(function(p){
     if((TEACHER_MODE || ACCOUNTANT_MODE) && PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"a-btn ghost", href:p[1], style:"color:#fff;border-color:#fff;text-decoration:none", text:p[2]}));
   });
   var back = TEACHER_MODE && !PORTALS.length ? h("a", {class:"a-btn ghost", href:"../teachers/", style:"color:#fff;border-color:#fff;text-decoration:none", text:"العودة إلى بوابتي"}) : null;
@@ -1285,7 +1313,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "log" ? tabLog() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
   adminName().then(function(name){
     var hello = document.getElementById("a-hello");
     if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }
