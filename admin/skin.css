@@ -1,0 +1,38 @@
+/* The accounting looks like the portals (parents, teachers, management): the same dark blue header with the round logo,
+   the same pill navigation, the same cards, the welcome card and the tiles. Only active on `body.skin-portal`. */
+body.skin-portal{background:radial-gradient(900px 420px at 85% -10%,#fdb9131f,transparent 60%),radial-gradient(800px 480px at 0% 110%,#17408f1f,transparent 60%),var(--bg);background-attachment:fixed}
+body.skin-portal .a-bar{background:linear-gradient(120deg,#12327a,#1d4ea0);box-shadow:0 2px 14px #10295626;padding-block:14px;backdrop-filter:blur(6px)}
+body.skin-solo .a-tabs{display:none}
+.a-brand-text{display:grid;line-height:1.25}
+.a-brand-text h2{margin:0;font-size:1.2rem;color:#fff}
+.a-brand-text span{color:#dce8ff;font-size:.85rem}
+body.skin-portal .a-logo{width:48px;height:48px;border-radius:50%;box-shadow:0 0 0 3px #ffffff33}
+body.skin-portal .a-hello{margin:0;padding:6px 14px;background:#ffffff1f;border:1px solid #ffffff55;color:#fff}
+body.skin-portal .a-main{width:min(100% - 32px,980px);max-width:none;margin-inline:auto;padding-inline:0;padding-top:24px}
+body.skin-portal .a-card{border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 26px #1029560b;padding:22px}
+body.skin-portal .a-period{padding:10px 16px}
+body.skin-portal .a-steps{gap:6px;padding:6px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 26px #1029560b}
+body.skin-portal .a-step{flex:1 0 auto;justify-content:center;min-height:44px;padding:8px 14px;border:0;border-radius:11px;color:var(--muted);transition:background .15s,color .15s}
+body.skin-portal .a-step:hover{background:#17408f12;color:var(--ink)}
+body.skin-portal .a-step[aria-selected=true]{background:var(--navy);color:#fff}
+body.skin-portal .a-step[aria-selected=true] .a-step-n{border-color:currentColor}
+body.skin-portal .a-step-dot{border-color:var(--surface)}
+@media(prefers-color-scheme:dark){body.skin-portal .a-step[aria-selected=true]{background:var(--sun);color:#1b2a55}}
+body.skin-portal .a-nextbar,body.skin-portal .a-statusbar{border-radius:16px}
+
+/* welcome card and tiles of the board */
+.a-welcome{position:relative;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:20px;padding:clamp(22px,4vw,34px);margin-bottom:20px;border-radius:20px;color:#fff;background:linear-gradient(125deg,#17408f,#2a67c5);box-shadow:0 16px 40px #17408f40}
+.a-welcome::before,.a-welcome::after{content:"";position:absolute;border-radius:50%;pointer-events:none}
+.a-welcome::before{width:220px;height:220px;inset-inline-end:-90px;top:-130px;background:#fdb91322}
+.a-welcome::after{width:180px;height:180px;inset-inline-start:-60px;bottom:-110px;background:#ffffff14}
+.a-welcome>*{position:relative;z-index:1}
+.a-welcome h2{margin:6px 0;color:#fff;font-size:clamp(1.35rem,3vw,1.8rem)}
+.a-welcome p{margin:0;color:#e2edff}
+.a-kicker{color:#ffe291;font-size:.84rem;font-weight:800}
+.a-pill{flex:none;padding:5px 14px;border-radius:999px;background:#ffffff1f;border:1px solid #ffffff55;color:#fff;font-weight:800}
+.a-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:14px;margin-bottom:18px}
+.a-stat{display:grid;gap:2px;text-align:start;padding:18px 20px;border:1px solid var(--line);border-inline-start:5px solid var(--sun);border-radius:16px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer;box-shadow:0 8px 26px #1029560b;transition:transform .15s,box-shadow .15s}
+.a-stat:hover{transform:translateY(-2px);box-shadow:0 12px 30px #10295618}
+.a-stat strong{font-size:2rem;line-height:1.2;color:var(--head)}
+.a-stat span{color:var(--muted);font-weight:700}
+@media(max-width:600px){.a-welcome{flex-direction:column;align-items:flex-start}.a-stat{padding:14px 16px}.a-stat strong{font-size:1.6rem}}
