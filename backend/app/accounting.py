@@ -31,7 +31,7 @@ from app.fees import (
     RateBook,
     active_payments,
     convert,
-    csv_response,
+    xlsx_response,
     ensure_open,
     log,
     money,
@@ -958,7 +958,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         if net is not None and net < 0:
             raise HTTPException(422, "الصافي المستحق سالب: السلف والخصومات أكبر من الراتب والمكافآت.")
 
-    @router.get("/salaries/export.csv")
+    @router.get("/salaries/export.xlsx")
     def export_salaries(
         year: int | None = None,
         month: int | None = None,
@@ -973,7 +973,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
              r["deduction"] or "", r["net"] or "", r["paid_on"] or "", r["paid_by"]]
             for r in data["rows"]
         ]
-        return csv_response(f"salaries-{year or 'all'}-{month or 'all'}.csv", header, rows)
+        return xlsx_response(f"salaries-{year or 'all'}-{month or 'all'}.xlsx", "Salaries", header, rows)
 
     @router.post("/salaries/generate")
     def generate_salaries(

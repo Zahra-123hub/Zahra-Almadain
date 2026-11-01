@@ -6,7 +6,6 @@ USD and SYP are kept strictly apart; amounts of different currencies are never a
 
 from __future__ import annotations
 
-import csv
 import io
 import re
 import uuid
@@ -180,23 +179,48 @@ class ChildClassIn(BaseModel):
 NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?$")
 
 
-def csv_response(filename: str, header: list[str], rows: list[list[Any]]) -> Response:
-    """A CSV file for Excel (UTF-8 with a mark so Arabic opens right). Text that a spreadsheet could read as a formula is defused."""
+def xlsx_response(filename: str, sheet_title: str, header: list[str], rows: list[list[Any]]) -> Response:
+    """A real Excel file (opens correctly in any language setting, unlike a comma CSV): bold header, frozen first row, filter,
+    right-to-left sheet, numbers as numbers. Text is always stored as text, so a cell like "=SUM(A1)" can never run as a formula."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
 
-    def safe(value: Any) -> str:
-        text = "" if value is None else str(value)
-        if text[:1] in ("=", "+", "-", "@", "\t", "\r") and not NUMBER_RE.match(text):
-            return "'" + text
-        return text
-
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow([safe(cell) for cell in header])
-    for row in rows:
-        writer.writerow([safe(cell) for cell in row])
+    book = Workbook()
+    sheet = book.active
+    sheet.title = sheet_title[:31]
+    sheet.sheet_view.rightToLeft = True
+    sheet.append(header)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="17408F")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    widths = [len(str(title)) + 4 for title in header]
+    for values in rows:
+        sheet.append([None] * len(values))
+        line = sheet.max_row
+        for index, value in enumerate(values, start=1):
+            cell = sheet.cell(row=line, column=index)
+            text = "" if value is None else str(value)
+            if text and NUMBER_RE.match(text):
+                number = Decimal(text)
+                cell.value = int(number) if number == number.to_integral_value() and "." not in text else float(number)
+                cell.number_format = "#,##0.00" if "." in text else "#,##0"
+                cell.alignment = Alignment(horizontal="right")
+            else:
+                cell.value = text
+                cell.data_type = "s"
+            widths[index - 1] = max(widths[index - 1], min(len(text) + 2, 60))
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.freeze_panes = "A2"
+    if rows:
+        sheet.auto_filter.ref = sheet.dimensions
+    buffer = io.BytesIO()
+    book.save(buffer)
     return Response(
-        content="\ufeff" + buffer.getvalue(),
-        media_type="text/csv; charset=utf-8",
+        content=buffer.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
     )
 
@@ -372,7 +396,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             "classes": classes,
         }
 
-    @router.get("/export.csv")
+    @router.get("/export.xlsx")
     def export_fees(
         year: int | None = None,
         month: int | None = None,
@@ -389,7 +413,7 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
              r["status"], r["last_paid_on"] or "", " ".join(r["receipts"]), " | ".join(r["notes"])]
             for r in data["rows"]
         ]
-        return csv_response(f"fees-{year or 'all'}-{month or 'all'}.csv", header, rows)
+        return xlsx_response(f"fees-{year or 'all'}-{month or 'all'}.xlsx", "Fees", header, rows)
 
     @router.get("/children")
     def fee_children(
@@ -796,13 +820,13 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
             for entry in entries
         ]
 
-    @router.get("/audit.csv")
+    @router.get("/audit.xlsx")
     def export_audit(
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> Response:
         entries = audit(Response(), 500, actor, session)
-        return csv_response("system-log.csv", ["Time", "User", "Action", "Entity", "Details"],
-                            [[e["at"], e["actor"], e["action"], e["entity_id"], e["details"]] for e in entries])
+        return xlsx_response("system-log.xlsx", "Log", ["Time", "User", "Action", "Entity", "Details"],
+                             [[e["at"].replace("T", " ")[:16], e["actor"], e["action"], e["entity_id"], e["details"]] for e in entries])
 
     return router
