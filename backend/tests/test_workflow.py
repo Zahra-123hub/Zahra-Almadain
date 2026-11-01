@@ -249,3 +249,34 @@ class WorkflowTests(ControlsBase):
         self.assertEqual([(row.entity_id, row.details) for row in logged], [("1/2026", "closed")])
         for headers in (self.teacher, self.parent):
             self.assertEqual(self.client.get(f"{A}/periods/2026/1/export.xlsx", headers=headers).status_code, 403)
+
+    # ---- the exchange rate knows itself ----
+    def test_the_rate_of_today_is_fetched_by_the_system_and_kept(self):
+        from datetime import date
+        from decimal import Decimal
+        from unittest.mock import patch
+
+        self.assertIsNone(self.client.get(A + "/rates", headers=self.acc).json()["current"])  # no feed, nothing stored: nothing guessed
+        with patch("app.accounting.fetch_online_rate", return_value=Decimal("12200")):
+            state = self.client.get(A + "/rates", headers=self.acc).json()
+        self.assertEqual((state["current"]["rate"], state["current"]["source"], state["current"]["stale"]), ("12200", "auto", False))
+        self.assertEqual((state["current"]["date"], state["rates"][0]["source"]), (date.today().isoformat(), "auto"))
+        again = self.client.get(A + "/rates", headers=self.acc).json()  # kept for the day: the feed is not asked again
+        self.assertEqual(again["current"]["rate"], "12200")
+        # a typed rate for the same day is never replaced by the feed unless that is asked for
+        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": date.today().isoformat(), "syp_per_usd": "13000"})
+        with patch("app.accounting.fetch_online_rate", return_value=Decimal("12300")):
+            self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.acc).status_code, 409)
+            forced = self.client.post(A + "/rates/refresh?force=true", headers=self.acc)
+        self.assertEqual((forced.status_code, forced.json()["current"]["rate"], forced.json()["current"]["source"]), (200, "12300", "auto"))
+        self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.acc).status_code, 503)  # the feed is down (the test patch): said honestly
+        self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.teacher).status_code, 403)
+
+    def test_the_status_list_counts_the_automatic_rate(self):
+        from decimal import Decimal
+        from unittest.mock import patch
+
+        self.capital()
+        self.assertEqual(self.status("basics")["status"], "in_progress")  # no rate yet, no feed
+        with patch("app.accounting.fetch_online_rate", return_value=Decimal("12200")):
+            self.assertEqual(self.status("basics")["status"], "done")

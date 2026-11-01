@@ -62,6 +62,13 @@ from app.models import (
 
 RATE_FEED_URL = "https://open.er-api.com/v6/latest/USD"  # a free public daily rates feed (no key)
 AUTO_RATE = "auto"  # marks a stored rate that was fetched by the system itself
+FEED_RETRY = timedelta(minutes=5)  # after a failed ask the feed is left alone for a while (a slow or down feed must not slow every screen)
+_feed_blocked_until: datetime | None = None
+
+
+def clear_feed_block() -> None:
+    global _feed_blocked_until
+    _feed_blocked_until = None
 
 
 def fetch_online_rate() -> Decimal | None:
@@ -70,14 +77,20 @@ def fetch_online_rate() -> Decimal | None:
     The feed quotes the NEW Syrian pound (1 new = 100 old, about 122 per dollar). The books of the kindergarten are in
     the old pound (amounts in the millions), so a quote below 1000 is multiplied by SYP_RATE_SCALE (default 100).
     Set SYP_RATE_SCALE=1 on the server if the books are ever kept in the new pound."""
+    global _feed_blocked_until
+    if _feed_blocked_until is not None and datetime.now(timezone.utc) < _feed_blocked_until:
+        return None
     try:
         reply = httpx.get(RATE_FEED_URL, timeout=6.0)
         reply.raise_for_status()
         value = Decimal(str(reply.json()["rates"]["SYP"]))
     except Exception:  # offline, rate limited, changed format: the caller falls back to the last stored rate
+        _feed_blocked_until = datetime.now(timezone.utc) + FEED_RETRY
         return None
     if value <= 0:
+        _feed_blocked_until = datetime.now(timezone.utc) + FEED_RETRY
         return None
+    _feed_blocked_until = None
     try:
         scale = Decimal(os.getenv("SYP_RATE_SCALE", "100"))
     except Exception:
@@ -1741,11 +1754,15 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
     # ---- exchange rate (only used to convert what is typed in a form when its currency is switched) ----
 
     def rate_state(session: Session) -> dict[str, Any]:
+        """The rate of today. When none is stored yet it is fetched from the online feed by the system itself and kept for the day."""
+        found = todays_rate(session, date.today())
         book = RateBook.load(session)
-        today = book.on(date.today())
         return {
-            "rates": [{"id": str(r.id), "date": r.effective_date.isoformat(), "rate": rate_text(r.syp_per_usd)} for r in reversed(book.rows)],
-            "current": None if today is None else {"rate": rate_text(today[0]), "date": today[1].isoformat()},
+            "rates": [
+                {"id": str(r.id), "date": r.effective_date.isoformat(), "rate": rate_text(r.syp_per_usd), "source": "auto" if r.created_by == AUTO_RATE else "manual"}
+                for r in reversed(book.rows)
+            ],
+            "current": None if found is None else {"rate": rate_text(found[0]), "date": found[1].isoformat(), "source": found[2], "stale": found[3]},
         }
 
     @router.get("/rates")
@@ -1755,6 +1772,30 @@ def build_router(guard: Callable[..., FeesActor]) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
+        return rate_state(session)
+
+    @router.post("/rates/refresh")
+    def refresh_rate(
+        force: bool = False,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Asks the online feed again right now. A rate typed by hand for today is kept unless `force` says to replace it."""
+        today = date.today()
+        row = session.scalar(select(ExchangeRate).where(ExchangeRate.effective_date == today))
+        if row is not None and row.created_by != AUTO_RATE and not force:
+            raise HTTPException(409, "سعر اليوم مُدخل يدوياً. استعمل «العودة إلى السعر التلقائي» لاستبداله بسعر الإنترنت.")
+        clear_feed_block()
+        fetched = fetch_online_rate()
+        if fetched is None:
+            raise HTTPException(503, "تعذّر الوصول إلى مصدر أسعار الصرف الآن. جرّب بعد قليل أو أدخل السعر يدوياً.")
+        if row is None:
+            row = ExchangeRate(effective_date=today)
+            session.add(row)
+        row.syp_per_usd = fetched
+        row.created_by = AUTO_RATE
+        log(session, actor, "rate.auto", today.isoformat(), str(fetched))
+        session.commit()
         return rate_state(session)
 
     @router.put("/rates")
