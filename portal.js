@@ -762,6 +762,7 @@
       var childLabel = element("label", "p-field", t("child")); childLabel.appendChild(childSelect); childLabel.hidden = true; form.appendChild(childLabel);
       request("/api/platform/teacher/children").then(function (children) {
         children.forEach(function (child) { childSelect.appendChild(new Option(child.display_name, child.id)); });
+        if (!children.length) childLabel.appendChild(element("small", "p-muted", t("noAssignedHint")));
       }).catch(function () {});
       scope.addEventListener("change", function () { childLabel.hidden = scope.value !== "child"; childSelect.required = scope.value === "child"; });
       var title = element("input"); title.type = "text"; title.maxLength = 120; title.required = true;

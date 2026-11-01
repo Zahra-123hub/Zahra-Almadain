@@ -323,3 +323,8 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-button.p-loading::after{content:"";position:absolute;inset:0;margin:auto;width:20px;height:20px;border:3px solid #1b2a5555;border-top-color:#1b2a55;border-radius:50%;animation:p-spin .7s linear infinite}
 @keyframes p-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.p-button.p-loading::after{animation-duration:2s}}
+.p-fieldset{margin:12px 0;padding:10px 14px 14px;border:1px solid var(--line);border-radius:14px;min-width:0}
+.p-fieldset legend{padding:0 8px;font-weight:800;color:var(--navy)}
+.p-check{display:flex;align-items:center;gap:10px;min-height:42px;font-weight:700;cursor:pointer}
+.p-check input{width:20px;height:20px;accent-color:var(--navy)}
+@media (prefers-color-scheme: dark){.p-fieldset legend{color:#dce8ff}}
