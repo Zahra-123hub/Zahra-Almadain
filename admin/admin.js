@@ -67,6 +67,13 @@ var EN_TEXT = {
   "رابط صفحة إنستغرام":"Instagram page URL",
   "البريد الإلكتروني":"Email address",
   "معلومات التواصل والإعلان":"Contact information and announcements",
+  "الملفات":"Files", "الأمان":"Security", "ملفات المعلمات":"Teachers' files", "تصدير CSV":"Export CSV", "تنزيل":"Download", "السابق":"Previous", "التالي":"Next",
+  "لا توجد ملفات مرفوعة بعد.":"No files uploaded yet.", "تم حذف الملف.":"The file was deleted.", "الملف":"File", "صاحبه":"Owner", "الحجم":"Size", "التاريخ":"Date",
+  "حسابات فعّالة":"Active accounts", "حسابات موقوفة":"Blocked accounts", "حسابات بانتظار الموافقة":"Accounts awaiting approval", "جلسات مفتوحة الآن":"Open sessions now",
+  "تسجيلات دخول آخر ٢٤ ساعة":"Sign-ins in the last 24 hours", "محاولات دخول فاشلة آخر ٢٤ ساعة":"Failed sign-ins in the last 24 hours",
+  "الحسابات الفعّالة حسب النوع":"Active accounts by type", "التخزين":"Storage", "ملفات خاصة":"Private files", "المساحة المستعملة":"Space used",
+  "تصدير إلى Excel (CSV)":"Export to Excel (CSV)", "كل الأشهر":"All months", "اشتراكات الأطفال":"Children's fees",
+  "يُنزَّل ملف بحسب السنة والشهر والعملة المختارة أعلاه. للطباعة أو PDF افتح الجدول الشهري واختر «طباعة» من المتصفح.":"A file is downloaded for the year, month and currency chosen above. To print or save a PDF, open the monthly sheet and choose Print in the browser.",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -491,6 +498,45 @@ function tabSettings(){
   return page;
 }
 
+/* Long lists are shown a page at a time. `render(rows)` builds the table for one page. */
+function paginate(rows, size, render){
+  var page = 0, box = h("div", {}), controls = h("div", {class:"a-row a-pager"});
+  function draw(){
+    var pages = Math.max(1, Math.ceil(rows.length / size));
+    if(page >= pages) page = pages - 1;
+    box.innerHTML = ""; controls.innerHTML = "";
+    box.appendChild(render(rows.slice(page * size, page * size + size)));
+    if(pages > 1){
+      var back = h("button", {type:"button", class:"a-btn ghost", text:"السابق", onclick:function(){ page--; draw(); }});
+      back.disabled = page === 0;
+      controls.appendChild(back);
+      controls.appendChild(h("span", {class:"hint", text:(page + 1) + " / " + pages + "  ·  " + rows.length}));
+      var next = h("button", {type:"button", class:"a-btn ghost", text:"التالي", onclick:function(){ page++; draw(); }});
+      next.disabled = page === pages - 1;
+      controls.appendChild(next);
+    }
+  }
+  draw();
+  return h("div", {}, [box, controls]);
+}
+/* A file from the server (with the sign-in header) saved on the computer. */
+async function downloadFile(path, filename){
+  var headers = new Headers();
+  if(ADMIN_TOKEN) headers.set("Authorization", "Bearer " + ADMIN_TOKEN);
+  var response = await fetch(API_BASE + path, {headers: headers});
+  if(!response.ok){
+    var result = null;
+    try{ result = await response.json(); }catch(e){}
+    throw fail(result && result.detail ? result.detail : "تعذّر تنزيل الملف.");
+  }
+  var url = URL.createObjectURL(await response.blob());
+  var link = document.createElement("a");
+  link.href = url; link.download = filename;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+}
+function sizeText(bytes){ return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.ceil(bytes / 1024)) + " KB"; }
+
 /* The system log: who did what in the money area (every change of fees, payments, payroll, closings). Read only. */
 function tabLog(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
@@ -503,18 +549,72 @@ function tabLog(){
     var word = search.value.trim().toLowerCase();
     var shown = rows.filter(function(row){ return !word || (row.actor + " " + (labels[row.action] || row.action) + " " + row.details).toLowerCase().indexOf(word) !== -1; });
     if(!shown.length){ body.appendChild(h("div", {class:"a-empty", text:rows.length ? "لا توجد نتيجة لهذا البحث." : "لا توجد عمليات مسجّلة بعد."})); return; }
-    body.appendChild(h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
-      h("thead", {}, [h("tr", {}, ["الوقت", "المستخدم", "العملية", "التفاصيل"].map(function(t){ return h("th", {text:t}); }))]),
-      h("tbody", {}, shown.map(function(row){
-        return h("tr", {}, [h("td", {dir:"ltr", text:String(row.at).replace("T", " ").slice(0, 16)}), h("td", {text:row.actor}), h("td", {text:labels[row.action] || row.action}), h("td", {dir:"auto", text:row.details})]);
-      }))]))]));
+    body.appendChild(paginate(shown, 25, function(part){
+      return h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+        h("thead", {}, [h("tr", {}, ["الوقت", "المستخدم", "العملية", "التفاصيل"].map(function(t){ return h("th", {text:t}); }))]),
+        h("tbody", {}, part.map(function(row){
+          return h("tr", {}, [h("td", {dir:"ltr", text:String(row.at).replace("T", " ").slice(0, 16)}), h("td", {text:row.actor}), h("td", {text:labels[row.action] || row.action}), h("td", {dir:"auto", text:row.details})]);
+        }))]))]);
+    }));
   }
   search.addEventListener("input", draw);
   request("/api/admin/fees/audit?limit=500").then(function(list){ rows = list; draw(); }).catch(function(error){ setMsg(msg, errText(error), "err"); });
   fill = null;
+  var exportButton = h("button", {type:"button", class:"a-btn ghost", text:"تصدير CSV", onclick:function(){ downloadFile("/api/admin/fees/audit.csv", "system-log.csv").catch(function(error){ setMsg(msg, errText(error), "err"); }); }});
   return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"سجل النظام"}),
-    h("p", {class:"hint", text:"آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله."}), search, msg, body])]);
+    h("p", {class:"hint", text:"آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله."}), h("div", {class:"a-row"}, [h("label", {class:"a-field", style:"flex:1 1 260px"}, [h("span", {text:"بحث"}), search]), exportButton]), msg, body])]);
 }
+
+/* The private files that teachers uploaded: who uses how much room, download and delete. */
+function tabFiles(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var summary = h("div", {class:"a-kpis"});
+  var body = h("div", {});
+  function load(){
+    request("/api/admin/platform/files").then(function(data){
+      summary.innerHTML = "";
+      if(!data.owners.length) summary.appendChild(h("div", {class:"a-empty", text:"لا توجد ملفات مرفوعة بعد."}));
+      data.owners.forEach(function(o){ summary.appendChild(h("div", {class:"a-kpi"}, [h("span", {text:o.owner + " · " + o.files}), h("strong", {dir:"ltr", text:sizeText(o.bytes) + " / " + sizeText(data.limit_bytes)})])); });
+      body.innerHTML = "";
+      if(!data.items.length) return;
+      body.appendChild(paginate(data.items, 20, function(part){
+        return h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
+          h("thead", {}, [h("tr", {}, ["الملف", "صاحبه", "الحجم", "التاريخ", ""].map(function(t){ return h("th", {text:t}); }))]),
+          h("tbody", {}, part.map(function(item){
+            var actions = h("div", {class:"a-row"}, [
+              h("button", {type:"button", class:"a-btn ghost", text:"تنزيل", onclick:function(){ downloadFile("/api/admin/platform/files/" + encodeURIComponent(item.id) + "/download", item.name).catch(function(error){ setMsg(msg, errText(error), "err"); }); }}),
+              twoStep("حذف", async function(){ await request("/api/admin/platform/files/" + encodeURIComponent(item.id), {method:"DELETE"}); setMsg(msg, "تم حذف الملف.", "ok"); load(); })]);
+            return h("tr", {}, [h("td", {dir:"auto", class:"name", text:item.name}), h("td", {text:item.owner}), h("td", {class:"num", dir:"ltr", text:sizeText(item.size)}), h("td", {dir:"ltr", text:String(item.created_at || "").slice(0, 10)}), h("td", {}, [actions])]);
+          }))]))]);
+      }));
+    }).catch(function(error){ setMsg(msg, errText(error), "err"); });
+  }
+  load();
+  fill = null;
+  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"ملفات المعلمات"}),
+    h("p", {class:"hint", text:"الملفات الخاصة التي رفعتها المعلمات (مرفقات التقارير والمنشورات والمواد). لكل معلمة حدّ 250 ميغابايت. لا يظهر لأحد غير صاحبها والمدير."}), summary, msg, body])]);
+}
+
+/* A few numbers about accounts and sign-ins. No names, no passwords. */
+function tabSecurity(){
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var box = h("div", {});
+  var ROLE = {parent:"أولياء الأمور", teacher:"المعلمات", manager:"الإدارة", accountant:"المحاسبون", admin:"المدراء"};
+  request("/api/admin/platform/security").then(function(d){
+    function kpi(label, value, cls){ return h("div", {class:"a-kpi " + (cls || "")}, [h("span", {text:label}), h("strong", {dir:cls === "ltr" ? "ltr" : "auto", text:String(value)})]); }
+    box.appendChild(h("div", {class:"a-kpis"}, [
+      kpi("حسابات فعّالة", d.accounts_active, "good"), kpi("حسابات موقوفة", d.accounts_blocked), kpi("حسابات بانتظار الموافقة", d.accounts_pending),
+      kpi("جلسات مفتوحة الآن", d.sessions_open), kpi("تسجيلات دخول آخر ٢٤ ساعة", d.sign_ins_24h), kpi("محاولات دخول فاشلة آخر ٢٤ ساعة", d.failed_sign_ins_24h, d.failed_sign_ins_24h > 10 ? "due" : "")]));
+    box.appendChild(h("h4", {text:"الحسابات الفعّالة حسب النوع"}));
+    box.appendChild(h("div", {class:"a-kpis"}, Object.keys(d.by_role).map(function(name){ return kpi(ROLE[name] || name, d.by_role[name]); })));
+    box.appendChild(h("h4", {text:"التخزين"}));
+    box.appendChild(h("div", {class:"a-kpis"}, [kpi("ملفات خاصة", d.files), kpi("المساحة المستعملة", sizeText(d.stored_bytes), "ltr")]));
+  }).catch(function(error){ setMsg(msg, errText(error), "err"); });
+  fill = null;
+  return h("section", {}, [h("div", {class:"a-card"}, [h("h3", {text:"الأمان"}),
+    h("p", {class:"hint", text:"أرقام فقط. عدد المحاولات الفاشلة الكبير في وقت قصير يعني أن أحداً يخمّن كلمات المرور؛ الموقع يحجب العنوان تلقائياً بعد عدة محاولات. لإيقاف حساب أو تغيير كلمة مروره استعمل تبويب «حسابات المنصة»."}), msg, box])]);
+}
+
 function tabAccounts(){
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var username = h("input", {type:"text", id:"a-teacher-username", autocomplete:"username", minlength:"3", maxlength:"80", pattern:"[A-Za-z0-9_.\\-]{3,80}"});
@@ -1283,7 +1383,7 @@ function tabFees(){
   return h("section", {}, [filterCard, addForm, genForm, tables]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["log","سجل النظام"],["settings","الإعدادات"]]
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["accounts","حسابات المنصة"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
   .filter(function(t){
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
     return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && t[0] === "fees");
@@ -1313,7 +1413,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "log" ? tabLog() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tabMedia("image"));
   adminName().then(function(name){
     var hello = document.getElementById("a-hello");
     if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }
