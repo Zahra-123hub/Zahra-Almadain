@@ -467,3 +467,5 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-toast.show{opacity:1;transform:none}
 .a-toast.ok{background:#2d6410}
 .a-toast.err{background:#a02420}
+.a-reset{border-color:var(--red)}
+.a-reset .a-check-field{display:flex;align-items:center;gap:10px;margin:6px 0}

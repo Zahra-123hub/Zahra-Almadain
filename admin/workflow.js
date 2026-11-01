@@ -207,6 +207,47 @@ function tabBasics(){
   return h("section", {}, [msg, body]);
 }
 
+/* ------------------------------------------------------------------ zero a table on purpose (administrator only) */
+/* `opts.period()` gives {year, month}; `opts.scopes` the parts that can be emptied; `opts.onDone` reloads the screen. */
+function accResetCard(opts){
+  var card = h("div", {class:"a-card a-reset", hidden:"hidden"});
+  var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
+  var boxes = {};
+  function show(){
+    var rows = opts.scopes.map(function(scope){
+      var box = h("input", {type:"checkbox"});
+      box.checked = !!scope[2];
+      boxes[scope[0]] = box;
+      return h("label", {class:"a-check-field"}, [box, h("span", {text:scope[1]})]);
+    });
+    card.appendChild(h("h3", {text:"تصفير الجدول"}));
+    card.appendChild(h("p", {class:"hint", text:"يمسح الأجزاء المختارة من الشهر المعروض فتبدأ أرقامه من الصفر. الأطفال والموظفون والحسابات تبقى. لا يعمل على شهر مغلق ولا يمكن التراجع عنه، وكل تصفير يُسجَّل."}));
+    rows.forEach(function(row){ card.appendChild(row); });
+    card.appendChild(h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn danger", text:"تصفير الأجزاء المختارة", onclick:async function(){
+      var when = opts.period();
+      if(!when.month){ setMsg(msg, "اختر شهراً محدداً أولاً.", "err"); return; }
+      var scopes = Object.keys(boxes).filter(function(key){ return boxes[key].checked; });
+      if(!scopes.length){ setMsg(msg, "اختر جزءاً واحداً على الأقل.", "err"); return; }
+      var names = opts.scopes.filter(function(scope){ return scopes.indexOf(scope[0]) !== -1; }).map(function(scope){ return scope[1]; }).join("، ");
+      if(!window.confirm("سيُمسح من " + MONTHS_AR[when.month - 1] + " " + when.year + ": " + names + ". لا يمكن التراجع. هل تريد المتابعة؟")) return;
+      var word = window.prompt("للتأكيد اكتب الكلمة RESET بالأحرف الكبيرة:");
+      if(word === null) return;
+      try{
+        var done = await request("/api/admin/accounting/reset-part", {method:"POST", body:JSON.stringify({year:when.year, month:when.month, scopes:scopes, confirm:word})});
+        var text = "تم التصفير: " + done.entries + " سطر جدول، " + done.salaries + " سطر راتب، " + done.fees + " رسم، " + done.payments + " دفعة، " + done.receipts + " إيصال.";
+        setMsg(msg, text, "ok"); accToast(text, "ok");
+        if(typeof ACC_REFRESH === "function") ACC_REFRESH();
+        if(opts.onDone) opts.onDone();
+      }catch(error){ setMsg(msg, errText(error), "err"); }
+    }})]));
+    card.appendChild(msg);
+    card.hidden = false;
+  }
+  var ready = ACC_VIEWER && ACC_VIEWER.role ? Promise.resolve(ACC_VIEWER) : request("/api/admin/fees/me").then(function(me){ ACC_VIEWER = me; return me; });
+  ready.then(function(me){ if(me && me.role === "admin") show(); }, function(){});
+  return card;
+}
+
 /* ------------------------------------------------------------------ the people are the work of the management */
 function accManagementNote(text){
   var isAdmin = ACC_VIEWER && ACC_VIEWER.role === "admin";
