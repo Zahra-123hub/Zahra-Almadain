@@ -21,6 +21,10 @@ A bar at the top shows the steps; every step has a status and a mark when someth
 Status words: **معلّقة** (pending), **قيد التنفيذ** (in progress), **مكتملة** (complete). Issues (open fees, missing receipts, a cash
 difference, lines flagged for review, unpaid salaries) are listed under the step and marked with a red dot.
 
+## Confirming a step on purpose
+
+The status of a step follows the data. Some steps can never complete by themselves: a month without expenses, a fee that will only be paid next month, a cash difference that is known. For these steps (`basics`, `staff`, `fees`, `income`, `expenses`, `payroll`, `reconcile`) a person can press **تأكيد اكتمال هذه الخطوة** (with an optional note). The step then counts as done for that month, with the name, the time and the note shown on the board; the open points stay listed and nothing is hidden. The confirmation can be taken back, is written to the log (`step.confirm` / `step.unconfirm`) and cannot be changed in a closed month. Confirming never lifts the real blockers of the closing (lines flagged for review). Migration `0024_step_confirmations`.
+
 ## Children and employees are the work of the management
 
 Adding, changing and removing children (with their parents) and employees (with their usual salary and sign-in account) is done in the **management portal** (`/management/`, tabs الأطفال and الموظفون), not in the accounting.

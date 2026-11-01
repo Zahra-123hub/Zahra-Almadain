@@ -478,3 +478,67 @@ class WorkflowTests(ControlsBase):
 
         book = load_workbook(io.BytesIO(self.client.get(L + ".xlsx?actor_name=acc2", headers=self.acc).content)).active
         self.assertEqual({row[1].value for row in book.iter_rows(min_row=2)}, {"acc"})  # the export obeys the same rule
+
+    # ---- a step can be confirmed as complete on purpose ----
+    def confirm(self, step, year=2026, month=1, note="", headers=None):
+        return self.client.post(A + "/workflow/confirm", headers=headers or self.acc, json={"year": year, "month": month, "step": step, "note": note})
+
+    def test_a_step_that_cannot_complete_by_itself_is_confirmed_on_purpose(self):
+        # no expenses at all this month: the step would wait for ever
+        self.assertEqual(self.status("expenses")["status"], "pending")
+        done = self.confirm("expenses", note="لا توجد مصروفات هذا الشهر")
+        self.assertEqual(done.status_code, 200, done.text)
+        step = self.status("expenses")
+        self.assertEqual((step["status"], step["confirmed"]["by"], step["confirmed"]["note"]), ("done", "acc", "لا توجد مصروفات هذا الشهر"))
+        # open fees: the step is complete on purpose, the open points stay listed
+        self.charge(month=1, amount="1000")
+        self.assertEqual(self.status("income")["status"], "pending")
+        self.confirm("income", headers=self.acc2)
+        income = self.status("income")
+        self.assertEqual((income["status"], income["confirmed"]["by"]), ("done", "acc2"))
+        self.assertEqual(income["issues"], [{"kind": "open_fees", "count": 1}])
+        # the same person can confirm again with a new note, and it can be taken back
+        self.confirm("income", note="new")
+        self.assertEqual(self.status("income")["confirmed"]["note"], "new")
+        self.assertEqual(self.client.delete(f"{A}/workflow/confirm?year=2026&month=1&step=income", headers=self.acc).status_code, 204)
+        self.assertEqual(self.status("income")["status"], "pending")
+        self.assertNotIn("confirmed", self.status("income"))
+        self.assertEqual(self.client.delete(f"{A}/workflow/confirm?year=2026&month=1&step=income", headers=self.acc).status_code, 404)
+        # another month is not touched
+        self.assertEqual(self.status("expenses", month=2)["status"], "pending")
+
+    def test_only_the_steps_that_need_a_person_can_be_confirmed_and_only_by_the_right_people(self):
+        for step in ("summary", "reports", "close", "archive", "nonsense"):
+            self.assertEqual(self.confirm(step).status_code, 422, step)
+        for headers in (self.teacher, self.parent, self.mgr):
+            self.assertEqual(self.confirm("expenses", headers=headers).status_code, 403)
+        self.assertEqual(self.client.post(A + "/workflow/confirm", json={"year": 2026, "month": 1, "step": "expenses"}).status_code, 401)
+        self.assertEqual(self.confirm("expenses", month=13).status_code, 422)
+        self.assertEqual(self.confirm("expenses", headers=self.admin).status_code, 200)
+
+    def test_confirmed_steps_open_the_way_to_closing_but_flagged_lines_still_block(self):
+        self.capital()
+        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
+        for step in ("staff", "fees", "income", "expenses", "payroll", "reconcile"):
+            self.confirm(step)
+        data = self.flow()
+        statuses = {s["key"]: s["status"] for s in data["steps"]}
+        self.assertEqual((statuses["summary"], statuses["close"]), ("done", "in_progress"))
+        self.assertEqual(data["close"]["blockers"], [])
+        # a flagged line is a blocker whatever was confirmed
+        charge = self.charge(month=1)
+        self.flag_for_review(charge["id"])
+        self.assertEqual([b["kind"] for b in self.flow()["close"]["blockers"]], ["review_fees"])
+        self.assertEqual(self.close().status_code, 422)
+        self.client.post(f"{F}/charges/{charge['id']}/reviewed", headers=self.acc)
+        self.assertEqual(self.close().status_code, 201)
+        # a closed month keeps what was confirmed: nothing can be changed any more
+        self.assertEqual(self.confirm("expenses").status_code, 423)
+        self.assertEqual(self.client.delete(f"{A}/workflow/confirm?year=2026&month=1&step=expenses", headers=self.acc).status_code, 423)
+
+    def test_confirming_and_taking_back_are_written_to_the_log(self):
+        self.confirm("expenses", note="none")
+        self.client.delete(f"{A}/workflow/confirm?year=2026&month=1&step=expenses", headers=self.acc)
+        actions = [row["action"] for row in self.client.get("/api/admin/fees/audit", headers=self.acc).json()]
+        self.assertIn("step.confirm", actions)
+        self.assertIn("step.unconfirm", actions)

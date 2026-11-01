@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,6 +26,7 @@ from app.fees import (
     FeesActor,
     active_payments,
     charge_row,
+    ensure_open,
     log,
     money,
     paid_amount,
@@ -45,6 +47,7 @@ from app.models import (
     FeePayment,
     PeriodLock,
     SalaryLine,
+    StepConfirmation,
 )
 
 # the steps in their working order (the keys are used by the screens)
@@ -61,6 +64,10 @@ STEPS = [
     "close",        # 10 lock the month
     "archive",      # 11 export and keep the closed month
 ]
+
+
+# the steps a person can confirm as complete (the others follow from these, from the closing and from the export)
+CONFIRMABLE = ("basics", "staff", "fees", "income", "expenses", "payroll", "reconcile")
 
 
 def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
@@ -117,7 +124,12 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
                 rates = max(rates, 1)
         except Exception:  # the status list must work even when the feed or the table is not reachable
             session.rollback()
+    confirmed = {
+        row.step: {"by": row.confirmed_by, "at": row.confirmed_at.isoformat() if row.confirmed_at else "", "note": row.note}
+        for row in session.scalars(select(StepConfirmation).where(StepConfirmation.year == year, StepConfirmation.month == month)).all()
+    }
     return {
+        "confirmed": confirmed,
         "first": first, "last": last, "children": children, "charged_children": len(charged_children), "charges": len(charges),
         "open_charges": open_charges, "review_fees": sum(1 for c in charges if c.needs_review), "payments_in_month": payments_in_month,
         "employees": employees, "salaries": len(salary_lines), "salaries_paid": sum(1 for line in salary_lines if line.paid_on),
@@ -205,6 +217,10 @@ def build_steps(facts: dict[str, Any]) -> list[dict[str, Any]]:
     else:
         put("reconcile", "in_progress" if f["cash_differences"] else "done", 1, 1, [{"kind": "cash_difference", "count": f["cash_differences"]}])
 
+    for key, who in f["confirmed"].items():  # a person said on purpose that this step is complete; the open points stay listed
+        if key in steps:
+            steps[key]["confirmed"] = who
+            steps[key]["status"] = "done"
     core = ["fees", "income", "expenses", "payroll", "reconcile"]
     finished = [steps[k]["status"] == "done" for k in core]
     put("summary", "done" if all(finished) else "in_progress" if any(finished) else "pending")
@@ -221,6 +237,13 @@ def build_steps(facts: dict[str, Any]) -> list[dict[str, Any]]:
         put("close", "pending", issues=[{"kind": b["kind"], "count": b["count"]} for b in check["blockers"]])
     put("archive", "done" if f["locked"] and f["exported"] else "in_progress" if f["locked"] else "pending")
     return [steps[key] | {"n": number} for number, key in enumerate(STEPS, start=1)]
+
+
+class StepConfirmIn(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+    step: str = Field(max_length=20)
+    note: str = Field(default="", max_length=500)
 
 
 def build_router(guard: Callable) -> APIRouter:
@@ -246,6 +269,44 @@ def build_router(guard: Callable) -> APIRouter:
             "year": year, "month": month, "locked": facts["locked"], "ended": facts["ended"], "steps": steps, "next": upcoming,
             "close": close_check(facts),
         }
+
+    @router.post("/workflow/confirm")
+    def confirm_step(
+        payload: StepConfirmIn,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """Says on purpose that a step of a month is complete (for example: there were no expenses). Changes nothing else."""
+        if payload.step not in CONFIRMABLE:
+            raise HTTPException(422, "هذه الخطوة تكتمل تلقائياً ولا تُؤكَّد يدوياً.")
+        ensure_open(session, (payload.year, payload.month))
+        row = session.scalar(select(StepConfirmation).where(StepConfirmation.year == payload.year, StepConfirmation.month == payload.month, StepConfirmation.step == payload.step))
+        if row is None:
+            row = StepConfirmation(year=payload.year, month=payload.month, step=payload.step)
+            session.add(row)
+        row.confirmed_by = actor.name[:80]
+        row.note = payload.note.strip()
+        row.confirmed_at = datetime.now(timezone.utc)
+        log(session, actor, "step.confirm", f"{payload.month}/{payload.year}", f"{payload.step} {payload.note.strip()[:200]}")
+        session.commit()
+        return {"ok": True}
+
+    @router.delete("/workflow/confirm", status_code=204)
+    def unconfirm_step(
+        year: int,
+        month: int,
+        step: str,
+        actor: FeesActor = Depends(guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        ensure_open(session, (year, month))
+        row = session.scalar(select(StepConfirmation).where(StepConfirmation.year == year, StepConfirmation.month == month, StepConfirmation.step == step))
+        if row is None:
+            raise HTTPException(404, "لا يوجد تأكيد لهذه الخطوة.")
+        log(session, actor, "step.unconfirm", f"{month}/{year}", step)
+        session.delete(row)
+        session.commit()
+        return Response(status_code=204)
 
     @router.get("/history")
     def history(
