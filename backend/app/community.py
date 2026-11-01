@@ -202,6 +202,23 @@ def build_router(get_principal: Callable, require_role: Callable, require_manage
         return {"used_bytes": int(used or 0), "limit_bytes": storage_limit}
 
     # ------------------------------------------------------------------------- management: numbers and groups
+    @router.get("/api/admin/platform/people")
+    def list_people(
+        response: Response, _username: str = Depends(require_manage), session: Session = Depends(get_session)
+    ) -> dict[str, list[dict[str, str]]]:
+        """Teacher and parent accounts only (names for the assignment lists); no other account is shown to a manager."""
+        response.headers["Cache-Control"] = "no-store"
+        result: dict[str, list[dict[str, str]]] = {"teachers": [], "parents": []}
+        for role, key in (("teacher", "teachers"), ("parent", "parents")):
+            rows = session.execute(
+                select(Account.id, Account.username)
+                .join(Account.roles)
+                .where(Role.name == role, Account.is_active.is_(True), Account.approval_status == "active")
+                .order_by(Account.username)
+            ).all()
+            result[key] = [{"id": str(row[0]), "username": row[1]} for row in rows]
+        return result
+
     @router.get("/api/admin/platform/stats")
     def management_stats(
         response: Response, _username: str = Depends(require_manage), session: Session = Depends(get_session)

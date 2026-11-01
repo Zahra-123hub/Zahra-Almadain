@@ -370,7 +370,7 @@ class AccountApprovalRequest(BaseModel):
     status: str = Field(pattern="^(active|disabled)$")
 
 
-MANAGED_ROLES = ("parent", "teacher", "accountant", "admin")
+MANAGED_ROLES = ("parent", "teacher", "manager", "accountant", "admin")
 
 
 class AccountEditRequest(BaseModel):
@@ -1431,7 +1431,9 @@ def unified_login(
     portals = []
     if "admin" in names:
         portals.append("admin")
-    if names & {"teacher", "manager"}:
+    if "manager" in names:
+        portals.append("manager")
+    if "teacher" in names:
         portals.append("teacher")
     if "accountant" in names:
         portals.append("accountant")
