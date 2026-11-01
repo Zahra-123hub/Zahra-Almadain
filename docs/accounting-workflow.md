@@ -18,6 +18,10 @@ A bar at the top shows the steps; every step has a status and a mark when someth
 | 10 | إغلاق الشهر (close) | check list, then lock | the month is locked |
 | 11 | التصدير والأرشيف (archive) | one Excel file per month, quick exports, the export log | the closed month was exported |
 
+## Look
+
+The accounting looks like the portals (`admin/skin.css`, active on `body.skin-portal`): the dark blue header with the round logo and the title `بوابة المحاسبة`, the pill navigation of the steps (the open step is the highlighted pill), the rounded cards, and a board that starts with a welcome card and four tiles (steps complete, points to follow up, fees not fully paid, salaries not paid; each tile opens the matching step). Accountants get this look everywhere; the administrator gets it on the accounting tab, the other tabs keep the admin look.
+
 Status words: **معلّقة** (pending), **قيد التنفيذ** (in progress), **مكتملة** (complete). Issues (open fees, missing receipts, a cash
 difference, lines flagged for review, unpaid salaries) are listed under the step and marked with a red dot.
 

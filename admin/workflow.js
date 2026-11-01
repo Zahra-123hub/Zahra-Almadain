@@ -92,6 +92,23 @@ function tabDashboard(){
       h("p", {class:"hint", text:(accEnglish() ? done + " of " + ACC_FLOW.steps.length + " steps complete" : "اكتملت " + done + " من " + ACC_FLOW.steps.length + " خطوة")})];
     if(ACC_FLOW.locked) head.push(h("p", {class:"a-msg ok", text:"🔒 هذا الشهر مغلق. يبقى التصدير والأرشفة والاطّلاع على التقارير."}));
     else if(next) head.push(h("div", {class:"a-row"}, [h("strong", {text:"الخطوة التالية"}), h("button", {type:"button", class:"a-btn sun", text:ACC_STEP_TEXT[next][0], onclick:function(){ ACC_GO(next); }})]));
+    function issueSum(step){ return step.issues.reduce(function(sum, item){ return sum + item.count; }, 0); }
+    function issueKind(kind){ var n = 0; ACC_FLOW.steps.forEach(function(step){ step.issues.forEach(function(item){ if(item.kind === kind) n += item.count; }); }); return n; }
+    var withIssue = ACC_FLOW.steps.filter(function(step){ return issueSum(step) > 0; })[0];
+    var payroll = accStepOf("payroll");
+    function tile(value, label, goto){
+      var box = h("button", {type:"button", class:"a-stat", onclick:function(){ ACC_GO(goto); }}, [h("strong", {dir:"ltr", text:String(value)}), h("span", {text:label})]);
+      return box;
+    }
+    body.appendChild(h("section", {class:"a-welcome"}, [
+      h("div", {}, [h("span", {class:"a-kicker", text:"لوحة المتابعة"}), h("h2", {text:(accEnglish() ? "Welcome " : "مرحباً ") + (ACC_VIEWER && ACC_VIEWER.name ? ACC_VIEWER.name : "")}),
+        h("p", {text:"أنجز خطوات الشهر بالترتيب، وتابع ما بقي دون أن تفوتك خطوة."})]),
+      h("span", {class:"a-pill", text:ACC_FLOW.locked ? "الشهر مغلق" : "الشهر مفتوح"})]));
+    body.appendChild(h("div", {class:"a-stats"}, [
+      tile(done + " / " + ACC_FLOW.steps.length, "خطوات مكتملة", next || "close"),
+      tile(ACC_FLOW.steps.reduce(function(sum, step){ return sum + issueSum(step); }, 0), "نقاط تحتاج متابعة", withIssue ? withIssue.key : (next || "close")),
+      tile(issueKind("open_fees"), "اشتراكات غير مسدّدة", "income"),
+      tile(payroll && payroll.total ? payroll.total - payroll.done : 0, "رواتب لم تُدفع", "payroll")]));
     body.appendChild(h("div", {class:"a-card a-flow-head"}, head));
     var list = h("ol", {class:"a-flow"});
     ACC_FLOW.steps.forEach(function(step){

@@ -338,6 +338,15 @@ var EN_TEXT = {
   "هذه الخطوة تكتمل تلقائياً ولا تُؤكَّد يدوياً.":"This step completes by itself and is not confirmed by hand.",
   "تأكيد خطوة":"Step confirmed",
   "إلغاء تأكيد خطوة":"Step confirmation taken back",
+  "بوابة المحاسبة":"Accounting portal",
+  "لوحة المتابعة":"Overview",
+  "أنجز خطوات الشهر بالترتيب، وتابع ما بقي دون أن تفوتك خطوة.":"Do the steps of the month in order and follow what is left, so no step is forgotten.",
+  "الشهر مغلق":"Month closed",
+  "الشهر مفتوح":"Month open",
+  "خطوات مكتملة":"Steps complete",
+  "نقاط تحتاج متابعة":"Points to follow up",
+  "اشتراكات غير مسدّدة":"Fees not fully paid",
+  "رواتب لم تُدفع":"Salaries not paid",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -1722,6 +1731,10 @@ function adminName(){
 }
 function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
+  // the accounting looks like the portals (same header, same pill navigation, same cards and tiles); the other tabs keep the admin look
+  var skin = ACCOUNTANT_MODE || tab === "fees";
+  document.body.classList.toggle("skin-portal", skin);
+  document.body.classList.toggle("skin-solo", ACCOUNTANT_MODE && TABS.length <= 1);
   var out = h("button", {type:"button", class:"a-btn ghost", style:"color:#fff;border-color:#fff", text:"خروج", onclick:function(){ clearSessions(); start(); }});
   var view = h("a", {class:"a-btn sun", href:"../", target:"_blank", rel:"noopener", style:"text-decoration:none", text:"عرض الموقع"});
   var switches = [];  // links to the other portals this account may use
@@ -1741,7 +1754,7 @@ function draw(){
     var hello = document.getElementById("a-hello");
     if(hello && name){ hello.textContent = (ADMIN_LANG === "en" ? "Hello " : "مرحباً ") + name; hello.hidden = false; }
   });
-  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("div", {class:"a-brand"}, [h("img", {class:"a-logo", src:"../images/logo.png?v=2", alt:"شعار روضة زهرة المدائن"}), h("h2", {text:"لوحة تحكم روضة زهرة المدائن"})]), h("span", {class:"a-hello", id:"a-hello", hidden:"hidden"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
+  root.append(h("div", {class:"a-bar"}, [h("div", {class:"a-top"}, [h("div", {class:"a-brand"}, [h("img", {class:"a-logo", src:"../images/logo.png?v=2", alt:"شعار روضة زهرة المدائن"}), skin ? h("div", {class:"a-brand-text"}, [h("h2", {text:"بوابة المحاسبة"}), h("span", {text:"روضة زهرة المدائن"})]) : h("h2", {text:"لوحة تحكم روضة زهرة المدائن"})]), h("span", {class:"a-hello", id:"a-hello", hidden:"hidden"}), h("div", {class:"a-row", style:"margin:0"}, [languageSwitch()].concat(switches, [back, changePw, view, out]))]), tabs]), main);
 }
 /* A signed-in teacher/accountant changes their own password here (the admin password lives on the server). */
 function toggleChangePassword(){
