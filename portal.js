@@ -71,6 +71,8 @@
       teacherPortalIntro: "أدِر تقارير الأطفال المعيّنين لك وموادك التعليمية من حسابك.",
       accountLabel: "الحساب",
       activeAccount: "حساب مفعّل",
+      navLabel: "التنقل", navHome: "الرئيسية", navChildren: "أطفالي", navPosts: "المنشورات", navMaterial: "المواد التعليمية", navReports: "الأطفال والتقارير", navReview: "الاعتماد",
+      statChildren: "الأطفال", statPosts: "منشورات الروضة", statDrafts: "مسودات", statSubmitted: "قيد المراجعة", statPublished: "منشورة للأهل", openSection: "فتح",
       welcomeUser: "مرحباً",
       portalOverview: "لوحة المتابعة",
       signInHint: "استخدمي بيانات الحساب التي زوّدتك بها الروضة.",
@@ -147,6 +149,8 @@
       teacherPortalIntro: "Manage reports for your assigned children and your learning materials.",
       accountLabel: "Account",
       activeAccount: "Active account",
+      navLabel: "Navigation", navHome: "Home", navChildren: "My children", navPosts: "Posts", navMaterial: "Teaching material", navReports: "Children and reports", navReview: "Approvals",
+      statChildren: "Children", statPosts: "Kindergarten posts", statDrafts: "Drafts", statSubmitted: "In review", statPublished: "Published to parents", openSection: "Open",
       welcomeUser: "Welcome",
       portalOverview: "Overview",
       signInHint: "Use the account details provided by the kindergarten.",
@@ -671,6 +675,42 @@
     layout.appendChild(card);
     main.appendChild(layout);
   }
+  var activeView = "home";
+  function viewShell(main, defs) {
+    var nav = element("nav", "p-nav");
+    nav.setAttribute("aria-label", t("navLabel"));
+    var panes = {};
+    function show(key) {
+      activeView = key;
+      Object.keys(panes).forEach(function (name) { panes[name].hidden = name !== key; });
+      Array.prototype.forEach.call(nav.children, function (item) {
+        if (item.dataset.view === key) item.setAttribute("aria-current", "page"); else item.removeAttribute("aria-current");
+      });
+    }
+    defs.forEach(function (def) {
+      var item = element("button", "p-nav-item", t(def[1]));
+      item.type = "button";
+      item.dataset.view = def[0];
+      item.addEventListener("click", function () { show(def[0]); window.scrollTo(0, 0); });
+      nav.appendChild(item);
+      panes[def[0]] = element("div", "p-view");
+    });
+    main.appendChild(nav);
+    defs.forEach(function (def) { main.appendChild(panes[def[0]]); });
+    if (!panes[activeView]) activeView = defs[0][0];
+    show(activeView);
+    return {panes: panes, show: show};
+  }
+  function statTile(label, view, goto) {
+    var tile = element("button", "p-stat");
+    tile.type = "button";
+    var number = element("strong", "", "…");
+    tile.appendChild(number);
+    tile.appendChild(element("span", "", label));
+    tile.addEventListener("click", function () { goto(view); window.scrollTo(0, 0); });
+    tile.number = number;
+    return tile;
+  }
   function renderDashboardWelcome(main) {
     var welcome = element("section", "p-dashboard-welcome");
     var copy = element("div");
@@ -838,9 +878,19 @@
     main.appendChild(card);
     loadPosts();
   }
-  function renderParent(main) {
-    renderDashboardWelcome(main);
-    renderParentPosts(main);
+  function renderParent(shellMain) {
+    var views = viewShell(shellMain, [["home", "navHome"], ["children", "navChildren"], ["posts", "navPosts"]]);
+    var home = views.panes.home;
+    renderDashboardWelcome(home);
+    var stats = element("div", "p-stats");
+    var childTile = statTile(t("statChildren"), "children", views.show);
+    var postTile = statTile(t("statPosts"), "posts", views.show);
+    stats.appendChild(childTile); stats.appendChild(postTile);
+    home.appendChild(stats);
+    request("/api/platform/children").then(function (list) { childTile.number.textContent = list.length; }).catch(function () { childTile.number.textContent = "–"; });
+    request("/api/platform/parent/posts").then(function (list) { postTile.number.textContent = list.length; }).catch(function () { postTile.number.textContent = "–"; });
+    var main = views.panes.children;
+    renderParentPosts(views.panes.posts);
     var listCard = element("section", "p-card");
     listCard.appendChild(element("h2", "", t("children")));
     listCard.appendChild(element("p", "p-muted", t("loading")));
@@ -981,16 +1031,43 @@
     main.appendChild(card);
     loadTeacherContent(card, adminMode);
   }
-  function renderTeacher(main) {
-    renderDashboardWelcome(main);
+  function renderTeacher(shellMain) {
     var canTeach = profile.roles.indexOf("teacher") !== -1;
+    var canReview = profile.roles.indexOf("manager") !== -1 || profile.roles.indexOf("admin") !== -1;
+    var isAdmin = profile.roles.indexOf("admin") !== -1;
+    var defs = [["home", "navHome"]];
+    if (canTeach) defs.push(["reports", "navReports"]);
+    if (canTeach || isAdmin) defs.push(["posts", "navPosts"], ["material", "navMaterial"]);
+    if (canReview) defs.push(["review", "navReview"]);
+    var views = viewShell(shellMain, defs);
+    renderDashboardWelcome(views.panes.home);
+    var stats = element("div", "p-stats");
+    views.panes.home.appendChild(stats);
+    if (canTeach) {
+      var tiles = {
+        children: statTile(t("statChildren"), "reports", views.show),
+        draft: statTile(t("statDrafts"), "reports", views.show),
+        submitted: statTile(t("statSubmitted"), "reports", views.show),
+        published: statTile(t("statPublished"), "reports", views.show)
+      };
+      Object.keys(tiles).forEach(function (key) { stats.appendChild(tiles[key]); });
+      request("/api/platform/teacher/children").then(function (list) { tiles.children.number.textContent = list.length; }).catch(function () { tiles.children.number.textContent = "–"; });
+      request("/api/platform/teacher/reports").then(function (list) {
+        ["draft", "submitted", "published"].forEach(function (status) {
+          tiles[status].number.textContent = list.filter(function (report) { return report.status === status; }).length;
+        });
+      }).catch(function () { ["draft", "submitted", "published"].forEach(function (status) { tiles[status].number.textContent = "–"; }); });
+    } else {
+      stats.remove();
+    }
     if (!canTeach) {
-      if (profile.roles.indexOf("admin") !== -1) { renderTeacherPosts(main, true); renderTeacherContent(main, true); }
-      loadReviewQueue(main);
+      if (isAdmin) { renderTeacherPosts(views.panes.posts, true); renderTeacherContent(views.panes.material, true); }
+      loadReviewQueue(views.panes.review);
       return;
     }
-    renderTeacherPosts(main, false);
-    renderTeacherContent(main, false);
+    var main = views.panes.reports;
+    renderTeacherPosts(views.panes.posts, false);
+    renderTeacherContent(views.panes.material, false);
     var childrenCard = element("section", "p-card");
     childrenCard.appendChild(element("h2", "", t("children")));
     childrenCard.appendChild(element("p", "p-muted", t("loading")));
@@ -1129,7 +1206,7 @@
       }
     }).catch(function (error) { childrenCard.innerHTML = ""; childrenCard.appendChild(element("h2", "", t("children"))); showError(childrenCard, error); });
     loadTeacherReports(reportCard);
-    if (profile.roles.indexOf("manager") !== -1 || profile.roles.indexOf("admin") !== -1) loadReviewQueue(main);
+    if (canReview) loadReviewQueue(views.panes.review);
   }
   function loadTeacherReports(card) {
     request("/api/platform/teacher/reports").then(function (reports) {
@@ -1198,7 +1275,7 @@
           item.appendChild(button(t(status === "published" ? "approve" : "reject"), status === "published" ? "sun" : "outline", function () {
             request("/api/platform/review/reports/" + encodeURIComponent(report.id), {
               method: "PATCH", body: JSON.stringify({status: status})
-            }).then(function () { loadReviewQueue(main); }).catch(function (error) { showError(item, error); });
+            }).then(function () { card.remove(); loadReviewQueue(main); }).catch(function (error) { showError(item, error); });
           }));
         });
         card.appendChild(item);
