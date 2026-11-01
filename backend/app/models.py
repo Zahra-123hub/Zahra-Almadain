@@ -400,6 +400,24 @@ class AccountingEntry(Base):
     manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     person: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who spent / received the money
     entered_by: Mapped[str] = mapped_column(String(80), default="", server_default="")  # who typed the row in
+    receipt_no: Mapped[str] = mapped_column(String(60), default="", server_default="")  # number written on the paper receipt
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class EntryReceipt(Base):
+    """A scanned or photographed receipt (pdf, jpg, png, webp) kept with the row of the sheet it proves."""
+
+    __tablename__ = "entry_receipts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entry_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="CASCADE"), index=True
+    )
+    original_name: Mapped[str] = mapped_column(String(180))
+    media_type: Mapped[str] = mapped_column(String(100))
+    byte_size: Mapped[int]
+    contents: Mapped[bytes] = mapped_column(LargeBinary)
+    uploaded_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

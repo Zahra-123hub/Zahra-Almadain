@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, community, fees, security
+from app import accounting, community, fees, security, workflow
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -773,6 +773,7 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
 
 app.include_router(fees.build_router(require_fees_user))
 app.include_router(accounting.build_router(require_fees_user))
+app.include_router(workflow.build_router(require_fees_user))
 
 
 @app.get("/healthz")
