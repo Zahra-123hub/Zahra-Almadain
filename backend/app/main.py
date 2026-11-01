@@ -378,7 +378,7 @@ class AccountEditRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=120)
     job_title: str | None = Field(default=None, max_length=80)
     # An account may hold several of these roles at once; other roles (manager) are untouched.
-    roles: list[str] | None = Field(default=None, max_length=4)
+    roles: list[str] | None = Field(default=None, max_length=len(MANAGED_ROLES))
     preferred_language: str | None = Field(
         default=None, min_length=2, max_length=35, pattern=LANGUAGE_RE.pattern
     )
