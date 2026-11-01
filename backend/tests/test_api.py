@@ -764,7 +764,7 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/admin/content", headers=headers).status_code, 503)  # passed the guard (no GitHub here)
         # roles can be reduced again, but never to nothing or to unknown roles
         self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": []}).status_code, 422)
-        self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["manager"]}).status_code, 422)
+        self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["janitor"]}).status_code, 422)
         only = self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["teacher"]})
         self.assertEqual(only.json()["roles"], ["teacher"])
         self.assertEqual(self.client.get("/api/admin/fees", headers=headers).status_code, 403)

@@ -618,6 +618,8 @@ class AccountingApiTests(unittest.TestCase):
 
     def test_the_capital_runs_through_day_week_and_month(self):
         self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "SYP", "opening": "1000", "start_year": 2026, "start_month": 10})
+        # the dollar book starts at zero in the same month, so the test does not depend on today's date
+        self.client.put(self.A + "/cash", headers=self.acc, json={"currency": "USD", "opening": "0", "start_year": 2026, "start_month": 10})
         self._entry(period_type="day", year=2026, week_start="2026-10-01", item_key="buffet", income="200")
         self._entry(period_type="day", year=2026, week_start="2026-10-02", item_key="operating", expense="50")
         self._entry(period_type="day", year=2026, week_start="2026-10-03", item_key="buffet", income="10")

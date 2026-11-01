@@ -128,6 +128,13 @@ class CommunityTests(ControlsBase):
         assign = self.client.post(f"{M}/children/{self.omar}/teachers", headers=self.manager, json={"teacher_id": teacher})
         self.assertEqual(assign.status_code, 201, assign.text)
 
+    def test_manager_sees_only_teacher_and_parent_names(self):
+        people = self.client.get(M + "/people", headers=self.manager).json()
+        self.assertEqual([p["username"] for p in people["teachers"]], ["teacher1"])
+        self.assertEqual([p["username"] for p in people["parents"]], ["parent1", "parent2"])
+        self.assertTrue(all(set(p) == {"id", "username"} for p in people["parents"] + people["teachers"]))
+        self.assertIn(self.client.get(M + "/people", headers=self.parent).status_code, (401, 403))
+
     def test_nobody_else_gets_management_rights(self):
         for headers in (self.teacher, self.parent, self.acc):
             for path in ("/children", "/stats", "/groups", "/registration-requests"):
