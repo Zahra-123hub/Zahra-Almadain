@@ -584,3 +584,18 @@ class Announcement(Base):
     title: Mapped[str] = mapped_column(String(120))
     body: Mapped[str] = mapped_column(String(2000), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+
+
+class SiteVisit(Base):
+    """One opening of a public page. No address, no browser string, no name: only what is needed to count and to see where people come from."""
+
+    __tablename__ = "site_visits"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    path: Mapped[str] = mapped_column(String(80))
+    referrer: Mapped[str] = mapped_column(String(80), default="", server_default="")  # the website the visitor came from ("" = direct)
+    device: Mapped[str] = mapped_column(String(10))  # mobile | desktop | tablet
+    language: Mapped[str] = mapped_column(String(5), default="", server_default="")
+    visitor: Mapped[str] = mapped_column(String(32), index=True)  # a fingerprint that changes every day
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
