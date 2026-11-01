@@ -5,6 +5,9 @@
 
   var TXT = {
     ar: {
+      kidsTeachers: "المعلمات المسؤولات عن الطفل",
+      kidsTeachersHelp: "تظهر للمعلمة المختارة أسماء هؤلاء الأطفال في تقاريرها ومنشوراتها الخاصة. لا ترى المعلمة طفلاً لم يُسنَد إليها.",
+      noTeachersYet: "لا توجد معلمات بعد. أنشئ حساب معلمة من لوحة التحكم.",
       kidsTitle: "إضافة طفل",
       kidsHelp: "احفظ اسم كل طفل مرة واحدة مع والده أو والدته أو كليهما. إن ربطتَ ولي الأمر بحسابه في بوابة الأهل رأى تقارير طفله ومنشوراته الخاصة. الأطفال المحفوظون هنا يراهم المحاسب في الاشتراكات.",
       oneOrBoth: "أضف الأب والأم، أو واحداً منهما فقط. اترك خانات الآخر فارغة إن لم يكن موجوداً.",
@@ -61,6 +64,9 @@
       home: "الرئيسية", statParents: "حسابات الأهل", statTeachers: "المعلمات", statGroups: "المجموعات", statRequests: "طلبات بانتظار القرار", statReview: "تقارير بانتظار الاعتماد"
     },
     en: {
+      kidsTeachers: "Teachers responsible for the child",
+      kidsTeachersHelp: "The chosen teacher sees these children in her reports and private posts. A teacher does not see a child who is not assigned to her.",
+      noTeachersYet: "There are no teachers yet. Create a teacher account in the dashboard.",
       kidsTitle: "Add a child",
       kidsHelp: "Save every child once with the father, the mother or both. If you tie a parent to their portal account they see the reports and private posts of their child. The accountant sees the saved children in the fees.",
       oneOrBoth: "Add the father and the mother, or only one of them. Leave the other's fields empty if there is none.",
@@ -300,7 +306,7 @@
       kidsListCard.appendChild(kidsBox);
       panes.kids.appendChild(kidsCard);
       panes.kids.appendChild(kidsListCard);
-      var kids = [], parentAccounts = [];
+      var kids = [], parentAccounts = [], teacherAccounts = [];
       var FIRST = function(){ return [["father", m("father")], ["guardian", m("otherGuardian")]]; };
       function kidsNote(text, kind){ kidsMsg.className = "p-alert " + (kind || "success"); kidsMsg.textContent = text; }
 
@@ -336,29 +342,46 @@
           }
         };
       }
-      function kidPayload(name, cls, birth, blocks){
+      /* the teachers of a child: one tick box each */
+      function teacherChoice(selected){
+        var box = el("fieldset", "p-fieldset");
+        box.appendChild(el("legend", "", m("kidsTeachers")));
+        box.appendChild(el("p", "p-muted", m("kidsTeachersHelp")));
+        var ticks = [];
+        if(!teacherAccounts.length) box.appendChild(el("p", "p-muted", m("noTeachersYet")));
+        teacherAccounts.forEach(function(teacher){
+          var tick = el("input"); tick.type = "checkbox"; tick.value = teacher.id;
+          tick.checked = (selected || []).indexOf(teacher.id) !== -1;
+          var label = el("label", "p-check");
+          label.appendChild(tick); label.appendChild(el("span", "", teacher.username));
+          box.appendChild(label); ticks.push(tick);
+        });
+        return {node: box, get: function(){ return ticks.filter(function(t){ return t.checked; }).map(function(t){ return t.value; }); }};
+      }
+      function kidPayload(name, cls, birth, blocks, teachers){
         var guardians = blocks.map(function(b){ return b.get(); }).filter(function(g){ return g; });
         if(!guardians.length) throw new Error(m("needGuardian"));
-        return {name: name.trim(), class_name: cls.trim(), birth_date: birth || null, guardians: guardians};
+        return {name: name.trim(), class_name: cls.trim(), birth_date: birth || null, guardians: guardians, teacher_ids: teachers.get()};
       }
-      var newName, newClass, newBirth, newFirst, newMother;
+      var newName, newClass, newBirth, newFirst, newMother, newTeachers;
       function drawKidForm(){
         newName = textInput("", 120); newName.required = true; newName.autocomplete = "off";
         newClass = textInput("", 60); newClass.setAttribute("list", "zm-groups");
         newBirth = el("input"); newBirth.type = "date"; newBirth.max = new Date().toISOString().slice(0, 10);
         newFirst = guardianBlock(m("father"), FIRST(), null);
         newMother = guardianBlock(m("mother"), [["mother", m("mother")]], null);
+        newTeachers = teacherChoice([]);
         kidForm.innerHTML = "";
         [field(m("childName"), newName), field(m("className"), newClass), field(m("birthDate"), newBirth)].forEach(function(node){ kidForm.appendChild(node); });
         kidForm.appendChild(el("p", "p-muted", m("oneOrBoth")));
-        kidForm.appendChild(newFirst.node); kidForm.appendChild(newMother.node);
+        kidForm.appendChild(newFirst.node); kidForm.appendChild(newMother.node); kidForm.appendChild(newTeachers.node);
         var save = el("button", "p-button sun", m("saveChild")); save.type = "submit";
         kidForm.appendChild(save);
       }
       kidForm.addEventListener("submit", function(event){
         event.preventDefault();
         var body;
-        try{ body = kidPayload(newName.value, newClass.value, newBirth.value, [newFirst, newMother]); }catch(error){ kidsNote(error.message, "error"); return; }
+        try{ body = kidPayload(newName.value, newClass.value, newBirth.value, [newFirst, newMother], newTeachers); }catch(error){ kidsNote(error.message, "error"); return; }
         request(ACCOUNTING + "/children", {method: "POST", body: JSON.stringify(body)}).then(function(){
           kidsNote(m("childSaved"), "success");
           return reloadKids().then(function(){ drawKidForm(); reloadChildren(); loadStats(); });
@@ -385,11 +408,12 @@
           var firstSaved = child.guardians.filter(function(g){ return g.relation !== "mother"; })[0];
           var motherSaved = child.guardians.filter(function(g){ return g.relation === "mother"; })[0];
           var first = guardianBlock(m("father"), FIRST(), firstSaved), mother = guardianBlock(m("mother"), [["mother", m("mother")]], motherSaved);
-          [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput), first.node, mother.node].forEach(function(node){ card.appendChild(node); });
+          var teachersHere = teacherChoice((child.teachers || []).map(function(t){ return t.id; }));
+          [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput), first.node, mother.node, teachersHere.node].forEach(function(node){ card.appendChild(node); });
           var row = el("div", "p-row");
           row.appendChild(api.button(m("save"), "sun", function(){
             var body;
-            try{ body = kidPayload(nameInput.value, clsInput.value, birthInput.value, [first, mother]); }catch(error){ note(card, error.message, "error"); return; }
+            try{ body = kidPayload(nameInput.value, clsInput.value, birthInput.value, [first, mother], teachersHere); }catch(error){ note(card, error.message, "error"); return; }
             request(ACCOUNTING + "/children/" + encodeURIComponent(child.id), {method: "PATCH", body: JSON.stringify(body)})
               .then(function(){ kidsNote(m("saved"), "success"); return reloadKids().then(function(){ reloadChildren(); loadStats(); }); })
               .catch(function(error){ note(card, api.errorMessage(error), "error"); });
@@ -403,8 +427,8 @@
       }
       kidSearch.addEventListener("input", drawKids);
       function reloadKids(){
-        return Promise.all([request(ACCOUNTING + "/children"), request(ACCOUNTING + "/parent-accounts")]).then(function(results){
-          kids = results[0]; parentAccounts = results[1];
+        return Promise.all([request(ACCOUNTING + "/children"), request(ACCOUNTING + "/parent-accounts"), request(API + "/people")]).then(function(results){
+          kids = results[0]; parentAccounts = results[1]; teacherAccounts = results[2].teachers;
           if(!kidForm.children.length) drawKidForm();
           drawKids();
         }).catch(function(error){ kidsBox.innerHTML = ""; api.showError(kidsListCard, error); });

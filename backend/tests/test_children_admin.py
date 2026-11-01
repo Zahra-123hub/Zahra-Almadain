@@ -154,6 +154,32 @@ class ChildrenTests(ControlsBase):
         self.assertEqual(self.client.get("/api/admin/fees?year=2026&month=2", headers=self.acc).json()["rows"][0]["id"], charge["id"])
         self.assertEqual(self.make(name="Amal2").status_code, 201)  # the name is free again
 
+    # ---- the teachers of a child ----
+    def teacher_children(self):
+        return [c["display_name"] for c in self.client.get("/api/platform/teacher/children", headers=self.teacher).json()]
+
+    def test_a_child_saved_with_teachers_shows_up_for_exactly_those_teachers(self):
+        with Session(self.engine) as session:
+            teacher = str(session.scalar(select(Account.id).where(Account.username == "teacher1")))
+        self.assertEqual(self.teacher_children(), [])  # a saved child is not seen by a teacher it was not given to
+        made = self.make(name="Lina", guardians=[father()], teacher_ids=[teacher])
+        self.assertEqual(made.status_code, 201, made.text)
+        self.assertEqual([t["username"] for t in made.json()["teachers"]], ["teacher1"])
+        self.assertEqual(self.teacher_children(), ["Lina"])
+        self.assertEqual([t["username"] for t in self.client.get(A + "/children", headers=self.acc).json()[-1]["teachers"]], ["teacher1"])
+        # a change that does not mention the teachers leaves them as they are; an empty list takes them away
+        child = made.json()
+        base = {"name": "Lina", "class_name": "KG2", "guardians": [{"id": child["guardians"][0]["id"], **father()}]}
+        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json=base).status_code, 200)
+        self.assertEqual(self.teacher_children(), ["Lina"])
+        self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.mgr, json={**base, "teacher_ids": []}).status_code, 200)
+        self.assertEqual(self.teacher_children(), [])
+        # only active teacher accounts can be chosen
+        parent = self.parent_account("some-parent")
+        self.assertEqual(self.make(name="Omar", teacher_ids=[parent]).status_code, 404)
+        self.assertEqual(self.make(name="Omar", teacher_ids=[str(uuid.uuid4())]).status_code, 404)
+        self.assertNotIn("Omar", [c["name"] for c in self.client.get(A + "/children", headers=self.acc).json()])
+
     def _audit(self):
         with Session(self.engine) as session:
             return session.scalars(select(FeeAuditLog)).all()
