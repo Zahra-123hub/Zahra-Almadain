@@ -4,6 +4,7 @@ body { margin:0; font-family: "Segoe UI", Tahoma, Arial, sans-serif; color:var(-
 .top { background:var(--blue); color:#fff; text-align:center; padding:28px 16px 20px; }
 .logo { border-radius:50%; background:#fff; object-fit:cover; }
 h1 { margin:10px 0 4px; font-size:1.6rem; }
+.top .sub { font-weight:700; opacity:1; margin-bottom:6px; }
 .top p { margin:0 auto; max-width:560px; opacity:.92; }
 .lang { margin-top:14px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
 .lang button { border:1px solid rgba(255,255,255,.5); background:transparent; color:#fff; border-radius:999px; padding:4px 14px; cursor:pointer; font:inherit; }

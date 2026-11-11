@@ -57,6 +57,7 @@ class _LoginPageState extends State<LoginPage> {
                   ClipOval(child: Image.asset('assets/logo.png', width: 96, height: 96, fit: BoxFit.cover)),
                   const SizedBox(height: 16),
                   Text(s.get('appName'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: brandBlue)),
+                  Text(s.get('appSubtitle'), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
                   const SizedBox(height: 8),
                   Text(s.get('signInHint'), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
                   const SizedBox(height: 24),
