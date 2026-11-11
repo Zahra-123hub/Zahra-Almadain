@@ -437,3 +437,9 @@ html[lang=ar] .learn-prompt .learn-en{display:none}
 @media(max-width:860px){.learn>div:first-child{align-self:auto}.petal-info{align-self:auto}}
 .petal-info.is-detail{align-self:stretch}
 @media(max-width:860px){.petal-info.is-detail{align-self:auto}}
+.appband{background:var(--bar);color:#fff;padding-block:22px}
+.appin{display:flex;align-items:center;gap:18px;flex-wrap:wrap;justify-content:center;text-align:center}
+.appico{border-radius:50%;background:#fff;object-fit:cover}
+.apptx{flex:1 1 280px}
+.apptx h2{margin:0 0 4px;color:#fff;font-size:1.3rem}
+.apptx p{margin:0;opacity:.92}
