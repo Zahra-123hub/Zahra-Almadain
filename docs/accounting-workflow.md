@@ -72,3 +72,10 @@ removed with their row. Deleting or adding a receipt is written to the log.
 `admin/workflow.js` (the bar, the board, the basics, the archive, the receipt panel, the weekly check, the yearly table) and `admin/accounting.js`
 (the screens of the steps; the sheet takes `focus` (income or expense) and `readOnly`, the overview takes a `mode`: summary, reconcile or close).
 Arabic texts with English translations as in the rest of the admin area (`EN_TEXT` in `admin/admin.js`).
+
+## Pounds and dollars
+
+- A conversion uses the rate of the day it is about: `/convert` takes `on` (a past day uses the rate stored for that day, today or no day uses today's automatic rate). The answer says `historical`, `rate`, `rate_date` and `stale`.
+- A day before the first stored rate can only be approximated with that first rate; the screens mark it (`stale`).
+- The converted totals are computed without rounding in between and rounded once, so opening + net = closing and the net is exact (e.g. -1.91).
+- The sheet, the salary and fee forms convert with the date of the row (the end of the month for monthly forms); "use another rate" sets the rate for that day.

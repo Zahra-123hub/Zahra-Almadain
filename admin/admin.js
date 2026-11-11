@@ -351,6 +351,9 @@ var EN_TEXT = {
   "رواتب لم تُدفع":"Salaries not paid",
   "لوحة التحكم":"Control panel",
   "تسجيل الخروج":"Sign out", "مرحباً":"Hello", "تغيير كلمة المرور":"Change password",
+  "اليوم":"today",
+  "تم حفظ السعر الجديد":"The new rate is saved",
+  "تنبيه: لا يوجد سعر محفوظ قبل هذا التاريخ، فاستُعمل أقدم سعر محفوظ بتاريخ":"Note: there is no stored rate before this date, so the oldest stored rate was used, dated",
   "سجل النظام":"System log", "ابحث في السجل (المستخدم، العملية، التفاصيل)":"Search the log (user, action, details)", "لا توجد عمليات مسجّلة بعد.":"No actions recorded yet.",
   "آخر ٥٠٠ عملية في المحاسبة والرسوم: من أجراها ومتى وماذا تغيّر. السجل للقراءة فقط ولا يمكن تعديله.":"The last 500 actions in accounting and fees: who did them, when and what changed. The log is read only.",
   "بوابة الإدارة":"Management portal", "إدارة":"Management", "إدارة (الأطفال والاعتماد والإعلانات)":"Management (children, approvals, notices)",
@@ -1431,7 +1434,7 @@ function tabFees(){
   var addAmount = numberInput("", {required:"required"});
   var addCurrency = select(CURRENCY_OPTIONS, "SYP");
   var payAmount = numberInput("", {placeholder:"اتركه فارغاً إن لم يدفع بعد"});
-  accLinkCurrency(addCurrency, [addAmount, payAmount], msg);  // switching pound / dollar converts what was typed
+  accLinkCurrency(addCurrency, [addAmount, payAmount], msg, function(){ return accMonthEnd(addYear.value, addMonth.value); });  // switching pound / dollar converts what was typed
   var payDate = h("input", {type:"date", value:localToday()});
   var payReceipt = h("input", {type:"text", maxlength:"40", dir:"ltr"});
   var payNote = h("input", {type:"text", maxlength:"500"});
@@ -1465,7 +1468,7 @@ function tabFees(){
   var genYear = h("input", {type:"number", min:"2000", max:"2100", value:filters.year});
   var genAmount = numberInput("", {required:"required"});
   var genCurrency = select(CURRENCY_OPTIONS, "SYP");
-  accLinkCurrency(genCurrency, [genAmount], msg);
+  accLinkCurrency(genCurrency, [genAmount], msg, function(){ return accMonthEnd(genYear.value, genMonth.value); });
   var genClass = h("input", {type:"text", maxlength:"60", placeholder:"اتركه فارغاً لكل الصفوف"});
   var genForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إنشاء رسوم الشهر لجميع الأطفال"}),

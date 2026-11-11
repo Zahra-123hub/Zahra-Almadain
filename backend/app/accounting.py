@@ -247,6 +247,7 @@ class ConvertIn(BaseModel):
     amounts: list[Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=6)]] = Field(min_length=1, max_length=30)
     source: str = Field(pattern="^(USD|SYP)$")
     target: str = Field(pattern="^(USD|SYP)$")
+    on: date | None = None  # the day the amounts belong to: a past day uses the rate of that day, today (or no day) the rate of today
 
 
 class CashIn(BaseModel):
@@ -655,7 +656,15 @@ def sheet_rate(session: Session, end: date) -> tuple[Decimal, date, str, bool] |
     if found is None:
         return todays_rate(session, today)
     row = next(r for r in book.rows if r.effective_date == found[1])
-    return found[0], found[1], "auto" if row.created_by == AUTO_RATE else "manual", False
+    # a day before the very first stored rate has to use that first rate: it is only an approximation (the caller marks it)
+    return found[0], found[1], "auto" if row.created_by == AUTO_RATE else "manual", found[1] > end
+
+
+def convert_unrounded(amount: Decimal, source: str, target: str, rate: Decimal) -> Decimal:
+    """Like fees.convert but without rounding, for sums that are rounded once at the end (rounded parts never add up exactly)."""
+    if source == target:
+        return amount
+    return amount * rate if source == "USD" else amount / rate
 
 
 def is_locked(session: Session, start: date, end: date) -> bool:
@@ -750,19 +759,19 @@ def unified_sheet(session: Session, period_type: str, year: int, month: int, wee
         if found is not None:
             rate, rate_date, source, stale = found
             converted = {"rate": rate_text(rate), "rate_date": rate_date.isoformat(), "source": source, "stale": stale}
-            def unrounded(amount: Decimal, source: str, target: str) -> Decimal:
-                if source == target:
-                    return amount
-                return amount * rate if source == "USD" else amount / rate
-
             for target in CURRENCIES:
-                income_exact = sum((unrounded(Decimal(totals[c]["income"]), c, target) for c in CURRENCIES), ZERO)
-                expense_exact = sum((unrounded(Decimal(totals[c]["expense"]), c, target) for c in CURRENCIES), ZERO)
+                income_exact = sum((convert_unrounded(Decimal(totals[c]["income"]), c, target, rate) for c in CURRENCIES), ZERO)
+                expense_exact = sum((convert_unrounded(Decimal(totals[c]["expense"]), c, target, rate) for c in CURRENCIES), ZERO)
                 # the net comes from the exact amounts and is rounded once: 0.5556 - 2.4627 = -1.91, not 0.56 - 2.46 = -1.90
                 entry: dict[str, Any] = {"income": str(money(income_exact)), "expense": str(money(expense_exact)), "net": str(money(income_exact - expense_exact))}
                 if balance is not None and all(balance.get(c) for c in CURRENCIES):
-                    for edge in ("opening", "closing"):
-                        entry[edge] = str(sum((convert(Decimal(balance[c][edge]), c, target, rate) for c in CURRENCIES), ZERO))
+                    opening_exact = sum((convert_unrounded(Decimal(balance[c]["opening"]), c, target, rate) for c in CURRENCIES), ZERO)
+                    closing_exact = sum((convert_unrounded(Decimal(balance[c]["closing"]), c, target, rate) for c in CURRENCIES), ZERO)
+                    opening_value = money(opening_exact)
+                    closing_value = opening_value + money(income_exact - expense_exact)  # the table adds up: opening + net = closing
+                    if abs(closing_value - money(closing_exact)) > Decimal("0.01"):  # (never expected; then the exact value wins)
+                        closing_value = money(closing_exact)
+                    entry["opening"], entry["closing"] = str(opening_value), str(closing_value)
                 converted[target] = entry
     return {
         "period_type": period_type, "year": year, "month": month, "start": start.isoformat(), "end": end.isoformat(),
@@ -1236,7 +1245,7 @@ def build_router(
                 rate, rate_date, source, stale = found
                 result["total"] = {"rate": rate_text(rate), "rate_date": rate_date.isoformat(), "source": source, "stale": stale}
                 for target in CURRENCIES:
-                    result["total"][target] = {"balance": str(sum((convert(Decimal(result[c]["balance"]), c, target, rate) for c in CURRENCIES), ZERO))}
+                    result["total"][target] = {"balance": str(money(sum((convert_unrounded(Decimal(result[c]["balance"]), c, target, rate) for c in CURRENCIES), ZERO)))}
         return result
 
     @router.put("/cash")
@@ -1897,10 +1906,12 @@ def build_router(
         _actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
-        """Converts typed amounts with today's rate, fetched by the system itself (once a day) unless one was typed.
+        """Converts typed amounts. Today (or no day): today's rate, fetched by the system itself once a day unless one was typed.
+        A past day: the rate stored for that day (a day before the first stored rate uses the first one and is marked `stale`).
         Exact decimal arithmetic, half a cent rounds up."""
         response.headers["Cache-Control"] = "no-store"
-        found = todays_rate(session, date.today())
+        historical = payload.on is not None and payload.on < date.today()
+        found = sheet_rate(session, payload.on) if historical else todays_rate(session, date.today())
         if found is None:
             raise HTTPException(409, "لا يوجد سعر صرف محفوظ بعد.")
         rate, rate_date, source, stale = found
@@ -1910,6 +1921,7 @@ def build_router(
             "rate_date": rate_date.isoformat(),
             "source": source,
             "stale": stale,
+            "historical": historical,
         }
 
     # ---- overview -----------------------------------------------------------
