@@ -1,0 +1,165 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zahra_app/features/auth/login_page.dart';
+import 'package:zahra_app/localization/strings.dart';
+import 'package:zahra_app/models/models.dart';
+import 'package:zahra_app/services/api.dart';
+import 'package:zahra_app/services/session.dart';
+import 'package:zahra_app/shared/ui.dart';
+
+http.Response json(Object body, [int status = 200]) =>
+    http.Response(jsonEncode(body), status, headers: {'content-type': 'application/json; charset=utf-8'});
+
+void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  group('texts', () {
+    test('every text exists in Arabic, German and English', () {
+      final source = File('lib/localization/strings.dart').readAsStringSync();
+      final keys = RegExp(r"^\s+'(\w+)': \{'ar': ", multiLine: true).allMatches(source).map((m) => m.group(1)!).toList();
+      expect(keys.length, greaterThan(50));
+      for (final code in ['ar', 'de', 'en']) {
+        final s = S(code);
+        for (final key in keys) {
+          expect(s.get(key), isNot(key), reason: '$key missing in $code');
+        }
+      }
+    });
+
+    test('notification texts get the subject', () {
+      expect(S('de').fill('n_report_published', 'Amal'), contains('Amal'));
+    });
+  });
+
+  group('models', () {
+    test('a report is read from the API answer', () {
+      final r = Report.fromJson({'id': '1', 'child_id': '2', 'title': 'T', 'body': 'B', 'activities': '', 'meals': null, 'status': 'published', 'created_at': '2026-03-01T08:00:00Z', 'published_at': null});
+      expect((r.title, r.meals, r.status), ('T', '', 'published'));
+      expect(r.day, isNotNull);
+    });
+
+    test('a post with files', () {
+      final p = Post.fromJson({
+        'id': '1', 'scope': 'child', 'child_name': 'Amal', 'title': 'x', 'body': '', 'author': 'a',
+        'files': [{'id': 'f', 'filename': 'a.png', 'media_type': 'image/png', 'size': 10}]
+      });
+      expect(p.files.single.isImage, isTrue);
+    });
+  });
+
+  group('api client', () {
+    test('a bad sign-in is reported as unauthorized without ending a session', () async {
+      var ended = false;
+      final api = ApiClient(client: MockClient((_) async => json({'detail': 'Incorrect username or password.'}, 401)));
+      api.onSessionEnded = () => ended = true;
+      await expectLater(api.post('/api/platform/auth/login', {}), throwsA(isA<ApiException>().having((e) => e.problem, 'problem', ApiProblem.unauthorized)));
+      expect(ended, isFalse);
+    });
+
+    test('a 401 with a token ends the session', () async {
+      var ended = false;
+      final api = ApiClient(client: MockClient((_) async => json({'detail': 'x'}, 401)))..token = 'abc';
+      api.onSessionEnded = () => ended = true;
+      await expectLater(api.get('/api/platform/children'), throwsA(isA<ApiException>()));
+      expect(ended, isTrue);
+    });
+
+    test('the token is sent as Bearer header', () async {
+      String? header;
+      final api = ApiClient(client: MockClient((r) async {
+        header = r.headers['Authorization'];
+        return json([]);
+      }))..token = 'abc';
+      await api.get('/api/platform/children');
+      expect(header, 'Bearer abc');
+    });
+
+    test('server answers are mapped (403 pending, 429, 5xx)', () async {
+      Future<ApiProblem> problem(int status, String detail) async {
+        final api = ApiClient(client: MockClient((_) async => json({'detail': detail}, status)));
+        try {
+          await api.get('/x');
+        } on ApiException catch (e) {
+          return e.problem;
+        }
+        throw StateError('no error');
+      }
+
+      expect(await problem(403, 'Your account is awaiting administrator approval.'), ApiProblem.pending);
+      expect(await problem(403, 'Your account has been disabled.'), ApiProblem.disabled);
+      expect(await problem(403, 'You do not have permission'), ApiProblem.forbidden);
+      expect(await problem(429, 'Too many'), ApiProblem.tooMany);
+      expect(await problem(500, ''), ApiProblem.server);
+    });
+
+    test('offline: the last loaded copy of the same account is shown, another account gets nothing', () async {
+      var online = true;
+      final api = ApiClient(client: MockClient((_) async {
+        if (!online) throw const SocketException('down');
+        return json([{'id': '1'}]);
+      }))..cacheOwner = 'acc1';
+      expect((await api.getCached('/list')).fromCache, isFalse);
+      online = false;
+      final again = await api.getCached('/list');
+      expect((again.fromCache, (again.data as List).length), (true, 1));
+      api.cacheOwner = 'acc2';
+      await expectLater(api.getCached('/list'), throwsA(isA<ApiException>().having((e) => e.problem, 'problem', ApiProblem.offline)));
+      api.cacheOwner = 'acc1';
+      await api.clearCache(); // sign-out
+      await expectLater(api.getCached('/list'), throwsA(isA<ApiException>()));
+    });
+  });
+
+  group('screens', () {
+    Widget host(Session session, Locale locale) => MaterialApp(
+          locale: locale,
+          supportedLocales: S.supported,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+          home: SessionScope(session: session, child: const LoginPage()),
+        );
+
+    testWidgets('Arabic login is right-to-left and asks for both fields', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json({}))));
+      await tester.pumpWidget(host(session, const Locale('ar')));
+      expect(Directionality.of(tester.element(find.byType(LoginPage))), TextDirection.rtl);
+      expect(find.text('تسجيل الدخول'), findsWidgets);
+      await tester.tap(find.byType(FilledButton));
+      await tester.pump();
+      expect(find.text('هذا الحقل مطلوب'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('German login is left-to-right', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json({}))));
+      await tester.pumpWidget(host(session, const Locale('de')));
+      expect(Directionality.of(tester.element(find.byType(LoginPage))), TextDirection.ltr);
+      expect(find.text('Benutzername'), findsOneWidget);
+    });
+
+    testWidgets('a wrong password shows the message from the app, not the server text', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json({'detail': 'Incorrect username or password.'}, 401))));
+      await tester.pumpWidget(host(session, const Locale('de')));
+      await tester.enterText(find.byType(TextFormField).first, 'x');
+      await tester.enterText(find.byType(TextFormField).last, 'y');
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Benutzername oder Passwort falsch.'), findsOneWidget);
+    });
+  });
+}
