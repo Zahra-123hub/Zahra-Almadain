@@ -15,7 +15,7 @@ class S {
   String fill(String key, String value) => get(key).replaceAll('{s}', value);
 
   static const Map<String, Map<String, String>> _t = {
-    'appName': {'ar': 'بوابة زهرة', 'de': 'Zahra Portal', 'en': 'Zahra Portal'},
+    'appName': {'ar': 'Zahra+', 'de': 'Zahra+', 'en': 'Zahra+'},
     'appSubtitle': {'ar': 'روضة زهرة المدائن', 'de': 'Kindergarten Zahrat Al-Madain', 'en': 'Zahrat Al-Madain Kindergarten'},
     'signIn': {'ar': 'تسجيل الدخول', 'de': 'Anmelden', 'en': 'Sign in'},
     'username': {'ar': 'اسم المستخدم', 'de': 'Benutzername', 'en': 'Username'},
