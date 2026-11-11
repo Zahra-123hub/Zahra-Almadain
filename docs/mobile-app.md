@@ -13,7 +13,7 @@ Flutter app in `mobile_app/`. It uses the existing FastAPI backend and the same 
 ## Backend parts used
 Sign-in `/api/platform/auth/login` (Bearer token), `/auth/me`, `/auth/logout`, `/auth/change-password`, `/auth/language`, `/children`, `/children/{id}/reports`, `/parent/posts` (+files), `/teacher/children|reports|posts|content|storage`, `/notifications`, `/announcements`.
 New (migration `0025_device_tokens`): `GET /api/app/version?version=x` (public; `update_required`, `update_available`, store links), `POST /api/platform/devices`, `POST /api/platform/devices/remove` (push token of a phone, bound to the signed-in account).
-Environment of the server (all optional): `APP_LATEST_VERSION`, `APP_MIN_VERSION`, `APP_ANDROID_URL`, `APP_IOS_URL`, `APP_RELEASED`. The download area sits on the home page itself (`#app`, filled by `appdl.js` from `app-version.json`: link, version, date, size, SHA-256). A store button only appears when its https link is set. `/app/` only forwards to the home page.
+Environment of the server (all optional): `APP_LATEST_VERSION`, `APP_MIN_VERSION`, `APP_ANDROID_URL`, `APP_IOS_URL`, `APP_RELEASED`. The download area sits on the home page itself (`#app`, filled by `appdl.js` from `app-version.json`: link, version, date, size, SHA-256). A store button only appears when its https link is set. There is no separate download page.
 
 ## Security
 - Token in Android Keystore / iOS Keychain (`flutter_secure_storage`), no password is stored. A 401 ends the session.
