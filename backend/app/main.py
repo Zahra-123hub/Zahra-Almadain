@@ -2731,7 +2731,6 @@ def update_report_status(
 # ----------------------------------------------------------------------------- teacher posts
 # Two kinds: "general" (every parent sees it) and "child" (only the parents of that one child:
 # grades, remarks...). Posts are visible to the families immediately; the author or an admin can delete them.
-MAX_POST_FILES = 5
 POST_SCOPES = ("general", "child")
 POST_KINDS = ("post", "material")
 
@@ -2813,8 +2812,6 @@ async def create_teacher_post(
         raise HTTPException(422, "A title is required.")
     if not body and not uploads:
         raise HTTPException(422, "Write a message or attach a file.")
-    if len(uploads) > MAX_POST_FILES:
-        raise HTTPException(409, "A post can have up to five files.")
     if scope == "child":
         if child_id is None:
             raise HTTPException(422, "Select the child this private post is for.")

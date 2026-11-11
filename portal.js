@@ -790,7 +790,6 @@
       form.appendChild(previewButton); form.appendChild(submit); form.appendChild(previewBox); form.appendChild(message);
       form.addEventListener("submit", function (event) {
         event.preventDefault();
-        if (fileInput.files.length > 5) { message.className = "p-alert error"; message.textContent = t("postFiles"); return; }
         var data = new FormData();
         data.append("scope", scope.value); data.append("title", title.value.trim()); data.append("body", body.value);
         if (scope.value === "child") data.append("child_id", childSelect.value);
