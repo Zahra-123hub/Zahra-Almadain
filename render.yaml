@@ -30,6 +30,17 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      # Mobile app (all optional): shown on /app/ and used for the update check of the app.
+      - key: APP_LATEST_VERSION
+        sync: false
+      - key: APP_MIN_VERSION
+        sync: false
+      - key: APP_ANDROID_URL
+        sync: false
+      - key: APP_IOS_URL
+        sync: false
+      - key: APP_RELEASED
+        sync: false
       # Optional: automatic e-mail with the one-time registration link.
       - key: SMTP_HOST
         sync: false
