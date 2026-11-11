@@ -615,3 +615,20 @@ class StepConfirmation(Base):
     confirmed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     note: Mapped[str] = mapped_column(String(500), default="", server_default="")
     confirmed_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class DeviceToken(Base):
+    """A phone that signed in to the app and may get push messages (one row per device, bound to one account)."""
+
+    __tablename__ = "device_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    token: Mapped[str] = mapped_column(String(300), unique=True)
+    platform: Mapped[str] = mapped_column(String(10))
+    app_version: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    language: Mapped[str] = mapped_column(String(5), default="ar", server_default="ar")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())

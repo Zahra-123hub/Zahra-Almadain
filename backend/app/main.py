@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, community, fees, security, visits, workflow
+from app import accounting, community, fees, mobile, security, visits, workflow
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -2983,6 +2983,7 @@ def list_parent_child_reports(
 
 
 app.include_router(visits.build_router(require_admin, client_address))
+app.include_router(mobile.build_router(get_platform_principal))
 app.include_router(
     community.build_router(
         get_platform_principal, require_platform_role, require_manage, MAX_TEACHER_CONTENT_BYTES, require_admin, private_content_response
