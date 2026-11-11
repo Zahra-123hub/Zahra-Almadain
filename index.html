@@ -6,14 +6,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Almarai:wght@400;700;800&family=Baloo+Bhaijaan+2:wght@500;700;800&display=swap" rel="stylesheet">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Preschool","name":"روضة زهرة المدائن الخاصة","alternateName":["Zahrat Al-Madayn Kindergarten","Kindergarten Zahrat Al-Madayn"],"telephone":"+963985122704","address":{"@type":"PostalAddress","addressLocality":"المليحة","streetAddress":"آخر شارع الـ16، دوار البلاط الجديد، مواجه مدرسة البلاط","addressCountry":"SY"},"geo":{"@type":"GeoCoordinates","latitude":33.4815114,"longitude":36.3742841}}</script>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head><body><div id="annc" hidden></div>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#top"><span class="badge"><img data-a="LOGO" alt="" data-en-aria="Zahrat Al-Madayn logo" data-de-aria="Logo Zahrat Al-Madayn"></span><span class="nm" data-en="Zahrat Al-Madayn" data-de="Zahrat Al-Madayn">زهرة المدائن</span></a>
     <nav class="main" id="nav" aria-label="التنقل" data-en-aria="Main navigation" data-de-aria="Hauptnavigation">
       <a href="#why" data-en="Why us" data-de="Warum wir">لماذا نحن</a>
-      <a href="app/" data-en="App" data-de="App">التطبيق</a>
+      <a href="#app" data-en="App" data-de="App">التطبيق</a>
       <a href="#learn" data-en="Our program" data-de="Programm">برنامجنا</a>
       <a href="#day" data-en="Our day" data-de="Tagesablauf">يومنا</a>
       <a href="#news" data-en="News" data-de="Aktuelles">الأخبار</a>
@@ -93,14 +93,39 @@
   </div>
 </section>
 
-<section class="appband" id="app">
-  <div class="wrap appin">
-    <img src="images/logo.png" alt="" width="72" height="72" class="appico">
-    <div class="apptx">
-      <h2 data-en="Zahra Portal – the app for parents and teachers" data-de="Zahra Portal – die App für Eltern und Lehrkräfte">بوابة زهرة – تطبيق الأهل والمعلمات</h2>
-      <p data-en="Daily reports, posts and notices on your phone. For Android now, iPhone soon." data-de="Tagesberichte, Beiträge und Mitteilungen auf dem Handy. Jetzt für Android, iPhone folgt.">التقارير اليومية والمنشورات والإعلانات على هاتفك. متوفر الآن لأندرويد وآيفون قريباً.</p>
+<section class="band" id="app">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2 data-en="Zahra Portal – our app" data-de="Zahra Portal – unsere App">بوابة زهرة – تطبيق الروضة</h2>
+      <p data-en="Daily reports, posts, notices and notifications for parents and teachers, on your phone." data-de="Tagesberichte, Beiträge, Mitteilungen und Benachrichtigungen für Eltern und Lehrkräfte, auf dem Handy.">التقارير اليومية والمنشورات والإعلانات والإشعارات للأهل والمعلمات على هاتفك.</p>
     </div>
-    <a class="btn sun" href="app/" data-en="Download the app" data-de="App herunterladen">حمّل التطبيق</a>
+    <div class="appgrid">
+      <div class="appbox">
+        <img src="images/logo.png" alt="" width="96" height="96" class="appico">
+        <h3>Android</h3>
+        <p class="note" data-en="Requires Android 7.0 or newer." data-de="Erfordert Android 7.0 oder neuer.">يتطلب Android 7.0 أو أحدث.</p>
+        <a class="btn sun" id="androidLink" href="#app" hidden data-en="Download for Android" data-de="Für Android herunterladen">تحميل لنظام Android</a>
+        <p class="note" id="androidSoon" data-en="The app will be available soon." data-de="Die App ist bald verfügbar.">سيتوفر التطبيق قريباً.</p>
+        <div class="appmeta" id="androidMeta" hidden>
+          <p><span data-en="Version" data-de="Version">الإصدار</span>: <b id="appVersion"></b> · <span id="appSize"></span> · <span id="appDate"></span></p>
+          <details>
+            <summary data-en="Installation and checksum" data-de="Installation und Prüfsumme">التثبيت وبصمة الملف</summary>
+            <p data-en="While installing, your phone may ask to allow this browser to install apps. That is normal because the app does not come from Google Play." data-de="Bei der Installation fragt das Handy evtl. nach der Erlaubnis für diesen Browser. Das ist normal, da die App nicht aus dem Google Play Store kommt.">عند التثبيت قد يطلب هاتفك السماح بالتثبيت من هذا المتصفح. هذا طبيعي لأن التطبيق لا يأتي من متجر Google Play.</p>
+            <p>SHA-256: <code id="appSha"></code></p>
+          </details>
+        </div>
+      </div>
+      <div class="appbox">
+        <h3>iPhone / iPad</h3>
+        <p class="note" data-en="Coming soon through the App Store." data-de="Folgt bald über den App Store.">قريباً عبر App Store.</p>
+        <a class="btn line" id="iosLink" href="#app" hidden data-en="Open in the Apple store" data-de="Im Apple Store öffnen">فتح في متجر Apple</a>
+      </div>
+      <div class="appbox appqr">
+        <img src="images/app-qr.svg" alt="QR" width="150" height="150">
+        <p class="note" data-en="Scan with your phone to open this section." data-de="Mit dem Handy scannen, um diesen Bereich zu öffnen.">امسح الرمز من هاتفك لفتح هذا القسم.</p>
+      </div>
+    </div>
+    <p class="note appnote" data-en="Parents: after the launch of the app the parents' sign-in on the website is replaced by it. Accounts and children's data stay as they are. Teachers can keep using the website or the app." data-de="Eltern: Nach dem Start der App ersetzt sie den Eltern-Login auf der Webseite. Konten und Kinderdaten bleiben unverändert. Lehrkräfte nutzen weiter Webseite oder App.">أولياء الأمور: بعد إطلاق التطبيق سيحلّ محل دخول الأهل في الموقع، وتبقى الحسابات وبيانات الأطفال كما هي. المعلمات يستطعن استخدام الموقع أو التطبيق.</p>
   </div>
 </section>
 
@@ -358,7 +383,7 @@
         <a href="#parents" data-en="Parents' corner" data-de="Elternbereich">ركن الأهل</a>
         <a href="#faq" data-en="FAQ" data-de="Häufige Fragen">أسئلة شائعة</a>
         <a href="#register" data-en="Register or book a visit" data-de="Anmelden oder Besuch buchen">سجّل أو احجز زيارة</a>
-        <a href="app/" data-en="Download the app" data-de="App herunterladen">حمّل التطبيق</a>
+        <a href="#app" data-en="Download the app" data-de="App herunterladen">حمّل التطبيق</a>
         <a href="login/" data-en="Sign in / Register" data-de="Einloggen / Registrieren">تسجيل الدخول / إنشاء حساب</a>
       </div>
       <div>
@@ -398,4 +423,5 @@
 </div>
 
 <script src="script.js?v=8" defer></script>
+<script src="appdl.js?v=1" defer></script>
 </body></html>
