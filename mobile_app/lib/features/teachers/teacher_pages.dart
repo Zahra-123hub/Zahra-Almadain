@@ -54,7 +54,7 @@ Color statusColor(String status) {
 // ---- picking images / files ------------------------------------------------------------------------------------------------
 /// Collects files chosen from the camera, the gallery or the file browser. The server checks type and size again.
 class AttachmentPicker extends StatelessWidget {
-  const AttachmentPicker({super.key, required this.files, required this.onChanged, this.max = 5, this.allowAnyFile = true});
+  const AttachmentPicker({super.key, required this.files, required this.onChanged, this.max = 1000, this.allowAnyFile = true});
   final List<UploadFile> files;
   final void Function(List<UploadFile>) onChanged;
   final int max;
