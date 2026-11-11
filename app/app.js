@@ -18,6 +18,8 @@
       parents: "Eltern: Nach dem Start der App ersetzt diese Seite den Eltern-Login auf der Webseite. Konten und Kinderdaten bleiben unverändert.",
       teachers: "Lehrkräfte: Sie können weiter die Webseite oder die App nutzen; die Daten sind in beiden dieselben.",
       helpTitle: "Probleme bei der Installation?", help: "Wenden Sie sich an die Leitung der Einrichtung, wir helfen Ihnen.",
+      size: "Größe", sha: "Prüfsumme der Datei (SHA-256)",
+      unknown: "Bei der Installation fragt das Handy evtl. nach der Erlaubnis für diesen Browser. Das ist normal, da die App nicht aus dem Google Play Store kommt.",
       back: "Zurück zur Webseite des Kindergartens"
     },
     en: {
@@ -34,6 +36,8 @@
       parents: "Parents: once the app is launched, this page replaces the parents' sign-in on the website. Accounts and children's data stay as they are.",
       teachers: "Teachers: you can keep using the website or the app; the data is the same in both.",
       helpTitle: "Trouble installing?", help: "Contact the kindergarten office and we will help.",
+      size: "Size", sha: "File checksum (SHA-256)",
+      unknown: "While installing, your phone may ask to allow this browser to install apps. That is normal because the app does not come from Google Play.",
       back: "Back to the kindergarten website"
     }
   };
@@ -63,7 +67,7 @@
   function safeUrl(value) {
     return /^https:\/\//.test(value || "") ? value : "";
   }
-  fetch(API + "/api/app/version", {headers: {Accept: "application/json"}}).then(function (r) { return r.ok ? r.json() : null; }).then(function (info) {
+  function show(info) {
     if (!info) return;
     if (info.latest) document.getElementById("version").textContent = info.latest;
     if (info.released) document.getElementById("released").textContent = info.released;
@@ -74,6 +78,20 @@
       link.href = url;
       link.hidden = false;
       document.getElementById(pair[0] + "Soon").hidden = true;
+    });
+    if (info.android_sha256 && safeUrl(info.android_url)) {
+      var box = document.getElementById("androidCheck");
+      document.getElementById("androidSha").textContent = info.android_sha256;
+      document.getElementById("androidSize").textContent = info.android_size ? (Math.round(info.android_size / 1048576 * 10) / 10) + " MB" : "";
+      box.hidden = false;
+    }
+  }
+  // The file next to this page is the main source (it works without the server); the server answer fills what is missing.
+  fetch("version.json", {cache: "no-store"}).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (local) {
+    show(local);
+    return fetch(API + "/api/app/version", {headers: {Accept: "application/json"}}).then(function (r) { return r.ok ? r.json() : null; }).then(function (remote) {
+      if (remote && (remote.android_url || remote.ios_url) && !(local && local.android_url)) show(remote);
+      else if (remote && remote.ios_url) show({ios_url: remote.ios_url});
     });
   }).catch(function () {});
 })();
