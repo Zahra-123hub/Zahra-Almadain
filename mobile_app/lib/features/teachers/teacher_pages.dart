@@ -478,6 +478,7 @@ class _PostComposerState extends State<PostComposer> {
   final _body = TextEditingController();
   String _scope = 'general';
   String? _childId;
+  bool _material = false;
   List<UploadFile> _files = [];
   bool _busy = false;
   String? _error;
@@ -496,6 +497,7 @@ class _PostComposerState extends State<PostComposer> {
     try {
       await api.multipart('/api/platform/teacher/posts', {
         'scope': _scope,
+        'kind': _material ? 'material' : 'post',
         'title': _title.text.trim(),
         'body': _body.text.trim(),
         if (_scope == 'child') 'child_id': _childId!,
@@ -525,6 +527,7 @@ class _PostComposerState extends State<PostComposer> {
             selected: {_scope},
             onSelectionChanged: (v) => setState(() => _scope = v.first),
           ),
+          SwitchListTile(contentPadding: EdgeInsets.zero, value: _material, onChanged: (v) => setState(() => _material = v), title: Text(s.get('forParents'))),
           if (_scope == 'child') ...[
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(

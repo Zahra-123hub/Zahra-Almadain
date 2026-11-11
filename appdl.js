@@ -16,7 +16,6 @@
       byId("appVersion").textContent = info.latest || "";
       byId("appDate").textContent = info.released || "";
       byId("appSize").textContent = info.android_size ? (Math.round(info.android_size / 1048576 * 10) / 10) + " MB" : "";
-      byId("appSha").textContent = info.android_sha256 || "";
     }
     var ios = safeUrl(info.ios_url);
     if (ios) {

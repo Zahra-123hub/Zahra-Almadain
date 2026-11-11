@@ -647,6 +647,11 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "child", "title": "No child", "body": "x"}).status_code, 422)
         self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "everyone", "title": "t", "body": "x"}).status_code, 422)
         self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Empty", "body": ""}).status_code, 422)
+        self.assertEqual(self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "kind": "video", "title": "t", "body": "x"}).status_code, 422)
+        material = self.client.post("/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "kind": "material", "title": "Letters sheet", "body": "x"})
+        self.assertEqual(material.status_code, 201, material.text)
+        self.assertEqual(material.json()["kind"], "material")
+        self.assertEqual(other.json()["kind"], "post")
         bad_file = self.client.post(
             "/api/platform/teacher/posts", headers=teacher, data={"scope": "general", "title": "Bad", "body": "x"},
             files=[("files", ("run.exe", b"MZ", "application/octet-stream"))],

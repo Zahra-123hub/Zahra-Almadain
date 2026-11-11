@@ -101,6 +101,7 @@ class _ParentShellState extends State<ParentShell> {
       (Icons.child_care, s.get('myChildren'), const ParentChildren()),
       (Icons.description_outlined, s.get('reports'), const ParentReports()),
       (Icons.campaign_outlined, s.get('postsAndNotices'), const ParentPosts()),
+      (Icons.menu_book_outlined, s.get('learning'), const ParentLearning()),
       (Icons.notifications_outlined, s.get('notifications'), const NotificationsPage()),
       (Icons.person_outline, s.get('profile'), const ProfilePage()),
     ];
