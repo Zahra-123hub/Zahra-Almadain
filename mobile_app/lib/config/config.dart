@@ -5,6 +5,6 @@ class AppConfig {
     'API_BASE',
     defaultValue: 'https://zahra-123hub-almadain-api.onrender.com',
   );
-  static const String version = '1.0.1';
+  static const String version = '1.0.2';
   static const String supportMail = 'info@zahratalmadain.com';
 }
