@@ -5,7 +5,7 @@
   var T = {
     ar: {},
     de: {
-      title: "App des Kindergartens Zahrat Al-Madain",
+      title: "App „Zahra Portal“", subtitle: "Kindergarten Zahrat Al-Madain",
       lead: "Alles zu Ihrem Kind in der Hosentasche: Tagesberichte, Beiträge, Mitteilungen und Benachrichtigungen.",
       androidNote: "Erfordert Android 7.0 oder neuer.", androidButton: "Für Android herunterladen",
       iosNote: "Erfordert iOS 13 oder neuer. Installation nur über App Store oder TestFlight.", iosButton: "Im Apple Store öffnen",
@@ -23,7 +23,7 @@
       back: "Zurück zur Webseite des Kindergartens"
     },
     en: {
-      title: "Zahrat Al-Madain Kindergarten app",
+      title: "The “Zahra Portal” app", subtitle: "Zahrat Al-Madain Kindergarten",
       lead: "Everything about your child in your pocket: daily reports, posts, notices and notifications.",
       androidNote: "Requires Android 7.0 or newer.", androidButton: "Download for Android",
       iosNote: "Requires iOS 13 or newer. Installation only through the App Store or TestFlight.", iosButton: "Open in the Apple store",
