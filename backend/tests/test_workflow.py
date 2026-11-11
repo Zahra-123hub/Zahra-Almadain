@@ -1,6 +1,7 @@
 """The guided accounting workflow: step statuses, receipts, the closing check, the weekly check and the archive file."""
 
 import io
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -542,3 +543,57 @@ class WorkflowTests(ControlsBase):
         actions = [row["action"] for row in self.client.get("/api/admin/fees/audit", headers=self.acc).json()]
         self.assertIn("step.confirm", actions)
         self.assertIn("step.unconfirm", actions)
+
+    # ---- converting pounds and dollars ----
+    def convert(self, amounts, source="USD", target="SYP", on=None):
+        body = {"amounts": amounts, "source": source, "target": target}
+        if on is not None:
+            body["on"] = on
+        return self.client.post(A + "/convert", headers=self.acc, json=body)
+
+    def set_rate(self, day, rate):
+        self.assertEqual(self.client.put(A + "/rates", headers=self.acc, json={"effective_date": day, "syp_per_usd": rate}).status_code, 200)
+
+    def test_a_past_day_is_converted_with_the_rate_of_that_day_not_with_todays(self):
+        from datetime import date
+
+        self.set_rate("2026-01-01", "10000")
+        self.set_rate("2026-01-20", "12000")
+        self.set_rate(date.today().isoformat(), "13000")
+        early = self.convert(["1", "2.5"], on="2026-01-10").json()
+        self.assertEqual((early["amounts"], early["rate"], early["rate_date"], early["historical"], early["stale"]), (["10000.00", "25000.00"], "10000", "2026-01-01", True, False))
+        later = self.convert(["1"], on="2026-01-25").json()
+        self.assertEqual((later["amounts"], later["rate_date"]), (["12000.00"], "2026-01-20"))
+        backwards = self.convert(["12000"], source="SYP", target="USD", on="2026-01-25").json()
+        self.assertEqual(backwards["amounts"], ["1.00"])
+        # today, and a call that names no day, use the rate of today
+        for on in (None, date.today().isoformat(), "2999-01-01"):
+            now = self.convert(["1"], on=on).json()
+            self.assertEqual((now["amounts"], now["historical"]), (["13000.00"], False))
+        # a day before the very first stored rate can only be approximated with that first rate, and says so
+        old = self.convert(["1"], on="2025-12-01").json()
+        self.assertEqual((old["amounts"], old["rate_date"], old["stale"], old["historical"]), (["10000.00"], "2026-01-01", True, True))
+        self.assertEqual(self.convert(["1"], on="2026-01-10", ).status_code, 200)
+
+    def test_a_sheet_before_the_first_rate_is_marked_as_approximate(self):
+        self.set_rate("2026-01-01", "10000")
+        self.entry("2025-12-15", "buffet", income="1", currency="USD")
+        self.entry("2026-01-10", "buffet", income="1", currency="USD")
+        before = self.sheet("2025-12-15")["converted"]
+        after = self.sheet("2026-01-10")["converted"]
+        self.assertEqual((before["stale"], before["rate_date"]), (True, "2026-01-01"))
+        self.assertEqual((after["stale"], after["rate_date"]), (False, "2026-01-01"))
+
+    def test_the_converted_balances_add_up_exactly(self):
+        self.client.put(A + "/cash", headers=self.acc, json={"currency": "SYP", "opening": "1000", "start_year": 2026, "start_month": 1})
+        self.client.put(A + "/cash", headers=self.acc, json={"currency": "USD", "opening": "800", "start_year": 2026, "start_month": 1})
+        self.set_rate("2026-01-01", "12181.8547")
+        self.entry("2026-01-12", "buffet", income="555")
+        self.entry("2026-01-12", "buffet", income="0.51", currency="USD")
+        self.entry("2026-01-12", "operating", expense="30000")
+        sheet = self.sheet("2026-01-12")
+        for target in ("SYP", "USD"):
+            converted = sheet["converted"][target]
+            opening, closing, net = (Decimal(converted[key]) for key in ("opening", "closing", "net"))
+            self.assertEqual(closing - opening, net, target)  # the table adds up: opening + net = closing
+        self.assertEqual(sheet["converted"]["USD"]["net"], "-1.91")

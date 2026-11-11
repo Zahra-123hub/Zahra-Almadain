@@ -39,25 +39,34 @@ function accCents(text){
   return neg ? -cents : cents;
 }
 /* Asks for today's exchange rate (pounds for one dollar) and saves it; used the first time a conversion needs it. */
-async function accAskRate(current){
-  var text = window.prompt(current ? "سعر الصرف الحالي: 1 دولار = " + current + " ليرة. اكتب السعر الجديد:" : "لا يوجد سعر صرف محفوظ. اكتب كم ليرة سورية تساوي 1 دولار اليوم (مثال: 13000):", current || "");
+async function accAskRate(current, on){
+  var day = on && on < localToday() ? on : localToday();  // for a past day the rate is set for that day
+  var when = day === localToday() ? "اليوم" : "في تاريخ " + day;
+  var text = window.prompt(current ? "سعر الصرف " + when + ": 1 دولار = " + current + " ليرة. اكتب السعر الجديد:" : "لا يوجد سعر صرف محفوظ. اكتب كم ليرة سورية تساوي 1 دولار " + when + " (مثال: 13000):", current || "");
   if(text === null) throw fail("لم يُحدَّد سعر الصرف.");
   text = text.trim().replace(/[٠-٩]/g, function(d){ return String(d.charCodeAt(0) - 1632); }).replace(",", ".");
-  return request("/api/admin/accounting/rates", {method:"PUT", body:JSON.stringify({effective_date:localToday(), syp_per_usd:text})});
+  return request("/api/admin/accounting/rates", {method:"PUT", body:JSON.stringify({effective_date:day, syp_per_usd:text})});
 }
 /* The server converts the typed amounts exactly (decimal arithmetic, half a cent up) with the current rate. */
-async function accConvertMany(values, source, target){
-  var send = function(){ return request("/api/admin/accounting/convert", {method:"POST", body:JSON.stringify({amounts:values, source:source, target:target})}); };
+async function accConvertMany(values, source, target, on){
+  var send = function(){ return request("/api/admin/accounting/convert", {method:"POST", body:JSON.stringify({amounts:values, source:source, target:target, on:on || null})}); };
   try{ return await send(); }
   catch(error){
     if(String(error.message).indexOf("سعر صرف") === -1) throw error;
-    await accAskRate("");
+    await accAskRate("", on);
     return send();
   }
 }
+/* The last day of a month as a date text (a monthly booking is converted with the rate of the end of its month). */
+function accMonthEnd(year, month){
+  var y = Number(year), m = Number(month);
+  if(!y || !m) return "";
+  var last = new Date(y, m, 0);
+  return last.getFullYear() + "-" + String(last.getMonth() + 1).padStart(2, "0") + "-" + String(last.getDate()).padStart(2, "0");
+}
 /* Switching the currency of a form converts the amounts already typed in it. Switching back restores exactly what
    was typed (an amount that was not touched meanwhile is never converted twice), so nothing drifts. */
-function accLinkCurrency(select, inputs, notice){
+function accLinkCurrency(select, inputs, notice, dateOf){  // dateOf(): the day the amounts belong to (a past day is converted with the rate of that day)
   var current = select.value;
   var origin = new Map();  // input -> {cur: currency it was typed in, text: what was typed, shown: what the conversion put there}
   function fire(input){ input.dispatchEvent(new Event("input", {bubbles:true})); }
@@ -68,15 +77,17 @@ function accLinkCurrency(select, inputs, notice){
       var filled = inputs.filter(function(i){ return i.value !== ""; });
       var restore = [], change = [];
       filled.forEach(function(i){ var o = origin.get(i); if(o && o.shown === i.value && o.cur === target) restore.push(i); else change.push(i); });
-      var done = change.length ? await accConvertMany(change.map(function(i){ return i.value; }), source, target) : null;
+      var when = dateOf ? dateOf() : "";
+      var done = change.length ? await accConvertMany(change.map(function(i){ return i.value; }), source, target, when) : null;
       restore.forEach(function(i){ i.value = origin.get(i).text; origin.delete(i); fire(i); });
       change.forEach(function(i, k){ origin.set(i, {cur:source, text:i.value, shown:done.amounts[k]}); i.value = done.amounts[k]; fire(i); });
       current = target;
       if(notice && done){
-        setMsg(notice, "حُوِّلت المبالغ من " + source + " إلى " + target + " بسعر 1 دولار = " + done.rate + " ليرة (" + (done.source === "auto" ? "سعر اليوم تلقائياً من الإنترنت" : "السعر المحفوظ") + ")." +
-          (done.stale ? " تنبيه: تعذّر جلب سعر اليوم فاستُعمل آخر سعر محفوظ بتاريخ " + done.rate_date + "." : "") + " ", done.stale ? "err" : "ok");
+        var basis = done.historical ? "سعر يوم " + done.rate_date : done.source === "auto" ? "سعر اليوم تلقائياً من الإنترنت" : "السعر المحفوظ";
+        setMsg(notice, "حُوِّلت المبالغ من " + source + " إلى " + target + " بسعر 1 دولار = " + done.rate + " ليرة (" + basis + ")." +
+          (done.stale ? (done.historical ? " تنبيه: لا يوجد سعر محفوظ قبل هذا التاريخ، فاستُعمل أقدم سعر محفوظ بتاريخ " + done.rate_date + " وهو تقريبي. أدخل سعر ذلك اليوم من «سعر آخر»." : " تنبيه: تعذّر جلب سعر اليوم فاستُعمل آخر سعر محفوظ بتاريخ " + done.rate_date + ".") : "") + " ", done.stale ? "err" : "ok");
         notice.appendChild(h("button", {type:"button", class:"a-btn ghost", text:"استعمال سعر آخر", onclick:async function(){
-          try{ var saved = await accAskRate(done.rate); setMsg(notice, "السعر الجديد: 1 دولار = " + saved.current.rate + " ليرة (يُستعمل في التحويلات القادمة).", "ok"); }
+          try{ var saved = await accAskRate(done.rate, when); setMsg(notice, "تم حفظ السعر الجديد (" + (done.historical ? "ليوم " + when : "لليوم") + "): يُستعمل في التحويلات القادمة.", "ok"); }
           catch(error){ setMsg(notice, errText(error), "err"); }
         }}));
       }
@@ -405,7 +416,7 @@ function tabSalaries(){
     var chosen = employees.filter(function(e){ return e.id === addEmp.value; })[0];
     if(chosen && chosen.salary !== null && chosen.salary !== undefined){ addBase.value = chosen.salary; addCurrency.value = chosen.salary_currency || "SYP"; if(addCurrency._accSync) addCurrency._accSync(); updatePreview(); }
   });
-  accLinkCurrency(addCurrency, [addBase, addBonus, addAdvance, addDeduction], msg);
+  accLinkCurrency(addCurrency, [addBase, addBonus, addAdvance, addDeduction], msg, function(){ return accMonthEnd(addYear.value, addMonth.value); });
   var addForm = h("form", {class:"a-card a-form-grid", hidden:"hidden"}, [
     h("h3", {text:"إضافة سطر راتب"}), accField("الموظف", addEmp), nameField, jobField,
     accField("الشهر", addMonth), accField("السنة", addYear), accField("العملة", addCurrency),
@@ -592,6 +603,8 @@ function tabSheet(type, opts){
     : ["البند / المادة", "التفاصيل", "البيان / الملاحظات", "المسؤول (من صرف / استلم)", "المبلغ", "العملة", ""];
   var CURRENCY_CHOICES = [["SYP", "SYP"], ["USD", "USD"]];
 
+  /* The day a row of this sheet belongs to: its own day (day / week sheet) or the end of its month. */
+  function sheetDate(){ return isWeek ? String(filters.day || "") : accMonthEnd(filters.year, filters.month); }
   function sheetYear(){ return isWeek ? String(filters.day || "").slice(0, 4) || filters.year : filters.year; }  // week / day: the date decides
   function query(){
     return "period_type=" + type + "&year=" + encodeURIComponent(sheetYear()) + (isWeek ? "&week_start=" + encodeURIComponent(filters.day) : "&month=" + encodeURIComponent(filters.month));
@@ -631,7 +644,7 @@ function tabSheet(type, opts){
       currencyCell = h("td", {}, [h("span", {class:"a-tag", text:line.currency})]);
     }else{
       currencySel = accSelect(CURRENCY_CHOICES, line.currency);  // switching converts the amount typed in this row
-      accLinkCurrency(currencySel, isWeek ? [income, expense] : [amount], msg);
+      accLinkCurrency(currencySel, isWeek ? [income, expense] : [amount], msg, sheetDate);
       currencyCell = h("td", {}, [currencySel]);
     }
     var amountCells = isWeek
@@ -802,7 +815,7 @@ function tabSheet(type, opts){
     var personNew = h("input", {type:"text", maxlength:"120", placeholder:"من صرف / من استلم؟", list:"acc-persons"});
     var amount = accNumber("", {required:"required"});
     var currency = accSelect(CURRENCY_CHOICES, "SYP");
-    accLinkCurrency(currency, [amount], msg);
+    accLinkCurrency(currency, [amount], msg, sheetDate);
     var form = h("form", {class:"a-form-grid a-custom"}, [h("strong", {text:"＋ إضافة بند جديد"}), accField("البند", label), accField("التفاصيل", details), accField("البيان / الملاحظات", note), accField("المسؤول (من صرف / استلم)", personNew), accField("النوع", kind), accField("المبلغ", amount), accField("العملة", currency),
       h("div", {class:"a-row"}, [h("button", {type:"submit", class:"a-btn ghost", text:"إضافة البند"})])]);
     form.addEventListener("submit", async function(event){
@@ -846,7 +859,7 @@ function tabSheet(type, opts){
     }else{
       parts.push(h("p", {class:"hint", text:"لم يُدخَل رأس مال الروضة بعد، لذلك لا يظهر الرصيد. أدخله في الصندوق أعلى هذه الصفحة."}));
     }
-    if(conv) parts.push(h("p", {class:"hint", text:"1 دولار = " + conv.rate + " ليرة (" + (conv.source === "auto" ? "سعر اليوم تلقائياً من الإنترنت" : "السعر المحفوظ") + (conv.stale ? "، تعذّر جلب سعر اليوم فاستُعمل آخر سعر بتاريخ " + conv.rate_date : "") + ")."}));
+    if(conv) parts.push(h("p", {class:"hint", text:"1 دولار = " + conv.rate + " ليرة (" + (conv.source === "auto" ? "سعر اليوم تلقائياً من الإنترنت" : "السعر المحفوظ") + (conv.stale ? (conv.rate_date > data.end ? "، لا يوجد سعر قبل هذا التاريخ فاستُعمل أقدم سعر محفوظ بتاريخ " + conv.rate_date + " وهو تقريبي" : "، تعذّر جلب سعر اليوم فاستُعمل آخر سعر بتاريخ " + conv.rate_date) : (conv.rate_date !== data.end && data.end < localToday() ? "، سعر يوم " + conv.rate_date : "")) + ")."}));
     if(isWeek && data.balance) parts.push(h("p", {class:"hint", text:"رصيد أول اليوم/الأسبوع = رصيد أول الشهر + ما سُجّل في الأيام السابقة من الشهر. البنود الأسبوعية والشهرية وغير المؤرخة تُحتسب كاملة في رصيد الشهر."}));
     return h("div", {class:"a-card"}, parts);
   }
