@@ -2733,6 +2733,7 @@ def update_report_status(
 # grades, remarks...). Posts are visible to the families immediately; the author or an admin can delete them.
 MAX_POST_FILES = 5
 POST_SCOPES = ("general", "child")
+POST_KINDS = ("post", "material")
 
 
 def post_attachments(session: Session, post_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[dict[str, Any]]]:
@@ -2774,6 +2775,7 @@ def posts_payload(session: Session, posts: list[TeacherPost]) -> list[dict[str, 
         {
             "id": str(post.id),
             "scope": post.scope,
+            "kind": post.kind or "post",
             "child_id": str(post.child_id) if post.child_id else None,
             "child_name": child_names.get(post.child_id, ""),
             "title": post.title,
@@ -2794,6 +2796,7 @@ async def create_teacher_post(
     title: str = Form(..., max_length=120),
     body: str = Form(default="", max_length=3000),
     child_id: uuid.UUID | None = Form(default=None),
+    kind: str = Form(default="post"),
     files: list[UploadFile] = File(default=[]),
     principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
     session: Session = Depends(get_session),
@@ -2804,6 +2807,8 @@ async def create_teacher_post(
     uploads = [item for item in files if item.filename]
     if scope not in POST_SCOPES:
         raise HTTPException(422, "Choose a general or a private post.")
+    if kind not in POST_KINDS:
+        raise HTTPException(422, "Choose a post or learning material.")
     if not title:
         raise HTTPException(422, "A title is required.")
     if not body and not uploads:
@@ -2848,7 +2853,7 @@ async def create_teacher_post(
         )
         if (used_bytes or 0) + new_bytes > MAX_TEACHER_CONTENT_BYTES:
             raise HTTPException(413, "The teacher account has reached its 250 MB storage limit.")
-    post = TeacherPost(author_id=principal.account.id, scope=scope, child_id=child_id, title=title, body=body)
+    post = TeacherPost(author_id=principal.account.id, scope=scope, kind=kind, child_id=child_id, title=title, body=body)
     session.add(post)
     session.flush()
     community.notify(

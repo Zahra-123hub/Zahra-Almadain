@@ -60,9 +60,10 @@ class FileInfo {
 }
 
 class Post {
-  Post({required this.id, required this.scope, required this.childName, required this.title, required this.body, required this.author, this.createdAt, this.files = const []});
+  Post({required this.id, required this.scope, this.kind = 'post', required this.childName, required this.title, required this.body, required this.author, this.createdAt, this.files = const []});
   final String id;
   final String scope; // general | child
+  final String kind; // post | material
   final String childName;
   final String title;
   final String body;
@@ -73,6 +74,7 @@ class Post {
   factory Post.fromJson(Map<String, dynamic> j) => Post(
         id: _s(j['id']),
         scope: _s(j['scope']),
+        kind: _s(j['kind']).isEmpty ? 'post' : _s(j['kind']),
         childName: _s(j['child_name']),
         title: _s(j['title']),
         body: _s(j['body']),

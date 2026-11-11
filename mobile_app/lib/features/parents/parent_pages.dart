@@ -63,6 +63,7 @@ class PostCard extends StatelessWidget {
             if (onDelete != null) IconButton(icon: const Icon(Icons.delete_outline), onPressed: onDelete),
           ]),
           Wrap(spacing: 8, children: [
+            if (post.kind == 'material') Chip(visualDensity: VisualDensity.compact, avatar: const Icon(Icons.menu_book_outlined, size: 16), label: Text(s.get('learning'), style: const TextStyle(fontSize: 12))),
             Chip(
               visualDensity: VisualDensity.compact,
               label: Text(post.scope == 'child' ? '${s.get('private')}: ${post.childName}' : s.get('general'), style: const TextStyle(fontSize: 12)),
@@ -266,6 +267,28 @@ class ParentReports extends StatelessWidget {
   }
 }
 
+// ---- learning material (from the teachers) -----------------------------------------------------------------------------------
+class ParentLearning extends StatelessWidget {
+  const ParentLearning({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final api = SessionScope.of(context).api;
+    return Loader<List<Post>>(
+      load: () async {
+        final posts = await api.getCached('/api/platform/parent/posts');
+        return Cached(_list(posts.data, Post.fromJson).where((p) => p.kind == 'material').toList(), fromCache: posts.fromCache);
+      },
+      builder: (context, items, reload) {
+        if (items.isEmpty) return EmptyNote(s.get('noLearning'));
+        return ListView(padding: const EdgeInsets.all(12), children: [
+          for (final p in items) PostCard(p, filePath: (post, f) => '/api/platform/parent/posts/${post.id}/files/${f.id}'),
+        ]);
+      },
+    );
+  }
+}
+
 // ---- posts and notices -----------------------------------------------------------------------------------------------------
 class ParentPosts extends StatelessWidget {
   const ParentPosts({super.key});
@@ -280,7 +303,8 @@ class ParentPosts extends StatelessWidget {
         return Cached((_list(posts.data, Post.fromJson), _list(notices.data, Notice.fromJson)), fromCache: posts.fromCache || notices.fromCache);
       },
       builder: (context, d, reload) {
-        final (posts, notices) = d;
+        final (all, notices) = d;
+        final posts = all.where((p) => p.kind != 'material').toList();
         if (posts.isEmpty && notices.isEmpty) return EmptyNote(s.get('noPosts'));
         return ListView(padding: const EdgeInsets.all(12), children: [
           if (notices.isNotEmpty) SectionTitle(s.get('notices')),
