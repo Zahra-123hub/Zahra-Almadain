@@ -1,6 +1,6 @@
-# Mobile app "Zahra Portal" / «بوابة زهرة» (Android and iOS)
+# Mobile app "Zahra+" (Android and iOS)
 
-Name on the phone: `بوابة زهرة` (Arabic) / `Zahra Portal` (other languages), set in `android/app/src/main/res/values*/strings.xml` and `ios/Runner/Info.plist`. Launcher icon: the kindergarten logo (`assets/icon.png`, adaptive foreground `assets/icon_foreground.png`); recreate with `dart run flutter_launcher_icons`.
+Name on the phone: `Zahra+` (all languages), set in `android/app/src/main/res/values*/strings.xml` and `ios/Runner/Info.plist`. Launcher icon: the kindergarten logo (`assets/icon.png`, adaptive foreground `assets/icon_foreground.png`); recreate with `dart run flutter_launcher_icons`.
 
 Flutter app in `mobile_app/`. It uses the existing FastAPI backend and the same accounts; there is no second database.
 
