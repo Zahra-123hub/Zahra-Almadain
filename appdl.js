@@ -23,6 +23,7 @@
       var iosLink = byId("iosLink");
       iosLink.href = ios;
       iosLink.hidden = false;
+      byId("iosSoon").hidden = true;
     }
   }).catch(function () {});
 })();
