@@ -32,7 +32,9 @@ class ZahraApp extends StatelessWidget {
         locale: session.locale, // Arabic is the default; RTL follows the language automatically
         supportedLocales: S.supported,
         localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-        home: SessionScope(session: session, child: const _Root()),
+        // above the navigator, so screens opened later (report editor, new post) find the session too
+        builder: (context, child) => SessionScope(session: session, child: child ?? const SizedBox.shrink()),
+        home: const _Root(),
       ),
     );
   }

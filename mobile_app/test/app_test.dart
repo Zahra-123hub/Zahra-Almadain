@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zahra_app/features/auth/login_page.dart';
+import 'package:zahra_app/features/teachers/teacher_pages.dart';
+import 'package:zahra_app/main.dart';
 import 'package:zahra_app/localization/strings.dart';
 import 'package:zahra_app/models/models.dart';
 import 'package:zahra_app/services/api.dart';
@@ -136,6 +138,19 @@ void main() {
       await tester.tap(find.byType(FilledButton));
       await tester.pump();
       expect(find.text('هذا الحقل مطلوب'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a screen opened later (new report) still finds the session', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json({}))));
+      await tester.pumpWidget(ZahraApp(session: session));
+      await tester.pump();
+      Navigator.of(tester.element(find.byType(Navigator).first)).push(MaterialPageRoute(builder: (_) => const ReportEditor(children: [])));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportEditor), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
