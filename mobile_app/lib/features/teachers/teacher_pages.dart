@@ -447,8 +447,9 @@ class TeacherPosts extends StatelessWidget {
 }
 
 class PostComposer extends StatefulWidget {
-  const PostComposer({super.key, required this.children});
+  const PostComposer({super.key, required this.children, this.material = false});
   final List<Child> children;
+  final bool material;
   @override
   State<PostComposer> createState() => _PostComposerState();
 }
@@ -458,7 +459,7 @@ class _PostComposerState extends State<PostComposer> {
   final _body = TextEditingController();
   String _scope = 'general';
   String? _childId;
-  bool _material = false;
+  late bool _material = widget.material;
   List<UploadFile> _files = [];
   bool _busy = false;
   String? _error;
@@ -498,7 +499,7 @@ class _PostComposerState extends State<PostComposer> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(s.get('newPost'))),
+      appBar: AppBar(title: Text(s.get(widget.material ? 'newMaterial' : 'newPost'))),
       body: AbsorbPointer(
         absorbing: _busy,
         child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -507,7 +508,7 @@ class _PostComposerState extends State<PostComposer> {
             selected: {_scope},
             onSelectionChanged: (v) => setState(() => _scope = v.first),
           ),
-          SwitchListTile(contentPadding: EdgeInsets.zero, value: _material, onChanged: (v) => setState(() => _material = v), title: Text(s.get('forParents'))),
+          if (!widget.material) SwitchListTile(contentPadding: EdgeInsets.zero, value: _material, onChanged: (v) => setState(() => _material = v), title: Text(s.get('forParents'))),
           if (_scope == 'child') ...[
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -539,15 +540,19 @@ class TeacherMaterials extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final api = SessionScope.of(context).api;
-    return Loader<(List<MaterialFile>, Map<String, dynamic>)>(
+    return Loader<(List<MaterialFile>, Map<String, dynamic>, List<Post>, List<Child>)>(
       load: () async {
         final items = await api.getCached('/api/platform/teacher/content');
         final storage = await api.getCached('/api/platform/teacher/storage');
+        final posts = await api.getCached('/api/platform/teacher/posts');
+        final children = await api.getCached('/api/platform/teacher/children');
         final mine = _list(items.data, MaterialFile.fromJson).where((m) => m.category != 'report_attachment').toList();
-        return Cached((mine, storage.data as Map<String, dynamic>), fromCache: items.fromCache || storage.fromCache);
+        final shared = _list(posts.data, Post.fromJson).where((p) => p.kind == 'material').toList();
+        return Cached((mine, storage.data as Map<String, dynamic>, shared, _list(children.data, Child.fromJson)),
+            fromCache: items.fromCache || storage.fromCache || posts.fromCache || children.fromCache);
       },
       builder: (context, d, reload) {
-        final (items, storage) = d;
+        final (items, storage, shared, children) = d;
         final used = (storage['used_bytes'] as num).toInt();
         final limit = (storage['limit_bytes'] as num).toInt();
         return Scaffold(
@@ -557,6 +562,21 @@ class TeacherMaterials extends StatelessWidget {
             icon: const Icon(Icons.upload_file),
             label: Text(s.get('uploadFile')),
             onPressed: () async {
+              final forParents = await showModalBottomSheet<bool>(
+                context: context,
+                builder: (_) => SafeArea(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    ListTile(leading: const Icon(Icons.family_restroom, color: brandBlue), title: Text(s.get('shareWithParents')), onTap: () => Navigator.pop(context, true)),
+                    ListTile(leading: const Icon(Icons.lock_outline, color: brandBlue), title: Text(s.get('privateFile')), onTap: () => Navigator.pop(context, false)),
+                  ]),
+                ),
+              );
+              if (forParents == null || !context.mounted) return;
+              if (forParents) {
+                final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => PostComposer(children: children, material: true)));
+                if (saved == true) await reload();
+                return;
+              }
               final f = await FilePicker.pickFile();
               if (f == null || f.path == null) return;
               try {
@@ -578,6 +598,29 @@ class TeacherMaterials extends StatelessWidget {
                 ]),
               ),
             ),
+            if (shared.isNotEmpty) SectionTitle(s.get('sharedWithParents')),
+            for (final p in shared)
+              PostCard(
+                p,
+                filePath: (post, f) => '/api/platform/teacher/content/${f.id}/download',
+                onDelete: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      content: Text(s.get('confirmDelete')),
+                      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))), TextButton(onPressed: () => Navigator.pop(context, true), child: Text(s.get('delete')))],
+                    ),
+                  );
+                  if (ok != true) return;
+                  try {
+                    await api.delete('/api/platform/teacher/posts/${p.id}');
+                    await reload();
+                  } catch (e) {
+                    if (context.mounted) toast(context, problemText(context, e));
+                  }
+                },
+              ),
+            SectionTitle(s.get('myPrivateFiles')),
             if (items.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(s.get('noFiles')))),
             for (final m in items)
               Card(
