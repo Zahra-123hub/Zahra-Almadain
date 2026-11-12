@@ -105,6 +105,8 @@ class S {
     'shareWithParents': {'ar': 'مادة تعليمية للأهل (يراها الأهل)', 'de': 'Lernmaterial für Eltern (Eltern sehen es)', 'en': 'Learning material for parents (parents see it)'},
     'sharedWithParents': {'ar': 'مواد تعليمية مشاركة مع الأهل', 'de': 'Mit Eltern geteiltes Lernmaterial', 'en': 'Learning material shared with parents'},
     'myPrivateFiles': {'ar': 'ملفاتي الخاصة', 'de': 'Meine privaten Dateien', 'en': 'My private files'},
+    'shareSelected': {'ar': 'مشاركة مع الأهل', 'de': 'Für Eltern freigeben', 'en': 'Share with parents'},
+    'selectToShare': {'ar': 'حدّد ملفات لمشاركتها مع الأهل', 'de': 'Dateien markieren, um sie für Eltern freizugeben', 'en': 'Tick files to share them with parents'},
     'uploadFile': {'ar': 'رفع ملف', 'de': 'Datei hochladen', 'en': 'Upload file'},
     'storage': {'ar': 'المساحة المستخدمة', 'de': 'Genutzter Speicher', 'en': 'Storage used'},
     'draftLocal': {'ar': 'تم حفظ مسودة على هذا الجهاز', 'de': 'Entwurf auf diesem Gerät gesichert', 'en': 'Draft kept on this device'},

@@ -2868,6 +2868,58 @@ async def create_teacher_post(
     return posts_payload(session, [post])[0]
 
 
+class ShareContentRequest(BaseModel):
+    content_ids: list[uuid.UUID] = Field(min_length=1)
+    scope: str = "general"
+    child_id: uuid.UUID | None = None
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=3000)
+
+
+@app.post("/api/platform/teacher/content/share", status_code=201)
+def share_teacher_content(
+    payload: ShareContentRequest,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("teacher")),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Turns files from the teacher's private storage into a learning-material post for the parents."""
+    response.headers["Cache-Control"] = "no-store"
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(422, "A title is required.")
+    if payload.scope not in POST_SCOPES:
+        raise HTTPException(422, "Choose a general or a private post.")
+    child_id = payload.child_id if payload.scope == "child" else None
+    if payload.scope == "child":
+        if child_id is None:
+            raise HTTPException(422, "Select the child this private post is for.")
+        if session.scalar(select(Child.id).where(Child.id == child_id, Child.is_active.is_(True))) is None:
+            raise HTTPException(404, "Child profile not found.")
+    ids = list(dict.fromkeys(payload.content_ids))
+    contents = session.scalars(
+        select(TeacherContent).where(
+            TeacherContent.id.in_(ids), TeacherContent.owner_id == principal.account.id,
+            TeacherContent.post_id.is_(None), TeacherContent.report_id.is_(None),
+        )
+    ).all()
+    if len(contents) != len(ids):
+        raise HTTPException(404, "File not found.")
+    post = TeacherPost(author_id=principal.account.id, scope=payload.scope, kind="material", child_id=child_id, title=title, body=payload.body.strip())
+    session.add(post)
+    session.flush()
+    for content in contents:
+        content.post_id = post.id
+    community.notify(
+        session,
+        community.accounts_with_role(session, "parent") if payload.scope == "general" else community.parents_of(session, child_id),
+        "post_new", title, "posts",
+    )
+    session.commit()
+    session.refresh(post)
+    return posts_payload(session, [post])[0]
+
+
 @app.get("/api/platform/teacher/posts")
 def list_teacher_posts(
     response: Response,
