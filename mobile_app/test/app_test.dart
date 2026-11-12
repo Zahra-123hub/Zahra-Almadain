@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zahra_app/features/auth/login_page.dart';
+import 'package:zahra_app/features/parents/parent_pages.dart';
 import 'package:zahra_app/features/teachers/teacher_pages.dart';
 import 'package:zahra_app/main.dart';
 import 'package:zahra_app/localization/strings.dart';
@@ -152,6 +153,33 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ReportEditor), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the parents learning tab lists only learning material, the posts tab the rest', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final posts = [
+        {'id': '1', 'scope': 'general', 'kind': 'material', 'child_name': '', 'title': 'Letters sheet', 'body': 'x', 'author': 'T', 'files': []},
+        {'id': '2', 'scope': 'general', 'kind': 'post', 'child_name': '', 'title': 'Trip on Friday', 'body': 'x', 'author': 'T', 'files': []},
+      ];
+      final session = Session(ApiClient(client: MockClient((r) async => r.url.path.contains('announcements') ? json([]) : json(posts))));
+      Future<void> show(Widget page) async {
+        await tester.pumpWidget(MaterialApp(
+          locale: const Locale('en'),
+          supportedLocales: S.supported,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+          home: SessionScope(session: session, child: Scaffold(body: page)),
+        ));
+        await tester.pumpAndSettle();
+      }
+
+      await show(const ParentLearning());
+      expect(find.text('Letters sheet'), findsOneWidget);
+      expect(find.text('Trip on Friday'), findsNothing);
+      await show(const ParentPosts());
+      expect(find.text('Trip on Friday'), findsOneWidget);
+      expect(find.text('Letters sheet'), findsNothing);
     });
 
     testWidgets('German login is left-to-right', (tester) async {
