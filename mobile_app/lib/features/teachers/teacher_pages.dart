@@ -122,32 +122,12 @@ class TeacherHome extends StatelessWidget {
       builder: (context, d, reload) {
         final reports = d['reports'] as List<Report>;
         int count(String st) => reports.where((r) => r.status == st).length;
-        Widget tile(IconData icon, int n, String label, int tab) => Expanded(
-              child: Card(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => goTo(tab),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(children: [
-                      Icon(icon, color: brandBlue),
-                      Text('$n', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                      Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
-                    ]),
-                  ),
-                ),
-              ),
-            );
+        Widget tile(IconData icon, int n, String label, int tab, [Color color = brandBlue]) =>
+            Expanded(child: StatTile(icon: icon, value: '$n', label: label, color: color, onTap: () => goTo(tab)));
         return ListView(padding: const EdgeInsets.all(16), children: [
-          Card(
-            color: brandBlue,
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Text(s.fill('welcome', session.username ?? ''), style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-            ),
-          ),
-          Row(children: [tile(Icons.child_care, d['children'] as int, s.get('children'), 1), tile(Icons.edit_note, count('draft'), s.get('openReports'), 2)]),
-          Row(children: [tile(Icons.hourglass_bottom, count('submitted'), s.get('submitted'), 2), tile(Icons.undo, count('rejected'), s.get('returned'), 2)]),
+          HeroCard(title: s.fill('welcome', session.username ?? '')),
+          Row(children: [tile(Icons.child_care, d['children'] as int, s.get('children'), 1), const SizedBox(width: 10), tile(Icons.edit_note, count('draft'), s.get('openReports'), 2, brandAccent)]),
+          Row(children: [tile(Icons.hourglass_bottom, count('submitted'), s.get('submitted'), 2, const Color(0xFF3B7DD8)), const SizedBox(width: 10), tile(Icons.undo, count('rejected'), s.get('returned'), 2, const Color(0xFFD25B5B))]),
           if ((d['notices'] as List).isNotEmpty) SectionTitle(s.get('notices')),
           NoticeCards((d['notices'] as List<Notice>).take(3).toList()),
         ]);

@@ -45,65 +45,97 @@ class _LoginPageState extends State<LoginPage> {
     final s = S.of(context);
     final session = SessionScope.of(context);
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _form,
-                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Image.asset('assets/logo.png', height: 150, fit: BoxFit.contain),
-                  const SizedBox(height: 16),
-                  Text(s.get('appName'), textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: brandBlue)),
-                  Text(s.get('appSubtitle'), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
-                  const SizedBox(height: 8),
-                  Text(s.get('signInHint'), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
-                  const SizedBox(height: 24),
-                  if (session.sessionEnded)
-                    Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(s.get('sessionEnded'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.orange))),
-                  TextFormField(
-                    controller: _user,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    autofillHints: const [AutofillHints.username],
-                    decoration: InputDecoration(labelText: s.get('username'), prefixIcon: const Icon(Icons.person_outline)),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? s.get('required') : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _pass,
-                    obscureText: _hide,
-                    autofillHints: const [AutofillHints.password],
-                    onFieldSubmitted: (_) => _submit(),
-                    decoration: InputDecoration(
-                      labelText: s.get('password'),
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(icon: Icon(_hide ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _hide = !_hide)),
+      body: SingleChildScrollView(
+        child: Column(children: [
+          // blue header with the logo
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(24, MediaQuery.of(context).padding.top + 36, 24, 56),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [brandBlue, brandDeep], begin: Alignment.topRight, end: Alignment.bottomLeft),
+              borderRadius: BorderRadius.only(bottomLeft: Radius.circular(36), bottomRight: Radius.circular(36)),
+            ),
+            child: Column(children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 20, offset: Offset(0, 8))]),
+                child: Image.asset('assets/logo.png', height: 110, fit: BoxFit.contain),
+              ),
+              const SizedBox(height: 20),
+              Text(s.get('appName'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(height: 2),
+              Text(s.get('appSubtitle'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: Color(0xDDFFFFFF))),
+            ]),
+          ),
+          // the form, pulled up over the header
+          Transform.translate(
+            offset: const Offset(0, -28),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Card(
+                  elevation: 3,
+                  shadowColor: const Color(0x33000000),
+                  child: Padding(
+                    padding: const EdgeInsets.all(22),
+                    child: Form(
+                      key: _form,
+                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        Text(s.get('signInHint'), textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700, height: 1.5)),
+                        const SizedBox(height: 20),
+                        if (session.sessionEnded)
+                          Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(s.get('sessionEnded'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.orange))),
+                        TextFormField(
+                          controller: _user,
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          autofillHints: const [AutofillHints.username],
+                          decoration: InputDecoration(labelText: s.get('username'), prefixIcon: const Icon(Icons.person_outline)),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? s.get('required') : null,
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _pass,
+                          obscureText: _hide,
+                          autofillHints: const [AutofillHints.password],
+                          onFieldSubmitted: (_) => _submit(),
+                          decoration: InputDecoration(
+                            labelText: s.get('password'),
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined), onPressed: () => setState(() => _hide = !_hide)),
+                          ),
+                          validator: (v) => (v == null || v.isEmpty) ? s.get('required') : null,
+                        ),
+                        if (_error != null)
+                          Container(
+                            margin: const EdgeInsets.only(top: 14),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(12)),
+                            child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFB3261E))),
+                          ),
+                        const SizedBox(height: 22),
+                        FilledButton(
+                          onPressed: _busy ? null : _submit,
+                          child: _busy ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white)) : Text(s.get('signIn')),
+                        ),
+                      ]),
                     ),
-                    validator: (v) => (v == null || v.isEmpty) ? s.get('required') : null,
                   ),
-                  if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red))),
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(s.get('signIn')),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(alignment: WrapAlignment.center, children: [
-                    for (final code in const ['ar', 'de', 'en'])
-                      TextButton(
-                        onPressed: () => session.setLocale(code),
-                        child: Text(const {'ar': 'العربية', 'de': 'Deutsch', 'en': 'English'}[code]!,
-                            style: TextStyle(fontWeight: session.locale.languageCode == code ? FontWeight.bold : FontWeight.normal)),
-                      ),
-                  ]),
-                ]),
+                ),
               ),
             ),
           ),
-        ),
+          Wrap(alignment: WrapAlignment.center, children: [
+            for (final code in const ['ar', 'de', 'en'])
+              TextButton(
+                onPressed: () => session.setLocale(code),
+                child: Text(const {'ar': 'العربية', 'de': 'Deutsch', 'en': 'English'}[code]!,
+                    style: TextStyle(fontWeight: session.locale.languageCode == code ? FontWeight.w700 : FontWeight.w500, color: session.locale.languageCode == code ? brandBlue : Colors.grey.shade600)),
+              ),
+          ]),
+          const SizedBox(height: 16),
+        ]),
       ),
     );
   }

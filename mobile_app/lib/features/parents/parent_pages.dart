@@ -18,27 +18,39 @@ class ReportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
+    Widget block(IconData icon, String label, String text) => Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: brandSoft, borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [Icon(icon, size: 18, color: brandBlue), const SizedBox(width: 6), Text(label, style: const TextStyle(fontWeight: FontWeight.w700, color: brandBlue))]),
+            const SizedBox(height: 4),
+            Text(text, style: const TextStyle(height: 1.5)),
+          ]),
+        );
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text(report.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-            Text(formatDate(report.day), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Text(report.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17, height: 1.3))),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: brandSoft, borderRadius: BorderRadius.circular(20)),
+              child: Text(formatDate(report.day), style: const TextStyle(color: brandBlue, fontSize: 12, fontWeight: FontWeight.w500)),
+            ),
           ]),
-          if (childName != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(childName!, style: const TextStyle(color: brandBlue))),
-          const SizedBox(height: 8),
-          Text(report.body),
-          if (report.activities.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(s.get('activities'), style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(report.activities),
-          ],
-          if (report.meals.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(s.get('meals'), style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(report.meals),
-          ],
+          if (childName != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [const Icon(Icons.child_care, size: 16, color: brandAccent), const SizedBox(width: 4), Text(childName!, style: const TextStyle(color: brandBlue, fontWeight: FontWeight.w500))]),
+            ),
+          const SizedBox(height: 10),
+          Text(report.body, style: const TextStyle(height: 1.55)),
+          if (report.activities.isNotEmpty) block(Icons.palette_outlined, s.get('activities'), report.activities),
+          if (report.meals.isNotEmpty) block(Icons.restaurant_outlined, s.get('meals'), report.meals),
         ]),
       ),
     );
@@ -111,17 +123,11 @@ class ParentHome extends StatelessWidget {
         final notices = (d['notices'] as List<Notice>).take(3).toList();
         final unread = (d['unread'] as num).toInt();
         return ListView(padding: const EdgeInsets.all(16), children: [
-          Card(
-            color: brandBlue,
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Text(s.fill('welcome', session.username ?? ''), style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-            ),
-          ),
+          HeroCard(title: s.fill('welcome', session.username ?? '')),
           Row(children: [
-            Expanded(child: _Tile(Icons.child_care, '${names.length}', s.get('myChildren'), () => goTo(1))),
-            const SizedBox(width: 8),
-            Expanded(child: _Tile(Icons.notifications_active_outlined, '$unread', s.get('unread'), () => goTo(4))),
+            Expanded(child: StatTile(icon: Icons.child_care, value: '${names.length}', label: s.get('myChildren'), onTap: () => goTo(1))),
+            const SizedBox(width: 10),
+            Expanded(child: StatTile(icon: Icons.notifications_active_outlined, value: '$unread', label: s.get('unread'), color: brandAccent, onTap: () => goTo(5))),
           ]),
           SectionTitle(s.get('newReports')),
           if (reports.isEmpty) Padding(padding: const EdgeInsets.all(12), child: Text(s.get('noReports'))),
@@ -132,29 +138,6 @@ class ParentHome extends StatelessWidget {
       },
     );
   }
-}
-
-class _Tile extends StatelessWidget {
-  const _Tile(this.icon, this.number, this.label, this.onTap);
-  final IconData icon;
-  final String number;
-  final String label;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => Card(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(children: [
-              Icon(icon, color: brandBlue),
-              Text(number, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)),
-            ]),
-          ),
-        ),
-      );
 }
 
 // ---- my children + reports ---------------------------------------------------------------------------------------------
