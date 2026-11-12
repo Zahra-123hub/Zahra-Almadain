@@ -108,11 +108,11 @@ class _ParentShellState extends State<ParentShell> {
       (Icons.person_outline, s.get('profile'), const ProfilePage()),
     ];
     return Scaffold(
-      appBar: AppBar(title: Text(pages[_index].$2)),
+      appBar: AppBar(title: BarTitle(pages[_index].$2)),
       body: Column(children: [const _UpdateHint(), Expanded(child: KeyedSubtree(key: ValueKey(_index), child: pages[_index].$3))]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [for (final p in pages) NavigationDestination(icon: Icon(p.$1), label: p.$2)],
       ),
@@ -142,11 +142,11 @@ class _TeacherShellState extends State<TeacherShell> {
       (Icons.person_outline, s.get('profile'), const ProfilePage()),
     ];
     return Scaffold(
-      appBar: AppBar(title: Text(pages[_index].$2)),
+      appBar: AppBar(title: BarTitle(pages[_index].$2)),
       body: Column(children: [const _UpdateHint(), Expanded(child: KeyedSubtree(key: ValueKey(_index), child: pages[_index].$3))]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [for (final p in pages) NavigationDestination(icon: Icon(p.$1), label: p.$2)],
       ),

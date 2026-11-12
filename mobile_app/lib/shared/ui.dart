@@ -11,30 +11,80 @@ import '../services/session.dart';
 
 // ---- colours of the kindergarten (same dark blue as the websites' header) ---------------------------------------------
 const brandBlue = Color(0xFF16406F);
+const brandDeep = Color(0xFF0E2E52);
 const brandSoft = Color(0xFFEAF1F8);
 const brandAccent = Color(0xFFE8A33D);
+const _ink = Color(0xFF1B2533);
+const _line = Color(0xFFE3E9F0);
 
 ThemeData buildTheme() {
-  final scheme = ColorScheme.fromSeed(seedColor: brandBlue, primary: brandBlue, secondary: brandAccent);
-  return ThemeData(
-    colorScheme: scheme,
-    useMaterial3: true,
-    scaffoldBackgroundColor: const Color(0xFFF6F8FB),
-    appBarTheme: const AppBarTheme(backgroundColor: brandBlue, foregroundColor: Colors.white, centerTitle: true),
+  final scheme = ColorScheme.fromSeed(seedColor: brandBlue, primary: brandBlue, secondary: brandAccent, surface: Colors.white);
+  final base = ThemeData(colorScheme: scheme, useMaterial3: true, fontFamily: 'Tajawal');
+  return base.copyWith(
+    scaffoldBackgroundColor: const Color(0xFFF4F7FB),
+    textTheme: base.textTheme.apply(bodyColor: _ink, displayColor: _ink),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: brandBlue,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(fontFamily: 'Tajawal', fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      shadowColor: const Color(0x33000000),
+      height: 68,
+      indicatorColor: brandSoft,
+      iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(color: s.contains(WidgetState.selected) ? brandBlue : const Color(0xFF7A8798), size: 26)),
+      labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(fontFamily: 'Tajawal', fontSize: 12, fontWeight: s.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500, color: s.contains(WidgetState.selected) ? brandBlue : const Color(0xFF7A8798))),
+    ),
     cardTheme: CardThemeData(
       color: Colors.white,
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFE2E8F0))),
+      clipBehavior: Clip.antiAlias,
+      shadowColor: const Color(0x14000000),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: const BorderSide(color: _line)),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: brandSoft,
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      labelStyle: const TextStyle(fontFamily: 'Tajawal', color: brandBlue, fontWeight: FontWeight.w500),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.white,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _line)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _line)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: brandBlue, width: 1.6)),
     ),
     filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(52),
+        textStyle: const TextStyle(fontFamily: 'Tajawal', fontSize: 16, fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
     ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: brandBlue,
+        side: const BorderSide(color: brandBlue),
+        textStyle: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: brandAccent,
+      foregroundColor: Colors.black87,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: brandDeep, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+    dividerTheme: const DividerThemeData(color: _line, space: 1),
   );
 }
 
@@ -162,16 +212,119 @@ class EmptyNote extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => ListView(children: [
-        Padding(padding: const EdgeInsets.all(32), child: Center(child: Text(text, style: TextStyle(color: Colors.grey.shade600), textAlign: TextAlign.center))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
+          child: Column(children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: const BoxDecoration(color: brandSoft, shape: BoxShape.circle),
+              child: const Icon(Icons.inbox_outlined, size: 40, color: brandBlue),
+            ),
+            const SizedBox(height: 16),
+            Text(text, style: TextStyle(color: Colors.grey.shade700, fontSize: 16), textAlign: TextAlign.center),
+          ]),
+        ),
       ]);
+}
+
+/// The kindergarten logo on a white rounded plate, for the dark top bar.
+class LogoPlate extends StatelessWidget {
+  const LogoPlate({super.key, this.height = 38});
+  final double height;
+  @override
+  Widget build(BuildContext context) => Container(
+        height: height,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+        child: Image.asset('assets/logo.png', fit: BoxFit.contain),
+      );
+}
+
+/// Title of a page in the top bar: logo plate next to the page name.
+class BarTitle extends StatelessWidget {
+  const BarTitle(this.text, {super.key});
+  final String text;
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        const LogoPlate(),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text, overflow: TextOverflow.ellipsis)),
+      ]);
+}
+
+/// The welcome card at the top of the home pages.
+class HeroCard extends StatelessWidget {
+  const HeroCard({super.key, required this.title, this.subtitle});
+  final String title;
+  final String? subtitle;
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: const LinearGradient(colors: [brandBlue, brandDeep], begin: Alignment.topRight, end: Alignment.bottomLeft),
+          boxShadow: const [BoxShadow(color: Color(0x2916406F), blurRadius: 18, offset: Offset(0, 8))],
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700, height: 1.3)),
+              if (subtitle != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle!, style: const TextStyle(color: Color(0xCCFFFFFF), fontSize: 14))),
+            ]),
+          ),
+          const SizedBox(width: 12),
+          const LogoPlate(height: 54),
+        ]),
+      );
+}
+
+/// A small number card (children, unread messages, ...) that opens a tab.
+class StatTile extends StatelessWidget {
+  const StatTile({super.key, required this.icon, required this.value, required this.label, required this.onTap, this.color = brandBlue});
+  final IconData icon;
+  final String value;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Card(
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.1)),
+                  Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      );
 }
 
 class SectionTitle extends StatelessWidget {
   const SectionTitle(this.text, {super.key});
   final String text;
   @override
-  Widget build(BuildContext context) =>
-      Padding(padding: const EdgeInsets.fromLTRB(4, 16, 4, 4), child: Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)));
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 20, 4, 6),
+        child: Row(children: [
+          Container(width: 4, height: 20, decoration: BoxDecoration(color: brandAccent, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 8),
+          Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: brandBlue)),
+        ]),
+      );
 }
 
 /// Downloads a private file with the token into a temporary folder and opens it. Nothing public, nothing kept long.
@@ -195,14 +348,18 @@ class FileTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final api = SessionScope.of(context).api;
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(file.isImage ? Icons.image_outlined : Icons.attach_file),
-      title: Text(file.filename, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(formatSize(file.size)),
-      trailing: const Icon(Icons.download_outlined),
-      onTap: () => openPrivateFile(context, api, path, file.filename),
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(color: brandSoft, borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        dense: true,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Icon(file.isImage ? Icons.image_outlined : Icons.attach_file, color: brandBlue),
+        title: Text(file.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
+        subtitle: Text(formatSize(file.size)),
+        trailing: const Icon(Icons.download_outlined, color: brandBlue),
+        onTap: () => openPrivateFile(context, api, path, file.filename),
+      ),
     );
   }
 }
