@@ -631,6 +631,36 @@ class PlatformApiTests(unittest.TestCase):
         # The post attachments stay out of the teacher's personal file list.
         self.assertEqual(self.client.get("/api/platform/teacher/content", headers=teacher).json(), [])
 
+    def test_private_files_can_be_shared_with_parents_as_learning_material(self):
+        ids, teacher, parent_one, parent_two = self._post_setup()
+        pdf = ("sheet.pdf", b"%PDF-1.4 sheet", "application/pdf")
+        uploaded = [
+            self.client.post("/api/platform/teacher/content", headers=teacher, data={"category": "document"}, files={"file": pdf}).json()["id"]
+            for _ in range(2)
+        ]
+        self.assertEqual(self.client.get("/api/platform/parent/posts", headers=parent_one).json(), [])
+        shared = self.client.post(
+            "/api/platform/teacher/content/share", headers=teacher,
+            json={"content_ids": uploaded, "scope": "general", "title": "Letter sheets"},
+        )
+        self.assertEqual(shared.status_code, 201, shared.text)
+        self.assertEqual((shared.json()["kind"], len(shared.json()["files"])), ("material", 2))
+        # both parents see it as learning material and can open the files; the files left the private list
+        for parent in (parent_one, parent_two):
+            seen = self.client.get("/api/platform/parent/posts", headers=parent).json()
+            self.assertEqual([(p["title"], p["kind"]) for p in seen], [("Letter sheets", "material")])
+            file_id = seen[0]["files"][0]["id"]
+            self.assertEqual(self.client.get(f"/api/platform/parent/posts/{seen[0]['id']}/files/{file_id}", headers=parent).status_code, 200)
+        self.assertEqual(self.client.get("/api/platform/teacher/content", headers=teacher).json(), [])
+        # a file can be shared only once, and only by its owner; private sharing needs a child
+        again = self.client.post("/api/platform/teacher/content/share", headers=teacher, json={"content_ids": uploaded[:1], "title": "Again"})
+        self.assertEqual(again.status_code, 404)
+        more = self.client.post("/api/platform/teacher/content", headers=teacher, data={"category": "document"}, files={"file": pdf}).json()["id"]
+        self.assertEqual(self.client.post("/api/platform/teacher/content/share", headers=teacher, json={"content_ids": [more], "scope": "child", "title": "x"}).status_code, 422)
+        private = self.client.post("/api/platform/teacher/content/share", headers=teacher, json={"content_ids": [more], "scope": "child", "child_id": ids["first"], "title": "Only first"})
+        self.assertEqual(private.status_code, 201, private.text)
+        self.assertEqual(len(self.client.get("/api/platform/parent/posts", headers=parent_two).json()), 1)
+
     def test_private_post_needs_a_saved_child_and_rejects_bad_input(self):
         ids, teacher, parent_one, _parent_two = self._post_setup()
         # every saved child can be written about by every teacher (there is no assignment step any more)

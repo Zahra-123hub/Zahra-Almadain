@@ -534,8 +534,77 @@ class _PostComposerState extends State<PostComposer> {
 }
 
 // ---- teaching material --------------------------------------------------------------------------------------------------------
-class TeacherMaterials extends StatelessWidget {
+class TeacherMaterials extends StatefulWidget {
   const TeacherMaterials({super.key});
+  @override
+  State<TeacherMaterials> createState() => _TeacherMaterialsState();
+}
+
+class _TeacherMaterialsState extends State<TeacherMaterials> {
+  final Set<String> _selected = {};
+
+  /// Asks for a title and the audience, then turns the ticked private files into learning material for the parents.
+  Future<void> _share(List<MaterialFile> items, List<Child> children, Future<void> Function() reload) async {
+    final s = S.of(context);
+    final api = SessionScope.of(context).api;
+    final chosen = items.where((m) => _selected.contains(m.id)).toList();
+    if (chosen.isEmpty) return;
+    final first = chosen.first.filename;
+    final title = TextEditingController(text: first.contains('.') ? first.substring(0, first.lastIndexOf('.')) : first);
+    var scope = 'general';
+    String? childId;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text(s.get('shareSelected')),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              TextField(controller: title, maxLength: 120, decoration: InputDecoration(labelText: s.get('title'))),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                segments: [ButtonSegment(value: 'general', label: Text(s.get('general'))), ButtonSegment(value: 'child', label: Text(s.get('private')))],
+                selected: {scope},
+                onSelectionChanged: (v) => setLocal(() => scope = v.first),
+              ),
+              if (scope == 'child') ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: childId,
+                  decoration: InputDecoration(labelText: s.get('child')),
+                  items: [for (final c in children) DropdownMenuItem(value: c.id, child: Text(c.name))],
+                  onChanged: (v) => setLocal(() => childId = v),
+                ),
+              ],
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))),
+            FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, true), child: Text(s.get('publish'))),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    if (title.text.trim().isEmpty || (scope == 'child' && childId == null)) {
+      toast(context, s.get('required'));
+      return;
+    }
+    try {
+      await api.post('/api/platform/teacher/content/share', {
+        'content_ids': chosen.map((m) => m.id).toList(),
+        'scope': scope,
+        'title': title.text.trim(),
+        if (scope == 'child') 'child_id': childId,
+      });
+      setState(_selected.clear);
+      await reload();
+      if (mounted) toast(context, s.get('saved'));
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.problem == ApiProblem.bad && e.detail.isNotEmpty ? e.detail : problemText(context, e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
@@ -621,11 +690,22 @@ class TeacherMaterials extends StatelessWidget {
                 },
               ),
             SectionTitle(s.get('myPrivateFiles')),
+            if (items.isNotEmpty)
+              _selected.isEmpty
+                  ? Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, 6), child: Text(s.get('selectToShare'), style: TextStyle(color: Colors.grey.shade700, fontSize: 13)))
+                  : Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: FilledButton.icon(
+                        onPressed: () => _share(items, children, reload),
+                        icon: const Icon(Icons.family_restroom),
+                        label: Text('${s.get('shareSelected')} (${_selected.length})'),
+                      ),
+                    ),
             if (items.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(s.get('noFiles')))),
             for (final m in items)
               Card(
                 child: ListTile(
-                  leading: Icon(m.mediaType.startsWith('image/') ? Icons.image_outlined : Icons.insert_drive_file_outlined),
+                  leading: Checkbox(value: _selected.contains(m.id), onChanged: (v) => setState(() => v == true ? _selected.add(m.id) : _selected.remove(m.id))),
                   title: Text(m.filename, maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text(formatSize(m.size)),
                   onTap: () => openPrivateFile(context, api, '/api/platform/teacher/content/${m.id}/download', m.filename),
