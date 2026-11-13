@@ -23,13 +23,13 @@ os.environ.setdefault("ADMIN_PASSWORD", "Local-Dev-Only-2026-xyz")
 os.environ.setdefault("SESSION_SECRET", "local-dev-session-secret-long-enough")
 
 import uvicorn
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app import main
 from app.database import Base, get_session
-from app.models import Account, Child, Permission, Role, parent_child_links, teacher_child_links
+from app.models import Account, Child, LoginAttempt, Permission, Role, parent_child_links, teacher_child_links
 
 DB = Path(__file__).with_name("dev.db")
 engine = create_engine(f"sqlite+pysqlite:///{DB}", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -47,6 +47,9 @@ main.app.dependency_overrides[main.optional_session] = override_get_session
 
 def seed() -> None:
     with Session(engine) as session:
+        # a local test server never blocks a sign-in because of earlier typos
+        session.execute(delete(LoginAttempt))
+        session.commit()
         if session.scalar(select(Role).where(Role.name == "parent")) is not None:
             return
         perms = [Permission(name="accounts.manage"), Permission(name="children.manage"), Permission(name="reports.read")]
@@ -70,4 +73,4 @@ def seed() -> None:
 if __name__ == "__main__":
     seed()
     print("Local test server: http://127.0.0.1:8765  (teacher lehrer, parent eltern)")
-    uvicorn.run(main.app, host="127.0.0.1", port=8765, log_level="warning")
+    uvicorn.run(main.app, host="127.0.0.1", port=8765, log_level="info")
