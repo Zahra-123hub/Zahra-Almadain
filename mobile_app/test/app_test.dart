@@ -182,6 +182,29 @@ void main() {
       expect(find.text('Letters sheet'), findsNothing);
     });
 
+    testWidgets('private files can be ticked and shared with parents', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      Object body(String path) {
+        if (path.endsWith('/content')) return [{'id': 'f1', 'category': 'document', 'name': 'a.pdf', 'media_type': 'application/pdf', 'size': 10}];
+        if (path.endsWith('/storage')) return {'used_bytes': 10, 'limit_bytes': 1000};
+        return [];
+      }
+      final session = Session(ApiClient(client: MockClient((r) async => json(body(r.url.path)))));
+      await tester.pumpWidget(MaterialApp(
+        locale: const Locale('de'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+        home: SessionScope(session: session, child: const Scaffold(body: TeacherMaterials())),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byType(Checkbox), findsOneWidget);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Für Eltern freigeben'), findsOneWidget);
+    });
+
     testWidgets('German login is left-to-right', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;
