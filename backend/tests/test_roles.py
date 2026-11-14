@@ -86,6 +86,15 @@ class RoleTests(ControlsBase):
         self.assertEqual(self.client.get(P + "/auth/me", headers=old).status_code, 401)  # the old token is dead
         self.assertEqual(self.client.get(P + "/auth/me", headers=self.bearer(chosen.json())).json()["active_role"], "teacher")
 
+    def test_a_website_tab_can_keep_its_old_session_while_it_opens_another_portal(self):
+        old = self.bearer(self.login("multi").json())
+        teacher = self.client.post(P + "/auth/switch-role", headers=old, json={"role": "teacher", "keep_previous": True})
+        parent = self.client.post(P + "/auth/switch-role", headers=old, json={"role": "parent", "keep_previous": True})
+        self.assertEqual((teacher.status_code, parent.status_code), (200, 200))
+        self.assertEqual(self.client.get(P + "/auth/me", headers=old).status_code, 200)  # the first tab still works
+        self.assertEqual(self.client.get(P + "/teacher/children", headers=self.bearer(teacher.json())).status_code, 200)
+        self.assertEqual(self.client.get(P + "/teacher/children", headers=self.bearer(parent.json())).status_code, 403)  # but each session has its own role
+
     def test_in_the_chosen_role_nothing_of_the_other_roles_is_open(self):
         old = self.bearer(self.login("multi").json())
         teacher = self.bearer(self.switch(old, "teacher").json())

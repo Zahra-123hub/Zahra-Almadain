@@ -1982,6 +1982,7 @@ def platform_me(
 
 class SwitchRoleRequest(BaseModel):
     role: str = Field(min_length=3, max_length=20)
+    keep_previous: bool = False  # the websites keep one session per open portal tab; the app lets the old one end
 
 
 @app.post("/api/platform/auth/switch-role")
@@ -2005,7 +2006,8 @@ def platform_switch_role(
         session.commit()
         raise HTTPException(403, "You do not have this role.")
     before = {"active_role": principal.active_role}
-    principal.portal_session.revoked_at = datetime.now(timezone.utc)
+    if not payload.keep_previous:
+        principal.portal_session.revoked_at = datetime.now(timezone.utc)
     result = portal_session_result(account, session, secret, request, role=wanted)
     activity.record(session, actor_id=account.id, actor_name=account.username, domain="security", action="auth.switch_role", entity_type="session",
                     before=before, after={"active_role": wanted})

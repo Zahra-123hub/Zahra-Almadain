@@ -1722,7 +1722,7 @@ function tabFees(){
   return h("section", {}, [filterCard, addForm, genForm, tables, resetBox]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["fees","المحاسبة"],["cashbook","دفتر الصندوق"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["fees","المحاسبة"],["cashbook","دفتر الصندوق"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
   .filter(function(t){
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
     return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && (t[0] === "fees" || t[0] === "cashbook"));
@@ -1759,7 +1759,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tab === "cashbook" ? tabCashbook() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tab === "cashbook" ? tabCashbook() : tab === "control" ? tabControl() : tabMedia("image"));
   adminName().then(function(name){
     if(!name) return;
     document.getElementById("a-hello-name").textContent = name;
