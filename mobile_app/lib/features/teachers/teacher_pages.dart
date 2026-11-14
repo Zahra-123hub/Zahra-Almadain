@@ -669,7 +669,7 @@ class _TeacherMaterialsState extends State<TeacherMaterials> {
             ),
             if (shared.isNotEmpty) SectionTitle(s.get('sharedWithParents')),
             for (final p in shared)
-              PostCard(
+              MaterialSection(
                 p,
                 filePath: (post, f) => '/api/platform/teacher/content/${f.id}/download',
                 onDelete: () async {

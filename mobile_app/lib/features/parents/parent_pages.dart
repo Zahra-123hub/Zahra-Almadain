@@ -250,6 +250,120 @@ class ParentReports extends StatelessWidget {
   }
 }
 
+
+// ---- learning material shown like a course page (a section with a list of files) ----------------------------------------------
+const _courseTeal = Color(0xFF0E8FA6);
+
+IconData _fileIcon(String ext, bool image) {
+  if (image) return Icons.image_outlined;
+  switch (ext) {
+    case 'pdf':
+      return Icons.picture_as_pdf_outlined;
+    case 'zip':
+    case 'rar':
+    case '7z':
+      return Icons.folder_zip_outlined;
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'webm':
+    case 'mkv':
+      return Icons.smart_display_outlined;
+    case 'mp3':
+    case 'wav':
+    case 'm4a':
+      return Icons.audiotrack_outlined;
+    case 'doc':
+    case 'docx':
+    case 'txt':
+      return Icons.description_outlined;
+    case 'xls':
+    case 'xlsx':
+    case 'csv':
+      return Icons.table_chart_outlined;
+    case 'ppt':
+    case 'pptx':
+      return Icons.slideshow_outlined;
+    default:
+      return Icons.insert_drive_file_outlined;
+  }
+}
+
+/// One learning-material post as a section: round collapse button, big title, then one row per file (icon, name, TYPE).
+class MaterialSection extends StatefulWidget {
+  const MaterialSection(this.post, {super.key, required this.filePath, this.onDelete});
+  final Post post;
+  final String Function(Post, FileInfo) filePath;
+  final VoidCallback? onDelete;
+  @override
+  State<MaterialSection> createState() => _MaterialSectionState();
+}
+
+class _MaterialSectionState extends State<MaterialSection> {
+  bool _open = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+    final api = SessionScope.of(context).api;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: Color(0xFFDDE3EA))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Row(children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(color: Color(0xFFE9ECEF), shape: BoxShape.circle),
+                child: Icon(_open ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up, size: 28, color: const Color(0xFF1B2533)),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(post.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.25))),
+              if (widget.onDelete != null) IconButton(icon: const Icon(Icons.delete_outline), onPressed: widget.onDelete),
+            ]),
+          ),
+        ),
+        if (_open) ...[
+          if (post.body.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text(post.body, style: TextStyle(color: Colors.grey.shade700, height: 1.5))),
+          for (var i = 0; i < post.files.length; i++) ...[
+            Divider(height: 1, indent: 16, endIndent: 16, color: Colors.grey.shade300),
+            Builder(builder: (context) {
+              final f = post.files[i];
+              final dot = f.filename.lastIndexOf('.');
+              final base = dot > 0 ? f.filename.substring(0, dot) : f.filename;
+              final ext = dot > 0 ? f.filename.substring(dot + 1).toLowerCase() : '';
+              return InkWell(
+                onTap: () => openPrivateFile(context, api, widget.filePath(post, f), f.filename),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  child: Row(children: [
+                    Icon(_fileIcon(ext, f.isImage), color: _courseTeal, size: 30),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: base, style: const TextStyle(fontSize: 17)),
+                          if (ext.isNotEmpty) TextSpan(text: '   ${ext.toUpperCase()}', style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+                        ]),
+                      ),
+                    ),
+                  ]),
+                ),
+              );
+            }),
+          ],
+          if (post.files.isEmpty && post.body.isEmpty) const SizedBox(height: 8),
+          const SizedBox(height: 4),
+        ],
+      ]),
+    );
+  }
+}
+
 // ---- learning material (from the teachers) -----------------------------------------------------------------------------------
 class ParentLearning extends StatelessWidget {
   const ParentLearning({super.key});
@@ -265,7 +379,7 @@ class ParentLearning extends StatelessWidget {
       builder: (context, items, reload) {
         if (items.isEmpty) return EmptyNote(s.get('noLearning'));
         return ListView(padding: const EdgeInsets.all(12), children: [
-          for (final p in items) PostCard(p, filePath: (post, f) => '/api/platform/parent/posts/${post.id}/files/${f.id}'),
+          for (final p in items) MaterialSection(p, filePath: (post, f) => '/api/platform/parent/posts/${post.id}/files/${f.id}'),
         ]);
       },
     );
