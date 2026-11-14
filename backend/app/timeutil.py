@@ -36,3 +36,15 @@ def to_local(moment: datetime) -> datetime:
         moment = moment.replace(tzinfo=timezone.utc)
     name = zone_name()
     return moment.astimezone() if name == "LOCAL" else moment.astimezone(ZoneInfo(name))
+
+
+def local_day_bounds(day: date) -> tuple[datetime, datetime]:
+    """Start and end of one local day, as naive UTC (the way times are stored in the database)."""
+    from datetime import time as clock, timedelta, timezone
+
+    name = zone_name()
+    start = datetime.combine(day, clock.min)
+    start = start.astimezone() if name == "LOCAL" else start.replace(tzinfo=ZoneInfo(name))
+    end = datetime.combine(day + timedelta(days=1), clock.min)
+    end = end.astimezone() if name == "LOCAL" else end.replace(tzinfo=ZoneInfo(name))
+    return start.astimezone(timezone.utc).replace(tzinfo=None), end.astimezone(timezone.utc).replace(tzinfo=None)
