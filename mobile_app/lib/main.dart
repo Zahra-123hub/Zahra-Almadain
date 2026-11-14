@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'design/shell.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/role_chooser_page.dart';
 import 'features/common/common_pages.dart';
 import 'features/management/management_pages.dart';
 import 'features/parents/parent_pages.dart';
@@ -50,6 +51,7 @@ class _Root extends StatelessWidget {
     if (!session.ready) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (session.versionInfo?.updateRequired == true) return _UpdateRequired(session.versionInfo!);
     if (!session.signedIn || !session.hasMobileArea) return const LoginPage();
+    if (session.needsAreaChoice) return const RoleChooserPage();
     switch (session.area) {
       case Area.management:
         return const ManagementShell();
