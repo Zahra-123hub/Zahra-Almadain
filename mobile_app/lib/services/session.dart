@@ -24,6 +24,8 @@ class Session extends ChangeNotifier {
   Locale locale = const Locale('ar');
   Area? area;
   bool sessionEnded = false;
+  String? activeRole; // the role the server has this session working in (null: not chosen yet)
+  String? lastArea; // the area used last time, offered first on the choice screen
   VersionInfo? versionInfo;
 
   bool get signedIn => api.token != null && username != null;
@@ -31,6 +33,12 @@ class Session extends ChangeNotifier {
   bool get isTeacher => roles.contains('teacher');
   bool get isManager => roles.contains('manager');
   bool get hasMobileArea => isParent || isTeacher || isManager;
+
+  /// The role name the server uses for each area of the app.
+  static const roleOf = {Area.management: 'manager', Area.teacher: 'teacher', Area.parent: 'parent'};
+
+  /// Signed in with several areas and none chosen yet: the choice screen comes first.
+  bool get needsAreaChoice => signedIn && hasMobileArea && areas.length > 1 && area == null;
 
   /// The areas this account may open, in the order they are offered.
   List<Area> get areas => [if (isManager) Area.management, if (isTeacher) Area.teacher, if (isParent) Area.parent];
@@ -70,14 +78,31 @@ class Session extends ChangeNotifier {
     final preferred = me['preferred_language'] as String?;
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getString('lang') == null && preferred != null && LanguageCodes.has(preferred)) locale = Locale(preferred);
+    activeRole = me['active_role'] as String?;
+    lastArea = prefs.getString('area');
     final open = areas;
     if (open.isEmpty) {
       area = null;
     } else if (open.length == 1) {
       area = open.first;
+      if (activeRole != roleOf[area]) await _bind(area!); // the server should know too (best effort)
     } else {
-      final last = prefs.getString('area');
-      area = open.firstWhere((a) => a.name == last, orElse: () => open.first);
+      // an area is taken over only when the SERVER says the session already works in it; otherwise the person chooses
+      final fromServer = open.where((a) => roleOf[a] == activeRole);
+      area = fromServer.isEmpty ? null : fromServer.first;
+    }
+  }
+
+  /// Tells the server which role this session works in. It answers with a new token for it (the old one ends).
+  /// A server that does not know the call yet (404) is not an error: the area is then only remembered here.
+  Future<void> _bind(Area target) async {
+    try {
+      final result = await api.post('/api/platform/auth/switch-role', {'role': roleOf[target]}) as Map<String, dynamic>;
+      api.token = result['access_token'] as String;
+      await _storage.write(key: _tokenKey, value: api.token);
+      activeRole = result['active_role'] as String?;
+    } on ApiException catch (e) {
+      if (e.problem != ApiProblem.notFound && e.problem != ApiProblem.offline && e.problem != ApiProblem.server) rethrow;
     }
   }
 
@@ -111,6 +136,7 @@ class Session extends ChangeNotifier {
     accountId = null;
     roles = [];
     area = null;
+    activeRole = null;
     await _storage.delete(key: _tokenKey);
     await api.clearCache();
   }
@@ -127,11 +153,22 @@ class Session extends ChangeNotifier {
     }
   }
 
-  Future<void> setArea(Area value) async {
+  /// Chooses (or changes) the area. The server is told first; a refused role changes nothing.
+  Future<void> chooseArea(Area value) async {
+    await _bind(value);
     area = value;
+    lastArea = value.name;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('area', value.name);
     notifyListeners();
+  }
+
+  Future<void> setArea(Area value) async {
+    try {
+      await chooseArea(value);
+    } on ApiException {
+      // refused (for example 403): the area stays as it was
+    }
   }
 }
 

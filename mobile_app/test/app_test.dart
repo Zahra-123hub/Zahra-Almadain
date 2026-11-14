@@ -11,6 +11,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zahra_app/design/shell.dart';
 import 'package:zahra_app/features/auth/login_page.dart';
+import 'package:zahra_app/features/auth/role_chooser_page.dart';
 import 'package:zahra_app/features/management/management_pages.dart';
 import 'package:zahra_app/features/parents/parent_pages.dart';
 import 'package:zahra_app/features/teachers/teacher_pages.dart';
@@ -70,16 +71,88 @@ void main() {
       );
     });
 
-    test('a manager who is also a teacher and a parent may open three areas, and the last one is remembered', () async {
-      Session make() => Session(ApiClient(client: MockClient((_) async => json({'id': 'a1', 'username': 'x', 'roles': ['parent', 'teacher', 'manager']}))))..api.token = null;
-      final session = make();
+    /// A server that answers /auth/me with the given roles and the active role, and switch-role with a new token.
+    (Session, List<String>) serverSession(List<String> roles, {String? active, int switchStatus = 200}) {
+      final calls = <String>[];
+      final session = Session(ApiClient(client: MockClient((r) async {
+        if (r.url.path.endsWith('/auth/switch-role')) {
+          final role = (jsonDecode(r.body) as Map<String, dynamic>)['role'] as String;
+          calls.add(role);
+          if (switchStatus != 200) return json({'detail': 'x'}, switchStatus);
+          return json({'access_token': 'token-for-$role', 'active_role': role, 'roles': roles, 'needs_role_choice': false});
+        }
+        return json({'id': 'a1', 'username': 'x', 'roles': roles, 'active_role': active});
+      })))
+        ..api.token = null;
+      return (session, calls);
+    }
+
+    test('with several areas nothing is opened until the person chooses; the choice is sent to the server and gives a new token', () async {
+      final (session, calls) = serverSession(['parent', 'teacher', 'manager']);
       await session.start();
       expect(session.areas, [Area.management, Area.teacher, Area.parent]);
-      expect(session.area, Area.management);
-      await session.setArea(Area.parent);
-      final again = make();
+      expect((session.area, session.needsAreaChoice), (null, true));
+      await session.chooseArea(Area.parent);
+      expect(calls, ['parent']);
+      expect((session.area, session.activeRole, session.api.token, session.needsAreaChoice), (Area.parent, 'parent', 'token-for-parent', false));
+      // a later start takes over what the server says (the session already works as a parent)
+      final (again, none) = serverSession(['parent', 'teacher', 'manager'], active: 'parent');
       await again.start();
-      expect(again.area, Area.parent);
+      expect((again.area, again.needsAreaChoice), (Area.parent, false));
+      expect(none, isEmpty); // nothing had to be sent: the server already knew
+      expect(again.lastArea, 'parent');
+    });
+
+    test('a changed area is told to the server first: a refused role changes nothing', () async {
+      final (session, calls) = serverSession(['parent', 'teacher'], active: 'parent', switchStatus: 403);
+      await session.start();
+      expect(session.area, Area.parent);
+      await session.setArea(Area.teacher); // refused with 403
+      expect(session.area, Area.parent);
+      expect(calls, ['teacher']);
+      await expectLater(session.chooseArea(Area.teacher), throwsA(isA<ApiException>()));
+      expect(session.area, Area.parent);
+    });
+
+    test('an account with one app area and other roles on the website works in that area at once and tells the server', () async {
+      final (session, calls) = serverSession(['parent', 'accountant']);
+      await session.start();
+      expect((session.area, session.needsAreaChoice), (Area.parent, false));
+      expect(calls, ['parent']);
+    });
+
+    test('a server that does not know the call yet (404) does not block the choice', () async {
+      final (session, calls) = serverSession(['parent', 'teacher'], switchStatus: 404);
+      await session.start();
+      await session.chooseArea(Area.teacher);
+      expect(session.area, Area.teacher);
+      expect(calls, ['teacher']);
+    });
+
+    testWidgets('the choice screen lists the areas, marks the last one and opens the chosen one', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({'area': 'teacher'});
+      final (session, calls) = serverSession(['parent', 'teacher', 'manager']);
+      await session.start();
+      await tester.pumpWidget(MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+        builder: (context, child) => SessionScope(session: session, child: child!),
+        home: const RoleChooserPage(),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose how you want to work'), findsOneWidget);
+      expect(find.text('Management area'), findsOneWidget);
+      expect(find.text('Teacher area'), findsOneWidget);
+      expect(find.text('Parent area'), findsOneWidget);
+      expect(find.text('Last used'), findsOneWidget); // the teacher area
+      await tester.tap(find.text('Teacher area'));
+      await tester.pumpAndSettle();
+      expect(calls, ['teacher']);
+      expect(session.area, Area.teacher);
     });
 
     test('admin and accounting accounts have no area in the app', () async {
