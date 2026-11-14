@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'design/shell.dart';
 import 'features/auth/login_page.dart';
 import 'features/common/common_pages.dart';
 import 'features/management/management_pages.dart';
@@ -29,7 +30,7 @@ class ZahraApp extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'Zahrat Al-Madain',
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(),
+        theme: buildTheme(session.locale.languageCode),
         locale: session.locale, // Arabic is the default; RTL follows the language automatically
         supportedLocales: S.supported,
         localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
@@ -83,113 +84,66 @@ class _UpdateRequired extends StatelessWidget {
   }
 }
 
-/// A banner for a newer (but not required) version.
-class _UpdateHint extends StatelessWidget {
-  const _UpdateHint();
-  @override
-  Widget build(BuildContext context) {
-    final info = SessionScope.of(context).versionInfo;
-    if (info?.updateAvailable != true) return const SizedBox.shrink();
-    return Container(width: double.infinity, color: const Color(0xFFE6F2FF), padding: const EdgeInsets.all(8), child: Text(S.of(context).get('updateAvailable'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 12)));
-  }
-}
-
-class ParentShell extends StatefulWidget {
+class ParentShell extends StatelessWidget {
   const ParentShell({super.key});
   @override
-  State<ParentShell> createState() => _ParentShellState();
-}
-
-class _ParentShellState extends State<ParentShell> {
-  int _index = 0;
-
-  @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final pages = <(IconData, String, Widget)>[
-      (Icons.home_outlined, s.get('home'), ParentHome(goTo: (i) => setState(() => _index = i))),
-      (Icons.child_care, s.get('myChildren'), const ParentChildren()),
-      (Icons.description_outlined, s.get('reports'), const ParentReports()),
-      (Icons.campaign_outlined, s.get('postsAndNotices'), const ParentPosts()),
-      (Icons.menu_book_outlined, s.get('learning'), const ParentLearning()),
-      (Icons.notifications_outlined, s.get('notifications'), const NotificationsPage()),
-      (Icons.person_outline, s.get('profile'), const ProfilePage()),
-    ];
-    return Scaffold(
-      appBar: AppBar(title: BarTitle(pages[_index].$2)),
-      body: Column(children: [const _UpdateHint(), Expanded(child: KeyedSubtree(key: ValueKey(_index), child: pages[_index].$3))]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: [for (final p in pages) NavigationDestination(icon: Icon(p.$1), label: p.$2)],
-      ),
+    return AdaptiveShell(
+      roleLabel: s.get('parentArea'),
+      items: [
+        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => ParentHome(goTo: go)),
+        ShellItem(id: 'children', icon: Icons.child_care_outlined, activeIcon: Icons.child_care, label: s.get('myChildren'), page: (_) => const ParentChildren()),
+        ShellItem(id: 'reports', icon: Icons.description_outlined, activeIcon: Icons.description, label: s.get('reports'), page: (_) => const ParentReports()),
+        ShellItem(id: 'learning', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book, label: s.get('learning'), page: (_) => const ParentLearning()),
+      ],
+      more: [
+        ShellItem(id: 'posts', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: s.get('postsAndNotices'), page: (_) => const ParentPosts()),
+        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
+        ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
+      ],
     );
   }
 }
 
-class ManagementShell extends StatefulWidget {
-  const ManagementShell({super.key});
-  @override
-  State<ManagementShell> createState() => _ManagementShellState();
-}
-
-class _ManagementShellState extends State<ManagementShell> {
-  int _index = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    final pages = <(IconData, String, Widget)>[
-      (Icons.home_outlined, s.get('home'), ManagementHome(goTo: (i) => setState(() => _index = i))),
-      (Icons.fact_check_outlined, s.get('reviewReports'), const ReviewReports()),
-      (Icons.school_outlined, s.get('manageLearning'), const CourseEditor()),
-      (Icons.notifications_outlined, s.get('notifications'), const NotificationsPage()),
-      (Icons.person_outline, s.get('profile'), const ProfilePage()),
-    ];
-    return Scaffold(
-      appBar: AppBar(title: BarTitle(pages[_index].$2)),
-      body: Column(children: [const _UpdateHint(), Expanded(child: KeyedSubtree(key: ValueKey(_index), child: pages[_index].$3))]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: [for (final p in pages) NavigationDestination(icon: Icon(p.$1), label: p.$2)],
-      ),
-    );
-  }
-}
-
-class TeacherShell extends StatefulWidget {
+class TeacherShell extends StatelessWidget {
   const TeacherShell({super.key});
   @override
-  State<TeacherShell> createState() => _TeacherShellState();
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return AdaptiveShell(
+      roleLabel: s.get('teacherArea'),
+      items: [
+        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => TeacherHome(goTo: go)),
+        ShellItem(id: 'children', icon: Icons.child_care_outlined, activeIcon: Icons.child_care, label: s.get('myChildren'), page: (_) => const TeacherChildren()),
+        ShellItem(id: 'reports', icon: Icons.description_outlined, activeIcon: Icons.description, label: s.get('reports'), page: (_) => const TeacherReports()),
+        ShellItem(id: 'posts', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: s.get('posts'), page: (_) => const TeacherPosts()),
+      ],
+      more: [
+        ShellItem(id: 'files', icon: Icons.folder_outlined, activeIcon: Icons.folder, label: s.get('materials'), page: (_) => const TeacherMaterials()),
+        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
+        ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
+      ],
+    );
+  }
 }
 
-class _TeacherShellState extends State<TeacherShell> {
-  int _index = 0;
-
+class ManagementShell extends StatelessWidget {
+  const ManagementShell({super.key});
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final pages = <(IconData, String, Widget)>[
-      (Icons.home_outlined, s.get('home'), TeacherHome(goTo: (i) => setState(() => _index = i))),
-      (Icons.child_care, s.get('myChildren'), const TeacherChildren()),
-      (Icons.description_outlined, s.get('reports'), const TeacherReports()),
-      (Icons.campaign_outlined, s.get('posts'), const TeacherPosts()),
-      (Icons.folder_outlined, s.get('materials'), const TeacherMaterials()),
-      (Icons.notifications_outlined, s.get('notifications'), const NotificationsPage()),
-      (Icons.person_outline, s.get('profile'), const ProfilePage()),
-    ];
-    return Scaffold(
-      appBar: AppBar(title: BarTitle(pages[_index].$2)),
-      body: Column(children: [const _UpdateHint(), Expanded(child: KeyedSubtree(key: ValueKey(_index), child: pages[_index].$3))]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: [for (final p in pages) NavigationDestination(icon: Icon(p.$1), label: p.$2)],
-      ),
+    return AdaptiveShell(
+      roleLabel: s.get('managementArea'),
+      items: [
+        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => ManagementHome(goTo: go)),
+        ShellItem(id: 'review', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check, label: s.get('reviewReports'), page: (_) => const ReviewReports()),
+        ShellItem(id: 'course', icon: Icons.school_outlined, activeIcon: Icons.school, label: s.get('manageLearning'), page: (_) => const CourseEditor()),
+      ],
+      more: [
+        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
+        ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
+      ],
     );
   }
 }

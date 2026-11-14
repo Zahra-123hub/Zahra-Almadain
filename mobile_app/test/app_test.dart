@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zahra_app/design/shell.dart';
 import 'package:zahra_app/features/auth/login_page.dart';
 import 'package:zahra_app/features/management/management_pages.dart';
 import 'package:zahra_app/features/parents/parent_pages.dart';
@@ -85,6 +86,70 @@ void main() {
       await session.start();
       expect(session.areas, isEmpty);
       expect(session.hasMobileArea, isFalse);
+    });
+  });
+
+  group('shell', () {
+    Widget host(Session session, Size size) => MaterialApp(
+          locale: const Locale('en'),
+          supportedLocales: S.supported,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+          builder: (context, child) => SessionScope(session: session, child: child!),
+          home: AdaptiveShell(
+            roleLabel: 'Parent',
+            items: [
+              ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home', page: (go) => TextButton(onPressed: () => go('profile'), child: const Text('home page'))),
+              ShellItem(id: 'reports', icon: Icons.description_outlined, activeIcon: Icons.description, label: 'Reports', page: (_) => const Text('reports page')),
+            ],
+            more: [
+              ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: 'Notifications', page: (_) => const Text('notifications page')),
+              ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile', page: (_) => const Text('profile page')),
+            ],
+          ),
+        );
+
+    Session sessionWithBell() => Session(ApiClient(client: MockClient((_) async => json({'unread': 3, 'items': []}))));
+
+    testWidgets('phone: bottom bar with More; More lists the rest and opens it on its own page with a back button', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(sessionWithBell(), const Size(390, 844)));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.text('home page'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget); // the unread number on the bell
+      await tester.tap(find.text('More'));
+      await tester.pumpAndSettle();
+      expect(find.text('Profile'), findsOneWidget);
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.text('profile page'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.arrow_back_ios_new_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('profile page'), findsNothing);
+      // the home page can send the user to a goal that lives under More
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('home page'));
+      await tester.pumpAndSettle();
+      expect(find.text('profile page'), findsOneWidget);
+    });
+
+    testWidgets('wide window: sidebar lists every goal, no bottom bar, selecting switches the content in place', (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(host(sessionWithBell(), const Size(1280, 800)));
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationBar), findsNothing);
+      for (final label in ['Home', 'Reports', 'Notifications', 'Profile']) {
+        expect(find.text(label), findsWidgets);
+      }
+      await tester.tap(find.text('Profile').last);
+      await tester.pumpAndSettle();
+      expect(find.text('profile page'), findsOneWidget);
+      expect(find.text('Parent'), findsOneWidget);
     });
   });
 

@@ -20,34 +20,6 @@ String categoryOf(String filename) {
   return 'other';
 }
 
-String statusLabel(S s, String status) {
-  switch (status) {
-    case 'draft':
-      return s.get('draft');
-    case 'submitted':
-      return s.get('submitted');
-    case 'rejected':
-      return s.get('returned');
-    case 'published':
-      return s.get('published');
-    default:
-      return status;
-  }
-}
-
-Color statusColor(String status) {
-  switch (status) {
-    case 'published':
-      return Colors.green;
-    case 'submitted':
-      return Colors.orange;
-    case 'rejected':
-      return Colors.red;
-    default:
-      return Colors.blueGrey;
-  }
-}
-
 // ---- picking images / files ------------------------------------------------------------------------------------------------
 /// Collects files chosen from the camera, the gallery or the file browser. The server checks type and size again.
 class AttachmentPicker extends StatelessWidget {
@@ -98,7 +70,7 @@ class AttachmentPicker extends StatelessWidget {
 // ---- home ------------------------------------------------------------------------------------------------------------------
 class TeacherHome extends StatelessWidget {
   const TeacherHome({super.key, required this.goTo});
-  final void Function(int) goTo;
+  final void Function(String) goTo;
 
   @override
   Widget build(BuildContext context) {
@@ -119,12 +91,18 @@ class TeacherHome extends StatelessWidget {
       builder: (context, d, reload) {
         final reports = d['reports'] as List<Report>;
         int count(String st) => reports.where((r) => r.status == st).length;
-        Widget tile(IconData icon, int n, String label, int tab, [Color color = brandBlue]) =>
+        Widget tile(IconData icon, int n, String label, String tab, [Color color = brandBlue]) =>
             Expanded(child: StatTile(icon: icon, value: '$n', label: label, color: color, onTap: () => goTo(tab)));
         return ListView(padding: const EdgeInsets.all(16), children: [
           HeroCard(title: s.fill('welcome', session.username ?? '')),
-          Row(children: [tile(Icons.child_care, d['children'] as int, s.get('children'), 1), const SizedBox(width: 10), tile(Icons.edit_note, count('draft'), s.get('openReports'), 2, brandAccent)]),
-          Row(children: [tile(Icons.hourglass_bottom, count('submitted'), s.get('submitted'), 2, const Color(0xFF3B7DD8)), const SizedBox(width: 10), tile(Icons.undo, count('rejected'), s.get('returned'), 2, const Color(0xFFD25B5B))]),
+          Row(children: [tile(Icons.child_care, d['children'] as int, s.get('children'), 'children'), const SizedBox(width: 10), tile(Icons.edit_note, count('draft'), s.get('openReports'), 'reports', const Color(0xFF42536A))]),
+          Row(children: [tile(Icons.hourglass_bottom, count('submitted'), s.get('submitted'), 'reports', const Color(0xFF8A5200)), const SizedBox(width: 10), tile(Icons.undo, count('rejected'), s.get('returned'), 'reports', const Color(0xFFB3402F))]),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: QuickAction(icon: Icons.add, label: s.get('newReport'), primary: true, onTap: () => goTo('children'))),
+            const SizedBox(width: 10),
+            Expanded(child: QuickAction(icon: Icons.folder_outlined, label: s.get('materials'), onTap: () => goTo('files'))),
+          ]),
           if ((d['notices'] as List).isNotEmpty) SectionTitle(s.get('notices')),
           NoticeCards((d['notices'] as List<Notice>).take(3).toList()),
         ]);
@@ -201,10 +179,7 @@ class TeacherReports extends StatelessWidget {
                       child: ListTile(
                         title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('${names[r.childId] ?? ''} · ${formatDate(r.createdAt)}'),
-                        trailing: Chip(
-                          visualDensity: VisualDensity.compact,
-                          label: Text(statusLabel(s, r.status), style: TextStyle(color: statusColor(r.status), fontSize: 12)),
-                        ),
+                        trailing: StatusPill(r.status),
                         onTap: () async {
                           final editable = r.status == 'draft' || r.status == 'rejected';
                           if (editable) {

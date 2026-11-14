@@ -4,7 +4,7 @@ import '../../config/config.dart';
 import '../../localization/strings.dart';
 import '../../models/models.dart';
 import '../../services/api.dart';
-import '../../services/session.dart';
+import '../../design/shell.dart';
 import '../../shared/ui.dart';
 
 String notificationText(S s, AppNotification n) {
@@ -113,18 +113,10 @@ class ProfilePage extends StatelessWidget {
           subtitle: Text(session.roles.join(', ')),
         ),
       ),
-      if (session.areas.length > 1)
-        Card(
-          child: Column(children: [
-            for (final a in session.areas)
-              if (a != session.area)
-                ListTile(
-                  leading: const Icon(Icons.swap_horiz),
-                  title: Text('${s.get('switchTo')} ${s.get(a == Area.management ? 'managementArea' : (a == Area.teacher ? 'teacherArea' : 'parentArea'))}'),
-                  onTap: () => session.setArea(a),
-                ),
-          ]),
-        ),
+      if (session.areas.length > 1) ...[
+        SectionTitle(s.get('switchArea')),
+        const AreaSwitcher(light: true),
+      ],
       SectionTitle(s.get('language')),
       Card(
         child: RadioGroup<String>(
