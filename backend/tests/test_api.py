@@ -661,6 +661,52 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(private.status_code, 201, private.text)
         self.assertEqual(len(self.client.get("/api/platform/parent/posts", headers=parent_two).json()), 1)
 
+    def test_management_edits_learning_material_like_a_course(self):
+        ids, teacher, parent_one, parent_two = self._post_setup()
+        with Session(self.engine) as session:
+            manager_role = Role(name="manager")
+            session.add(Account(username="the-manager", password_hash=main.PASSWORD_HASHER.hash("Qx5e7a9c1b3d-9"), roles=[manager_role]))
+            session.commit()
+        login = self.client.post("/api/platform/auth/login", json={"username": "the-manager", "password": "Qx5e7a9c1b3d-9"})
+        manager = {"Authorization": "Bearer " + login.json()["access_token"]}
+        pdf = ("sheet.pdf", b"%PDF-1.4 sheet", "application/pdf")
+        # teachers and parents cannot use the course editor
+        self.assertEqual(self.client.get("/api/platform/manager/materials", headers=teacher).status_code, 403)
+        self.assertEqual(self.client.get("/api/platform/manager/materials", headers=parent_one).status_code, 403)
+        # create two sections (one with a file), the second one hidden
+        one = self.client.post("/api/platform/manager/materials", headers=manager, data={"title": "Letters"}, files=[("files", pdf)])
+        self.assertEqual(one.status_code, 201, one.text)
+        two = self.client.post("/api/platform/manager/materials", headers=manager, data={"title": "Numbers", "hidden": "true"})
+        self.assertEqual(two.status_code, 201, two.text)
+        one_id, two_id = one.json()["id"], two.json()["id"]
+        titles = lambda headers, path: [p["title"] for p in self.client.get(path, headers=headers).json() if p["kind"] == "material"]
+        self.assertEqual(titles(manager, "/api/platform/manager/materials"), ["Letters", "Numbers"])
+        self.assertEqual(titles(parent_one, "/api/platform/parent/posts"), ["Letters"])  # hidden stays hidden
+        # show it, rename it, add and rename a file
+        shown = self.client.patch(f"/api/platform/manager/materials/{two_id}", headers=manager, json={"hidden": False, "title": "Numbers 1-10", "body": "Count along."})
+        self.assertEqual((shown.json()["title"], shown.json()["hidden"]), ("Numbers 1-10", False))
+        added = self.client.post(f"/api/platform/manager/materials/{two_id}/files", headers=manager, files=[("files", pdf), ("files", ("two.pdf", b"%PDF-1.4 two", "application/pdf"))])
+        self.assertEqual(added.status_code, 201, added.text)
+        self.assertEqual(len(added.json()["files"]), 2)
+        file_id = added.json()["files"][0]["id"]
+        renamed = self.client.patch(f"/api/platform/manager/materials/{two_id}/files/{file_id}", headers=manager, json={"name": "Count.pdf"})
+        self.assertEqual(renamed.json()["files"][0]["filename"], "Count.pdf")
+        self.assertEqual(self.client.get(f"/api/platform/manager/materials/{two_id}/files/{file_id}", headers=manager).status_code, 200)
+        self.assertEqual(self.client.get(f"/api/platform/parent/posts/{two_id}/files/{file_id}", headers=parent_two).status_code, 200)
+        # move the second section to the top
+        moved = self.client.post(f"/api/platform/manager/materials/{two_id}/move", headers=manager, json={"direction": "up"})
+        self.assertEqual([p["title"] for p in moved.json()], ["Numbers 1-10", "Letters"])
+        self.assertEqual(titles(parent_one, "/api/platform/parent/posts"), ["Numbers 1-10", "Letters"])
+        # hide it again: parents lose the list entry and the files
+        self.client.patch(f"/api/platform/manager/materials/{two_id}", headers=manager, json={"hidden": True})
+        self.assertEqual(titles(parent_one, "/api/platform/parent/posts"), ["Letters"])
+        self.assertEqual(self.client.get(f"/api/platform/parent/posts/{two_id}/files/{file_id}", headers=parent_two).status_code, 404)
+        # remove a file, then a whole section
+        self.assertEqual(self.client.delete(f"/api/platform/manager/materials/{two_id}/files/{file_id}", headers=manager).status_code, 204)
+        self.assertEqual(self.client.delete(f"/api/platform/manager/materials/{two_id}", headers=manager).status_code, 204)
+        self.assertEqual(self.client.delete(f"/api/platform/manager/materials/{one_id}", headers=teacher).status_code, 403)
+        self.assertEqual(titles(manager, "/api/platform/manager/materials"), ["Letters"])
+
     def test_private_post_needs_a_saved_child_and_rejects_bad_input(self):
         ids, teacher, parent_one, _parent_two = self._post_setup()
         # every saved child can be written about by every teacher (there is no assignment step any more)

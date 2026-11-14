@@ -291,10 +291,13 @@ IconData _fileIcon(String ext, bool image) {
 
 /// One learning-material post as a section: round collapse button, big title, then one row per file (icon, name, TYPE).
 class MaterialSection extends StatefulWidget {
-  const MaterialSection(this.post, {super.key, required this.filePath, this.onDelete});
+  const MaterialSection(this.post, {super.key, required this.filePath, this.onDelete, this.headerActions = const [], this.fileTrailing, this.footer});
   final Post post;
   final String Function(Post, FileInfo) filePath;
   final VoidCallback? onDelete;
+  final List<Widget> headerActions; // edit mode: menu in the header
+  final Widget Function(FileInfo)? fileTrailing; // edit mode: menu at the end of a file row
+  final Widget? footer; // edit mode: e.g. the add-files button
   @override
   State<MaterialSection> createState() => _MaterialSectionState();
 }
@@ -308,6 +311,7 @@ class _MaterialSectionState extends State<MaterialSection> {
     final api = SessionScope.of(context).api;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
+      color: post.hidden ? const Color(0xFFF1F3F5) : null,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: const BorderSide(color: Color(0xFFDDE3EA))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         InkWell(
@@ -322,8 +326,14 @@ class _MaterialSectionState extends State<MaterialSection> {
                 child: Icon(_open ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up, size: 28, color: const Color(0xFF1B2533)),
               ),
               const SizedBox(width: 16),
-              Expanded(child: Text(post.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.25))),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(post.title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.25, color: post.hidden ? Colors.grey.shade600 : null)),
+                  if (post.hidden) Padding(padding: const EdgeInsets.only(top: 4), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.visibility_off_outlined, size: 16, color: Colors.grey.shade600), const SizedBox(width: 4), Text(S.of(context).get('hiddenFromParents'), style: TextStyle(fontSize: 13, color: Colors.grey.shade600))])),
+                ]),
+              ),
               if (widget.onDelete != null) IconButton(icon: const Icon(Icons.delete_outline), onPressed: widget.onDelete),
+              ...widget.headerActions,
             ]),
           ),
         ),
@@ -351,12 +361,14 @@ class _MaterialSectionState extends State<MaterialSection> {
                         ]),
                       ),
                     ),
+                    if (widget.fileTrailing != null) widget.fileTrailing!(f),
                   ]),
                 ),
               );
             }),
           ],
           if (post.files.isEmpty && post.body.isEmpty) const SizedBox(height: 8),
+          if (widget.footer != null) widget.footer!,
           const SizedBox(height: 4),
         ],
       ]),

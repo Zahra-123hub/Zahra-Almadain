@@ -7,6 +7,7 @@ It starts on http://127.0.0.1:8765 with a local SQLite file (dev.db) and three t
     teacher  lehrer / Lehrer-Test-2026
     parent   eltern / Eltern-Test-2026   (linked to the child "Test Kind")
     admin    verwaltung / Verwaltung-Test-2026
+    manager  leitung / Leitung-Test-2026   (the management: reviews reports, edits the learning material)
 
 Run the app against it:
     cd mobile_app
@@ -50,6 +51,11 @@ def seed() -> None:
         # a local test server never blocks a sign-in because of earlier typos
         session.execute(delete(LoginAttempt))
         session.commit()
+        if session.scalar(select(Role).where(Role.name == "manager")) is None:
+            manager_role = Role(name="manager")
+            session.add(manager_role)
+            session.add(Account(username="leitung", password_hash=main.PASSWORD_HASHER.hash("Leitung-Test-2026"), roles=[manager_role]))
+            session.commit()
         if session.scalar(select(Role).where(Role.name == "parent")) is not None:
             return
         perms = [Permission(name="accounts.manage"), Permission(name="children.manage"), Permission(name="reports.read")]
@@ -72,5 +78,5 @@ def seed() -> None:
 
 if __name__ == "__main__":
     seed()
-    print("Local test server: http://127.0.0.1:8765  (teacher lehrer, parent eltern)")
+    print("Local test server: http://127.0.0.1:8765  (teacher lehrer, parent eltern, management leitung)")
     uvicorn.run(main.app, host="127.0.0.1", port=8765, log_level="info")

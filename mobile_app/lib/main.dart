@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'features/auth/login_page.dart';
 import 'features/common/common_pages.dart';
+import 'features/management/management_pages.dart';
 import 'features/parents/parent_pages.dart';
 import 'features/teachers/teacher_pages.dart';
 import 'localization/strings.dart';
@@ -48,7 +49,14 @@ class _Root extends StatelessWidget {
     if (!session.ready) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (session.versionInfo?.updateRequired == true) return _UpdateRequired(session.versionInfo!);
     if (!session.signedIn || !session.hasMobileArea) return const LoginPage();
-    return session.area == Area.teacher ? const TeacherShell() : const ParentShell();
+    switch (session.area) {
+      case Area.management:
+        return const ManagementShell();
+      case Area.teacher:
+        return const TeacherShell();
+      default:
+        return const ParentShell();
+    }
   }
 }
 
@@ -104,6 +112,38 @@ class _ParentShellState extends State<ParentShell> {
       (Icons.description_outlined, s.get('reports'), const ParentReports()),
       (Icons.campaign_outlined, s.get('postsAndNotices'), const ParentPosts()),
       (Icons.menu_book_outlined, s.get('learning'), const ParentLearning()),
+      (Icons.notifications_outlined, s.get('notifications'), const NotificationsPage()),
+      (Icons.person_outline, s.get('profile'), const ProfilePage()),
+    ];
+    return Scaffold(
+      appBar: AppBar(title: BarTitle(pages[_index].$2)),
+      body: Column(children: [const _UpdateHint(), Expanded(child: KeyedSubtree(key: ValueKey(_index), child: pages[_index].$3))]),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: [for (final p in pages) NavigationDestination(icon: Icon(p.$1), label: p.$2)],
+      ),
+    );
+  }
+}
+
+class ManagementShell extends StatefulWidget {
+  const ManagementShell({super.key});
+  @override
+  State<ManagementShell> createState() => _ManagementShellState();
+}
+
+class _ManagementShellState extends State<ManagementShell> {
+  int _index = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final pages = <(IconData, String, Widget)>[
+      (Icons.home_outlined, s.get('home'), ManagementHome(goTo: (i) => setState(() => _index = i))),
+      (Icons.fact_check_outlined, s.get('reviewReports'), const ReviewReports()),
+      (Icons.school_outlined, s.get('manageLearning'), const CourseEditor()),
       (Icons.notifications_outlined, s.get('notifications'), const NotificationsPage()),
       (Icons.person_outline, s.get('profile'), const ProfilePage()),
     ];
