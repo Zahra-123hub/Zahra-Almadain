@@ -408,6 +408,7 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         query = (
             select(FeeCharge, Child)
             .join(Child, Child.id == FeeCharge.child_id)
+            .where(FeeCharge.voided_at.is_(None))
             .options(selectinload(FeeCharge.payments))
         )
         if year:
@@ -646,6 +647,9 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> Response:
+        from app import ledger as book  # imported here: the ledger itself builds on this module
+
+        book.refuse_when_live(session)
         charge = get_charge(session, charge_id)
         ensure_open(session, (charge.year, charge.month))
         if active_payments(charge):
@@ -794,6 +798,9 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
+        from app import ledger as book
+
+        book.refuse_when_live(session, "حذف الدفعات دون سبب")
         payment = get_payment(session, payment_id)
         charge = get_charge(session, payment.charge_id)
         ensure_open(session, month_of(payment.paid_on) or (charge.year, charge.month))

@@ -23,7 +23,9 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app import ledger as book
 from app.database import get_session
+from app.timeutil import local_today
 from app.fees import (
     CURRENCIES,
     ZERO,
@@ -420,7 +422,7 @@ class Ledger:
         ]
         salaries = [
             (line.paid_on, net_pay(line.base, line.bonus, line.advance, line.deduction) or ZERO, line.year, line.month)
-            for line in session.scalars(select(SalaryLine).where(SalaryLine.currency == currency))
+            for line in session.scalars(select(SalaryLine).where(SalaryLine.currency == currency, SalaryLine.voided_at.is_(None)))
         ]
         return cls(currency, entries, payments, salaries)
 
@@ -618,6 +620,15 @@ def build_sheet(
 def cash_report(
     session: Session, currency: str, today: date, until: tuple[int, int] | None = None, ledger: "Ledger | None" = None
 ) -> dict[str, Any]:
+    """The cash balance: from the cash book once it is live, from the old sheets before."""
+    if book.is_live(session):
+        return book.cash_report(session, currency, today, until)
+    return legacy_cash_report(session, currency, today, until, ledger)
+
+
+def legacy_cash_report(
+    session: Session, currency: str, today: date, until: tuple[int, int] | None = None, ledger: "Ledger | None" = None
+) -> dict[str, Any]:
     """How much money the kindergarten has: opening balance + all income - all expense, month by month,
     up to this month (or up to `until` when a later month is asked for)."""
     ledger = ledger or Ledger.load(session, currency)
@@ -648,7 +659,7 @@ def cash_report(
 def sheet_rate(session: Session, end: date) -> tuple[Decimal, date, str, bool] | None:
     """The rate for a sheet: today's (fetched automatically once a day) for the current period, the stored one of
     that day for an old period. None when there is no rate at all."""
-    today = date.today()
+    today = local_today()
     if end >= today:
         return todays_rate(session, today)
     book = RateBook.load(session)
@@ -728,7 +739,7 @@ def unified_sheet(session: Session, period_type: str, year: int, month: int, wee
     totals = {code: sheets[code]["totals"] for code in CURRENCIES}
 
     # cash balance at the start and the end of the period (only when the opening capital has been entered)
-    today = date.today()
+    today = local_today()
     cashes = {code: cash_report(session, code, today, until=(end.year, end.month), ledger=ledgers[code]) for code in CURRENCIES}
     balance: dict[str, Any] | None = None
     if any(cashes[code]["configured"] for code in CURRENCIES):
@@ -1005,7 +1016,7 @@ def build_router(
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
-        query = select(SalaryLine)
+        query = select(SalaryLine).where(SalaryLine.voided_at.is_(None))
         if year:
             query = query.where(SalaryLine.year == year)
         if month:
@@ -1138,7 +1149,16 @@ def build_router(
         line = get_line(session, line_id)
         check_version(line, payload.expected_version, f"{line.base} {line.currency}")
         sent = payload.model_fields_set  # a field that was not sent stays as it is (null clears it)
-        ensure_open(session, (line.year, line.month), month_of(line.paid_on), month_of(payload.paid_on) if "paid_on" in sent else None)
+        live = book.is_live(session)
+        adjustment = book.active_unpaid_adjustment(session, line.id) if live else None
+        only_payment_date = sent == {"paid_on"} and payload.paid_on is not None and line.paid_on is None
+        if adjustment is not None and only_payment_date:
+            ensure_open(session, month_of(payload.paid_on))  # the narrow exception: the month of the payment must be open
+        else:
+            ensure_open(session, (line.year, line.month), month_of(line.paid_on), month_of(payload.paid_on) if "paid_on" in sent else None)
+        if live and line.voided_at is not None:
+            raise HTTPException(409, "سطر الراتب ملغى.")
+        was_unpaid = line.paid_on is None
         amounts = ("base", "bonus", "advance", "deduction")
         merged = {name: (getattr(payload, name) if name in sent else getattr(line, name)) for name in amounts}
         check_net(merged["base"], merged["bonus"], merged["advance"], merged["deduction"])
@@ -1170,6 +1190,9 @@ def build_router(
             line.employee.job_title = payload.job_title.strip()
         line.recorded_by = actor.name[:80]
         touch(line, actor.name)
+        if live and adjustment is not None and was_unpaid and line.paid_on is not None:
+            book.settle_unpaid_salary_adjustment(session, actor, line, line.paid_on)
+            book.count_live_write(session)
         log(session, actor, "salary.update", line.id, f"{line.month}/{line.year} {line.currency} {before}{line.base}")
         session.commit()
         session.refresh(line)
@@ -1194,6 +1217,7 @@ def build_router(
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> Response:
+        book.refuse_when_live(session)
         line = get_line(session, line_id)
         ensure_open(session, (line.year, line.month), month_of(line.paid_on))
         log(session, actor, "salary.delete", line.id, f"{line.month}/{line.year} {line.currency} {line.base}")
@@ -1222,7 +1246,7 @@ def build_router(
         data.update(period_type=period_type, year=year, month=month, currency=currency,
                     start=start.isoformat(), end=end.isoformat(), balance=None)
         if period_type == "month":
-            cash = cash_report(session, currency, date.today(), until=(year, month))
+            cash = cash_report(session, currency, local_today(), until=(year, month))
             current = next((m for m in cash["months"] if (m["year"], m["month"]) == (year, month)), None)
             if current is not None and cash["configured"]:
                 data["balance"] = {"opening": current["opening"], "closing": current["closing"]}
@@ -1236,11 +1260,11 @@ def build_router(
     ) -> dict[str, Any]:
         """The cash balance per currency, with the month-by-month trail. USD and SYP are never mixed."""
         response.headers["Cache-Control"] = "no-store"
-        result: dict[str, Any] = {code: cash_report(session, code, date.today()) for code in CURRENCIES}
+        result: dict[str, Any] = {code: cash_report(session, code, local_today()) for code in CURRENCIES}
         # what the kindergarten has in total in each currency (only when dollars are involved)
         result["total"] = None
-        if any(Decimal(result["USD"][key]) != 0 for key in ("opening", "income", "expense", "balance")):
-            found = todays_rate(session, date.today())
+        if not book.is_live(session) and any(Decimal(result["USD"][key]) != 0 for key in ("opening", "income", "expense", "balance")):
+            found = todays_rate(session, local_today())
             if found is not None:
                 rate, rate_date, source, stale = found
                 result["total"] = {"rate": rate_text(rate), "rate_date": rate_date.isoformat(), "source": source, "stale": stale}
@@ -1274,7 +1298,7 @@ def build_router(
         log(session, actor, "cash.opening", payload.currency,
             f"{before}{money(payload.opening)} من {payload.start_month}/{payload.start_year}")
         session.commit()
-        return cash_report(session, payload.currency, date.today())
+        return cash_report(session, payload.currency, local_today())
 
     @router.get("/sheet-all")
     def sheet_all(
@@ -1298,6 +1322,7 @@ def build_router(
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
+        book.refuse_when_live(session, "تعديل الجداول القديمة")
         start, end = sheet_range(payload.period_type, payload.year, payload.month, payload.week_start)
         ensure_open(session, *months_between(start, end))
         year = sheet_year(payload.period_type, payload.year, start)
@@ -1392,6 +1417,7 @@ def build_router(
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         """Removes a custom row, or resets a standard row to its automatic value."""
+        book.refuse_when_live(session)
         entry = session.get(AccountingEntry, entry_id)
         if entry is None:
             raise HTTPException(404, "السطر غير موجود.")
@@ -1435,6 +1461,7 @@ def build_router(
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
+        book.refuse_when_live(session, "إضافة إيصال إلى الجداول القديمة")
         entry = session.get(AccountingEntry, entry_id)
         if entry is None:
             raise HTTPException(404, "السطر غير موجود.")
@@ -1483,8 +1510,9 @@ def build_router(
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> Response:
+        book.refuse_when_live(session, "حذف الإيصالات")
         item = session.get(EntryReceipt, receipt_id)
-        if item is None:
+        if item is None or item.entry_id is None:
             raise HTTPException(404, "الإيصال غير موجود.")
         entry = session.get(AccountingEntry, item.entry_id)
         if entry is not None:
@@ -1678,6 +1706,7 @@ def build_router(
         Children, employees and accounts stay. A closed month cannot be emptied. Needs the word RESET."""
         if actor.role != "admin":
             raise HTTPException(403, "تصفير الجداول للمدير فقط.")
+        book.guard_reset(session)
         if payload.confirm.strip() != "RESET":
             raise HTTPException(422, "اكتب كلمة RESET للتأكيد.")
         wanted = set(payload.scopes)
@@ -1738,7 +1767,7 @@ def build_router(
     ) -> dict[str, Any]:
         """Closes a finished month: from now on nothing dated in it can be added, changed or removed."""
         _first, last = sheet_range("month", payload.year, payload.month, None)
-        if last >= date.today():
+        if last >= local_today():
             raise HTTPException(422, "لا يمكن إغلاق شهر لم ينتهِ بعد.")
         if session.scalar(select(PeriodLock.id).where(PeriodLock.year == payload.year, PeriodLock.month == payload.month)):
             raise HTTPException(409, "هذا الشهر مغلق بالفعل.")
@@ -1749,8 +1778,9 @@ def build_router(
             raise HTTPException(422, "لا يمكن إغلاق الشهر قبل مراجعة الأسطر المعلّمة «تحتاج مراجعة» (اشتراكات: {} · رواتب: {}).".format(
                 next((b["count"] for b in blockers if b["kind"] == "review_fees"), 0), next((b["count"] for b in blockers if b["kind"] == "review_salaries"), 0)))
         snapshot: dict[str, Any] = {}
+        live = book.is_live(session)
         for code in CURRENCIES:
-            totals = Ledger.load(session, code).sheet("month", payload.year, payload.month, None)["totals"]
+            totals = book.month_totals(session, code, payload.year, payload.month) if live else Ledger.load(session, code).sheet("month", payload.year, payload.month, None)["totals"]
             snapshot[code] = {"income": totals["income"], "expense": totals["expense"]}
         lock = PeriodLock(
             year=payload.year, month=payload.month, closed_by=actor.name[:80], note=payload.note.strip(),
@@ -1816,21 +1846,27 @@ def build_router(
     ) -> dict[str, Any]:
         """The accountant counts the cash box; the system compares it with the books at the end of that day.
         The result is kept as it is (never edited) so a difference can always be traced."""
-        if payload.counted_on > date.today():
+        if payload.counted_on > local_today():
             raise HTTPException(422, "لا يمكن إجراء الجرد بتاريخ مستقبلي.")
-        balance = unified_sheet(session, "day", payload.counted_on.year, payload.counted_on.month, payload.counted_on)["balance"]
-        entry = None if balance is None else balance.get(payload.currency)
+        if book.is_live(session):
+            live_balance = book.balance_on(session, payload.currency, payload.counted_on)
+            if live_balance is None:
+                raise HTTPException(409, "أدخل رأس المال أولاً (أو اختر تاريخاً بعد بدء الحسابات).")
+            entry = {"closing": str(live_balance)}
+        else:
+            balance = unified_sheet(session, "day", payload.counted_on.year, payload.counted_on.month, payload.counted_on)["balance"]
+            entry = None if balance is None else balance.get(payload.currency)
         if entry is None:
             raise HTTPException(409, "أدخل رأس المال أولاً (أو اختر تاريخاً بعد بدء الحسابات).")
-        book = money(entry["closing"])
+        book_amount = money(entry["closing"])
         counted = money(payload.counted_amount)
         row = CashCount(
-            currency=payload.currency, counted_on=payload.counted_on, counted_amount=counted, book_amount=book,
-            difference=counted - book, note=payload.note.strip(), counted_by=actor.name[:80],
+            currency=payload.currency, counted_on=payload.counted_on, counted_amount=counted, book_amount=book_amount,
+            difference=counted - book_amount, note=payload.note.strip(), counted_by=actor.name[:80],
         )
         session.add(row)
         log(session, actor, "cash.count", payload.currency,
-            f"{payload.counted_on.isoformat()} محسوب {counted} دفتر {book} فرق {counted - book}")
+            f"{payload.counted_on.isoformat()} محسوب {counted} دفتر {book_amount} فرق {counted - book_amount}")
         session.commit()
         session.refresh(row)
         return count_row(row)
@@ -1839,7 +1875,7 @@ def build_router(
 
     def rate_state(session: Session) -> dict[str, Any]:
         """The rate of today. When none is stored yet it is fetched from the online feed by the system itself and kept for the day."""
-        found = todays_rate(session, date.today())
+        found = todays_rate(session, local_today())
         book = RateBook.load(session)
         return {
             "rates": [
@@ -1865,7 +1901,7 @@ def build_router(
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         """Asks the online feed again right now. A rate typed by hand for today is kept unless `force` says to replace it."""
-        today = date.today()
+        today = local_today()
         row = session.scalar(select(ExchangeRate).where(ExchangeRate.effective_date == today))
         if row is not None and row.created_by != AUTO_RATE and not force:
             raise HTTPException(409, "سعر اليوم مُدخل يدوياً. استعمل «العودة إلى السعر التلقائي» لاستبداله بسعر الإنترنت.")
@@ -1910,8 +1946,8 @@ def build_router(
         A past day: the rate stored for that day (a day before the first stored rate uses the first one and is marked `stale`).
         Exact decimal arithmetic, half a cent rounds up."""
         response.headers["Cache-Control"] = "no-store"
-        historical = payload.on is not None and payload.on < date.today()
-        found = sheet_rate(session, payload.on) if historical else todays_rate(session, date.today())
+        historical = payload.on is not None and payload.on < local_today()
+        found = sheet_rate(session, payload.on) if historical else todays_rate(session, local_today())
         if found is None:
             raise HTTPException(409, "لا يوجد سعر صرف محفوظ بعد.")
         rate, rate_date, source, stale = found
@@ -1937,7 +1973,7 @@ def build_router(
         charges = session.execute(
             select(FeeCharge, Child)
             .join(Child, Child.id == FeeCharge.child_id)
-            .where(FeeCharge.year == year)
+            .where(FeeCharge.year == year, FeeCharge.voided_at.is_(None))
             .options(selectinload(FeeCharge.payments))
         ).all()
         result: dict[str, Any] = {}

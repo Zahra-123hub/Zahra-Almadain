@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     LargeBinary,
     String,
+    Text,
     Table,
     Uuid,
     func,
@@ -292,6 +293,9 @@ class FeeCharge(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
     updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
     updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)  # cancelled (storno): stays visible, counts no more
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
     payments: Mapped[list[FeePayment]] = relationship(
         back_populates="charge", cascade="all, delete-orphan", lazy="selectin",
         order_by="FeePayment.paid_on",
@@ -317,7 +321,9 @@ class FeePayment(Base):
     created_by_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
     payer_name: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the money over
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)  # the time it was cancelled (storno)
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
     charge: Mapped[FeeCharge] = relationship(back_populates="payments")
     __table_args__ = (
         Index(
@@ -382,6 +388,9 @@ class SalaryLine(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
     updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
     updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)  # cancelled (storno): stays visible, counts no more
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
     employee: Mapped[Employee] = relationship(lazy="joined")
 
 
@@ -423,9 +432,15 @@ class EntryReceipt(Base):
     __tablename__ = "entry_receipts"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    entry_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="CASCADE"), index=True
+    entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="CASCADE"), index=True, nullable=True
     )
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("cash_transactions.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
+    removed_at: Mapped[datetime | None] = mapped_column(nullable=True)  # taken out of view; the file is kept
+    removed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    remove_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
     original_name: Mapped[str] = mapped_column(String(180))
     media_type: Mapped[str] = mapped_column(String(100))
     byte_size: Mapped[int]
@@ -506,6 +521,10 @@ class FeeAuditLog(Base):
     action: Mapped[str] = mapped_column(String(40))
     entity_id: Mapped[str] = mapped_column(String(40))
     details: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    entity_type: Mapped[str] = mapped_column(String(30), default="", server_default="")
+    before_json: Mapped[str] = mapped_column(Text, default="", server_default="")
+    after_json: Mapped[str] = mapped_column(Text, default="", server_default="")
+    reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
 
 
 class PortalSession(Base):
@@ -636,3 +655,68 @@ class DeviceToken(Base):
     language: Mapped[str] = mapped_column(String(5), default="ar", server_default="ar")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class CashTransaction(Base):
+    """One booking in the cash book: money that came in or went out on a day, in one currency.
+
+    origin "manual": typed in the cash book. "legacy": taken over from a row of the old day / week / month sheets.
+    "legacy_adjustment": a historical adjustment that keeps old figures explainable (never a real payment).
+    A booking is never deleted: it is cancelled (voided_*) with a reason and stays visible."""
+
+    __tablename__ = "cash_transactions"
+    __table_args__ = (
+        UniqueConstraint("legacy_entry_id", "kind", name="uq_cash_tx_legacy_entry"),
+        Index("ix_cash_tx_currency_day", "currency", "booked_on"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    currency: Mapped[str] = mapped_column(String(3))
+    kind: Mapped[str] = mapped_column(String(7))  # income | expense
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    booked_on: Mapped[date] = mapped_column(Date, index=True)
+    date_basis: Mapped[str] = mapped_column(String(24), default="actual", server_default="actual")
+    category: Mapped[str] = mapped_column(String(30))
+    description: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    counterparty: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    receipt_no: Mapped[str] = mapped_column(String(60), default="", server_default="")
+    origin: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
+    adjustment_kind: Mapped[str] = mapped_column(String(20), default="", server_default="")  # salary_unpaid | manual_override | salary_counter
+    counts_in_cash: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    legacy_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    legacy_note: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    adjusts_salary_line_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("salary_lines.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    adjusts_period: Mapped[str] = mapped_column(String(40), default="", server_default="")  # e.g. "2025-03 registration"
+    reverses_adjustment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("cash_transactions.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    voided_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+
+
+class LedgerCutover(Base):
+    """The switch from the old sheets to the cash book. One row. state "shadow": the old books are still the truth and the
+    new calculation only runs alongside. "live": the cash book is the truth and the old sheets are read-only."""
+
+    __tablename__ = "ledger_cutover"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    state: Mapped[str] = mapped_column(String(10), default="shadow", server_default="shadow")
+    applied_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    applied_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    went_live_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    live_writes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # new bookings and cancellations since going live
+    report_json: Mapped[str] = mapped_column(Text, default="", server_default="")
+    fingerprint_json: Mapped[str] = mapped_column(Text, default="", server_default="")

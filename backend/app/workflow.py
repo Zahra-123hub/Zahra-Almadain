@@ -18,8 +18,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app import ledger as book
 from app.accounting import AUTO_ITEMS, STANDARD_ITEMS, salary_row, sheet_range, todays_rate, unified_sheet, week_monday
 from app.database import get_session
+from app.timeutil import local_today
 from app.fees import (
     CURRENCIES,
     ZERO,
@@ -76,7 +78,7 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
 
     children = session.scalar(select(func.count()).select_from(Child).where(Child.is_active.is_(True))) or 0
     charges = session.scalars(
-        select(FeeCharge).where(FeeCharge.year == year, FeeCharge.month == month).options(selectinload(FeeCharge.payments))
+        select(FeeCharge).where(FeeCharge.year == year, FeeCharge.month == month, FeeCharge.voided_at.is_(None)).options(selectinload(FeeCharge.payments))
     ).all()
     charged_children = {charge.child_id for charge in charges}
     open_charges = 0
@@ -87,7 +89,7 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
     payments_in_month = sum(1 for charge in charges for payment in active_payments(charge) if payment.paid_on and first <= payment.paid_on <= last)
 
     employees = session.scalar(select(func.count()).select_from(Employee).where(Employee.is_active.is_(True))) or 0
-    salary_lines = session.scalars(select(SalaryLine).where(SalaryLine.year == year, SalaryLine.month == month)).all()
+    salary_lines = session.scalars(select(SalaryLine).where(SalaryLine.year == year, SalaryLine.month == month, SalaryLine.voided_at.is_(None))).all()
 
     entry_filter = (
         ((AccountingEntry.period_type == "month") & (AccountingEntry.year == year) & (AccountingEntry.month == month))
@@ -102,6 +104,9 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
     }
     expense_rows = [e for e in entries if money(e.expense) > 0 and e.item_key not in AUTO_ITEMS]
     missing_receipts = [e for e in expense_rows if e.id not in with_receipt and not e.receipt_no.strip()]
+    if book.is_live(session):  # once the cash book is live, the expenses to check are its bookings
+        expense_rows = [m for code in CURRENCIES for m in book.movements(session, code, first, last) if m.kind == "expense" and m.source in ("booking", "legacy")]
+        missing_receipts = [m for m in expense_rows if m.needs_receipt]
 
     counts = session.scalars(
         select(CashCount).where(CashCount.counted_on >= first, CashCount.counted_on <= last).order_by(CashCount.counted_on, CashCount.created_at)
@@ -117,10 +122,10 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
     )
     openings = {row.currency for row in session.scalars(select(CashOpening)).all()}
     rates = session.scalar(select(func.count()).select_from(ExchangeRate)) or 0
-    if date.today() <= last or not rates:
+    if local_today() <= last or not rates:
         # the system knows today's rate by itself: it asks the online feed when nothing is stored for today (at most every few minutes)
         try:
-            if todays_rate(session, date.today()) is not None:
+            if todays_rate(session, local_today()) is not None:
                 rates = max(rates, 1)
         except Exception:  # the status list must work even when the feed or the table is not reachable
             session.rollback()
@@ -137,7 +142,7 @@ def month_facts(session: Session, year: int, month: int) -> dict[str, Any]:
         "expense_rows": len(expense_rows), "missing_receipts": len(missing_receipts),
         "counts": len(counts), "cash_differences": len(cash_differences),
         "locked": lock is not None, "exported": exported, "openings": openings, "rates": rates,
-        "ended": last < date.today(),
+        "ended": last < local_today(),
     }
 
 
@@ -258,7 +263,7 @@ def build_router(guard: Callable) -> APIRouter:
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
-        today = date.today()
+        today = local_today()
         year, month = year or today.year, month or today.month
         if not 1 <= month <= 12 or not 2000 <= year <= 2100:
             raise HTTPException(422, "الشهر أو السنة غير صالحة.")
@@ -402,8 +407,9 @@ def build_router(guard: Callable) -> APIRouter:
             ["Note", lock.note if lock else ""],
             ["Exported by", actor.name],
         ]
+        live = book.is_live(session)
         for code in CURRENCIES:
-            totals = unified_sheet(session, "month", year, month, None)["totals"][code]
+            totals = book.month_totals(session, code, year, month) if live else unified_sheet(session, "month", year, month, None)["totals"][code]
             summary.append([f"{code} income now", totals["income"]])
             summary.append([f"{code} expense now", totals["expense"]])
             if code in snapshot:
@@ -412,7 +418,7 @@ def build_router(guard: Callable) -> APIRouter:
 
         fee_rows = []
         for charge, child in session.execute(
-            select(FeeCharge, Child).join(Child, Child.id == FeeCharge.child_id).where(FeeCharge.year == year, FeeCharge.month == month).options(selectinload(FeeCharge.payments))
+            select(FeeCharge, Child).join(Child, Child.id == FeeCharge.child_id).where(FeeCharge.year == year, FeeCharge.month == month, FeeCharge.voided_at.is_(None)).options(selectinload(FeeCharge.payments))
         ).all():
             r = charge_row(charge, child)
             fee_rows.append([r["child_name"], r["class_name"], r["currency"], r["amount"] or "", r["paid"], r["remaining"] or "", r["status"], r["last_paid_on"] or "", " ".join(r["receipts"])])
@@ -420,7 +426,7 @@ def build_router(guard: Callable) -> APIRouter:
 
         salary_rows = [
             [r["employee_name"], r["job_title"], r["currency"], r["base"] or "", r["bonus"] or "", r["advance"] or "", r["deduction"] or "", r["net"] or "", r["paid_on"] or "", r["paid_by"]]
-            for r in (salary_row(line) for line in session.scalars(select(SalaryLine).where(SalaryLine.year == year, SalaryLine.month == month)).unique().all())
+            for r in (salary_row(line) for line in session.scalars(select(SalaryLine).where(SalaryLine.year == year, SalaryLine.month == month, SalaryLine.voided_at.is_(None))).unique().all())
         ]
         salary_rows.sort(key=lambda row: row[0])
 
@@ -448,15 +454,20 @@ def build_router(guard: Callable) -> APIRouter:
 
         log(session, actor, "export.month", f"{month}/{year}", "closed" if lock else "open")
         session.commit()
-        return workbook_response(
-            f"accounting-{year}-{month:02d}.xlsx",
-            [
+        book_rows = [
+            [m.day.isoformat(), m.currency, "income" if m.kind == "income" else "expense", str(money(m.amount)), m.category, m.description, m.counterparty, m.source,
+             m.date_basis, "yes" if m.counts_in_cash else "no (historical adjustment)", m.receipt_no, m.receipts, m.actor]
+            for code in CURRENCIES for m in book.movements(session, code, first, last, include_voided=False)
+        ] if live else []
+        sheets = [
                 ("Summary", ["Item", "Value"], summary),
                 ("Fees", ["Child", "Class", "Currency", "Amount", "Paid", "Remaining", "Status", "Last payment", "Receipts"], fee_rows),
                 ("Salaries", ["Employee", "Job", "Currency", "Base", "Bonus", "Advance", "Deduction", "Net", "Paid on", "Paid by"], salary_rows),
                 ("Entries", ["Level", "Date", "Item", "Currency", "Details", "Note", "Person", "Income", "Expense", "Receipt files", "Receipt no."], sheet_rows),
                 ("Cash counts", ["Date", "Currency", "Counted", "Books", "Difference", "By", "Note"], count_rows),
-            ],
-        )
+        ]
+        if live:
+            sheets.insert(1, ("Cash book", ["Date", "Currency", "Kind", "Amount", "Category", "Description", "Counterparty", "Source", "Date basis", "In cash", "Receipt no.", "Receipt files", "By"], book_rows))
+        return workbook_response(f"accounting-{year}-{month:02d}.xlsx", sheets)
 
     return router

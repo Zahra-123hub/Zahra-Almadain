@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, community, fees, mobile, security, visits, workflow
+from app import accounting, community, fees, finance, mobile, security, visits, workflow
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -802,6 +802,7 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
 app.include_router(fees.build_router(require_fees_user, require_people_manager))
 app.include_router(accounting.build_router(require_fees_user, require_people_manager, require_staff_reader))
 app.include_router(workflow.build_router(require_fees_user))
+app.include_router(finance.build_router(require_fees_user))
 
 
 @app.get("/healthz")
@@ -1394,6 +1395,9 @@ def reset_financial_data(
     response.headers["Cache-Control"] = "no-store"
     if payload.confirm.strip() != "RESET":
         raise HTTPException(422, "اكتب كلمة RESET للتأكيد.")
+    from app import ledger as cash_book
+
+    cash_book.guard_reset(session)
     counts = {
         "payments": session.execute(delete(FeePayment)).rowcount or 0,
         "fees": session.execute(delete(FeeCharge)).rowcount or 0,
