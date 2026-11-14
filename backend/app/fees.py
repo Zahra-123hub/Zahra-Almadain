@@ -7,6 +7,7 @@ USD and SYP are kept strictly apart; amounts of different currencies are never a
 from __future__ import annotations
 
 import io
+import json
 import re
 import uuid
 from dataclasses import dataclass
@@ -845,7 +846,7 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
 
     def audit_rows(
         session: Session, actor: FeesActor, limit: int, actor_name: str, action: str, date_from: date | None, date_to: date | None, q: str
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         """The log, newest first. An accountant only ever sees their own actions; the administrator can look at anybody."""
         query = select(FeeAuditLog).order_by(FeeAuditLog.at.desc())
         wanted = actor.name if actor.role != "admin" else actor_name.strip()
@@ -862,6 +863,13 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
             like = "%" + q.strip().lower().replace("%", "").replace("_", "") + "%"
             query = query.where(or_(func.lower(FeeAuditLog.details).like(like), func.lower(FeeAuditLog.action).like(like), func.lower(FeeAuditLog.actor_name).like(like)))
         entries = session.scalars(query.limit(min(max(limit, 1), 500))).all()
+
+        def loaded(text: str) -> Any:
+            try:
+                return json.loads(text) if text else None
+            except ValueError:
+                return None
+
         return [
             {
                 "at": entry.at.isoformat() if entry.at else "",
@@ -869,6 +877,10 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
                 "action": entry.action,
                 "entity_id": entry.entity_id,
                 "details": entry.details,
+                "entity_type": entry.entity_type or "",
+                "reason": entry.reason or "",
+                "before": loaded(entry.before_json),
+                "after": loaded(entry.after_json),
             }
             for entry in entries
         ]
@@ -884,7 +896,7 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         q: str = "",
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
         return audit_rows(session, actor, limit, actor_name, action, date_from, date_to, q)
 
