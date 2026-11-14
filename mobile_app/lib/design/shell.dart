@@ -33,12 +33,15 @@ class UpdateHint extends StatelessWidget {
 
 /// The blue top zone: rounded at the bottom, one title, the bell with the number of unread messages.
 class AppHeader extends StatelessWidget {
-  const AppHeader({super.key, required this.title, this.subtitle, this.onBack, this.onBell, this.trailing});
+  const AppHeader({super.key, required this.title, this.subtitle, this.onBack, this.onBell, this.trailing, this.besideSidebar = false});
   final String title;
   final String? subtitle;
   final VoidCallback? onBack;
   final VoidCallback? onBell;
   final Widget? trailing;
+
+  /// In a wide window the sidebar sits right next to the header, so the corner on that side stays square.
+  final bool besideSidebar;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +49,10 @@ class AppHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(Gap.l, top + Gap.m, Gap.m, Gap.l),
-      decoration: const BoxDecoration(color: brandBlue, borderRadius: BorderRadius.vertical(bottom: Radius.circular(Rad.l))),
+      decoration: BoxDecoration(
+        color: brandBlue,
+        borderRadius: besideSidebar ? const BorderRadiusDirectional.only(bottomEnd: Radius.circular(Rad.l)) : const BorderRadius.vertical(bottom: Radius.circular(Rad.l)),
+      ),
       child: Row(children: [
         if (onBack != null)
           Padding(
@@ -213,7 +219,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           _Sidebar(roleLabel: widget.roleLabel, items: _all, selected: _id, onSelect: (id) => setState(() => _id = id)),
           Expanded(
             child: Column(children: [
-              AppHeader(title: title, onBell: _openBell),
+              AppHeader(title: title, onBell: _openBell, besideSidebar: true),
               const UpdateHint(),
               Expanded(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: Breakpoints.content), child: content))),
             ]),
