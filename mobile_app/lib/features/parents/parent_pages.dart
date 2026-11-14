@@ -9,11 +9,12 @@ import '../common/common_pages.dart';
 
 // ---- shared small views -------------------------------------------------------------------------------------------------
 class ReportCard extends StatelessWidget {
-  const ReportCard(this.report, {super.key, this.childName, this.files});
+  const ReportCard(this.report, {super.key, this.childName, this.files, this.showStatus = false});
   final Report report;
   final String? childName;
   /// Who looks decides which attachments endpoint is used: 'parent' (own child's published report) or 'review' (management).
   final String? files;
+  final bool showStatus; // teachers and the management see in which state the report is
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +48,7 @@ class ReportCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: 6),
               child: Row(children: [const Icon(Icons.child_care, size: 16, color: brandAccent), const SizedBox(width: 4), Text(childName!, style: const TextStyle(color: brandBlue, fontWeight: FontWeight.w500))]),
             ),
+          if (showStatus) Padding(padding: const EdgeInsets.only(top: 8), child: Align(alignment: AlignmentDirectional.centerStart, child: StatusPill(report.status))),
           const SizedBox(height: 10),
           Text(report.body, style: const TextStyle(height: 1.55)),
           if (report.activities.isNotEmpty) block(Icons.palette_outlined, s.get('activities'), report.activities),
@@ -77,23 +79,25 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
+    final forChild = post.scope == 'child';
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Expanded(child: Text(post.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+            Expanded(child: Wrap(spacing: 8, runSpacing: 6, children: [
+              forChild
+                  ? Pill('${s.get('private')}: ${post.childName}', icon: Icons.child_care, foreground: const Color(0xFF8A5200), background: const Color(0xFFFDF1DD))
+                  : Pill(s.get('general'), icon: Icons.public, foreground: brandBlue, background: brandSoft),
+              if (post.kind == 'material') Pill(s.get('learning'), icon: Icons.menu_book_outlined, foreground: const Color(0xFF1E7A45), background: const Color(0xFFE4F4EA)),
+            ])),
             if (onDelete != null) IconButton(icon: const Icon(Icons.delete_outline), onPressed: onDelete),
           ]),
-          Wrap(spacing: 8, children: [
-            if (post.kind == 'material') Chip(visualDensity: VisualDensity.compact, avatar: const Icon(Icons.menu_book_outlined, size: 16), label: Text(s.get('learning'), style: const TextStyle(fontSize: 12))),
-            Chip(
-              visualDensity: VisualDensity.compact,
-              label: Text(post.scope == 'child' ? '${s.get('private')}: ${post.childName}' : s.get('general'), style: const TextStyle(fontSize: 12)),
-            ),
-            Text('${post.author.isNotEmpty ? '${post.author} · ' : ''}${formatDate(post.createdAt)}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          ]),
-          if (post.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(post.body)),
+          const SizedBox(height: 10),
+          Text(post.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18, height: 1.3)),
+          const SizedBox(height: 2),
+          Text('${post.author.isNotEmpty ? '${post.author} · ' : ''}${formatDate(post.createdAt)}', style: const TextStyle(color: Color(0xFF6A7686), fontSize: 12.5)),
+          if (post.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(post.body, style: const TextStyle(height: 1.55))),
           for (final f in post.files) FileTile(file: f, path: filePath(post, f)),
         ]),
       ),
@@ -173,12 +177,22 @@ class _ParentChildrenState extends State<ParentChildren> {
         return ListView(padding: const EdgeInsets.all(12), children: [
           for (final c in children)
             Card(
-              child: ListTile(
-                leading: const CircleAvatar(backgroundColor: brandSoft, child: Icon(Icons.child_care, color: brandBlue)),
-                title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text(s.get('reports')),
-                trailing: const Icon(Icons.chevron_right),
+              child: InkWell(
+                hoverColor: brandSoft,
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChildReportsPage(child: c))),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(children: [
+                    AvatarInitials(c.name, size: 56),
+                    const SizedBox(width: 14),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(c.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(s.get('reports'), style: const TextStyle(color: Color(0xFF5B6878))),
+                    ])),
+                    const Icon(Icons.chevron_right_rounded),
+                  ]),
+                ),
               ),
             ),
         ]);
@@ -264,62 +278,6 @@ class ParentReports extends StatelessWidget {
 
 // ---- learning material shown like a course page (a section with a list of files) ----------------------------------------------
 
-IconData _fileIcon(String ext, bool image) {
-  if (image) return Icons.image_outlined;
-  switch (ext) {
-    case 'pdf':
-      return Icons.picture_as_pdf_outlined;
-    case 'zip':
-    case 'rar':
-    case '7z':
-      return Icons.folder_zip_outlined;
-    case 'mp4':
-    case 'mov':
-    case 'avi':
-    case 'webm':
-    case 'mkv':
-      return Icons.smart_display_outlined;
-    case 'mp3':
-    case 'wav':
-    case 'm4a':
-      return Icons.audiotrack_outlined;
-    case 'doc':
-    case 'docx':
-    case 'txt':
-      return Icons.description_outlined;
-    case 'xls':
-    case 'xlsx':
-    case 'csv':
-      return Icons.table_chart_outlined;
-    case 'ppt':
-    case 'pptx':
-      return Icons.slideshow_outlined;
-    default:
-      return Icons.insert_drive_file_outlined;
-  }
-}
-
-/// Background and icon colour of a file type: PDF red, video blue, ZIP gold, image green, everything else blue-grey.
-(Color, Color) _fileTint(String ext, bool image) {
-  if (image) return (const Color(0xFFE4F4EA), const Color(0xFF1E7A45));
-  switch (ext) {
-    case 'pdf':
-      return (const Color(0xFFFCE9E6), const Color(0xFFC0392B));
-    case 'mp4':
-    case 'mov':
-    case 'avi':
-    case 'webm':
-    case 'mkv':
-      return (const Color(0xFFE4EEF9), const Color(0xFF2F6DB5));
-    case 'zip':
-    case 'rar':
-    case '7z':
-      return (const Color(0xFFFDF1DD), const Color(0xFFB26E0B));
-    default:
-      return (const Color(0xFFEAF1F8), const Color(0xFF16406F));
-  }
-}
-
 /// One learning-material post as a section: round collapse button, big title, then one row per file (icon, name, TYPE).
 class MaterialSection extends StatefulWidget {
   const MaterialSection(this.post, {super.key, required this.filePath, this.onDelete, this.headerActions = const [], this.fileTrailing, this.footer});
@@ -388,8 +346,8 @@ class _MaterialSectionState extends State<MaterialSection> {
                     Container(
                       width: 42,
                       height: 42,
-                      decoration: BoxDecoration(color: _fileTint(ext, f.isImage).$1, borderRadius: BorderRadius.circular(12)),
-                      child: Icon(_fileIcon(ext, f.isImage), color: _fileTint(ext, f.isImage).$2, size: 23),
+                      decoration: BoxDecoration(color: fileTintFor(ext, f.isImage).$1, borderRadius: BorderRadius.circular(12)),
+                      child: Icon(fileIconFor(ext, f.isImage), color: fileTintFor(ext, f.isImage).$2, size: 23),
                     ),
                     const SizedBox(width: 14),
                     Expanded(

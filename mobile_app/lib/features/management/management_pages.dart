@@ -128,13 +128,27 @@ class _ReviewPageState extends State<_ReviewPage> {
     final s = S.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(widget.report.title)),
-      body: ListView(padding: const EdgeInsets.all(12), children: [
-        if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
-        ReportCard(widget.report, childName: widget.report.childName.isEmpty ? null : widget.report.childName, files: 'review'),
-        const SizedBox(height: 12),
-        FilledButton.icon(onPressed: _busy ? null : () => _decide('published'), icon: const Icon(Icons.send), label: Text(s.get('publishReport'))),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(onPressed: _busy ? null : () => _decide('rejected'), icon: const Icon(Icons.undo), label: Text(s.get('returnReport'))),
+      body: Column(children: [
+        Expanded(
+          child: ListView(padding: const EdgeInsets.all(12), children: [
+            if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+            ReportCard(widget.report, childName: widget.report.childName.isEmpty ? null : widget.report.childName, files: 'review', showStatus: true),
+          ]),
+        ),
+        BottomActionBar(children: [
+          Expanded(
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: const Color(0xFFB3402F), side: const BorderSide(color: Color(0xFFC0392B))),
+              onPressed: _busy ? null : () => _decide('rejected'),
+              child: Text(s.get('returnReport')),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 2,
+            child: FilledButton(style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1E7A45)), onPressed: _busy ? null : () => _decide('published'), child: Text(s.get('publishReport'))),
+          ),
+        ]),
       ]),
     );
   }
