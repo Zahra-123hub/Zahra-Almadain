@@ -212,6 +212,11 @@
       identity.appendChild(element("span", "p-account-label", t("welcomeUser")));
       identity.appendChild(element("strong", "", profile.username));
       actions.appendChild(identity);
+      if (!isLogin && otherPortals().length) {  // somebody with several areas always sees where they are
+        var area = element("span", "p-area", t("areaLabel") + ": " + portalLabel(currentPortalName()));
+        area.style.cssText = "background:#ffffff26;border-radius:999px;padding:4px 12px;font-size:.88rem;font-weight:700";
+        actions.appendChild(area);
+      }
     }
     var langGroup = element("div", "p-lang");
     langGroup.setAttribute("role", "group");
@@ -1338,6 +1343,19 @@
       });
     }).catch(function (error) { card.innerHTML = ""; card.appendChild(element("h2", "", t("review"))); showError(card, error); });
   }
+  /* A tab works in ONE role: the server is told which, and answers with a session for that role only. The other tabs keep their own
+     sessions. An older server (no such call) or a refused call simply leaves things as they were. */
+  function bindRole(data) {
+    var order = isManagerPortal ? ["manager", "admin"] : isTeacherPortal ? ["teacher", "manager", "admin"] : ["parent"];
+    var want = order.filter(function (name) { return data.roles.indexOf(name) !== -1; })[0];
+    if (!want || data.active_role === want) return Promise.resolve();
+    return request("/api/platform/auth/switch-role", {method: "POST", body: JSON.stringify({role: want, keep_previous: true})}).then(function (result) {
+      token = result.access_token;
+      sessionStorage.setItem(storeKey, token);
+      profile.active_role = result.active_role;
+    }).catch(function () {});
+  }
+  function currentPortalName() { return isManagerPortal ? "manager" : isTeacherPortal ? "teacher" : "parent"; }
   function loadDashboard() {
     return request("/api/platform/auth/me").then(function (data) {
       profile = data;
@@ -1357,8 +1375,10 @@
       }
       document.documentElement.lang = lang;
       document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
-      var main = shell();
-      drawPortal(main);
+      return bindRole(data).then(function () {
+        var main = shell();
+        drawPortal(main);
+      });
     }).catch(function (error) {
       token = ""; sessionStorage.removeItem(storeKey);
       loginScreen();
