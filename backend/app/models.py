@@ -91,6 +91,7 @@ class Child(Base):
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    left_on: Mapped[date | None] = mapped_column(Date, nullable=True)  # the day the child left (set when the child is taken off the list)
 
 
 class ChildGuardian(Base):
@@ -521,6 +522,7 @@ class FeeAuditLog(Base):
     action: Mapped[str] = mapped_column(String(40))
     entity_id: Mapped[str] = mapped_column(String(40))
     details: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    domain: Mapped[str] = mapped_column(String(20), default="finance", server_default="finance", index=True)  # finance | account | security | report | content | system
     entity_type: Mapped[str] = mapped_column(String(30), default="", server_default="")
     before_json: Mapped[str] = mapped_column(Text, default="", server_default="")
     after_json: Mapped[str] = mapped_column(Text, default="", server_default="")
@@ -540,6 +542,12 @@ class PortalSession(Base):
     expires_at: Mapped[datetime] = mapped_column()
     revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # the role this session works in (None = the account's roles all count, as before); the server checks it on every request
+    active_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    ip_hash: Mapped[str] = mapped_column(String(64), default="", server_default="")  # never the address itself
+    user_agent_hash: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    device_label: Mapped[str] = mapped_column(String(80), default="", server_default="")  # e.g. "Windows · Chrome"
 
 
 class LoginAttempt(Base):
@@ -720,3 +728,30 @@ class LedgerCutover(Base):
     live_writes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # new bookings and cancellations since going live
     report_json: Mapped[str] = mapped_column(Text, default="", server_default="")
     fingerprint_json: Mapped[str] = mapped_column(Text, default="", server_default="")
+
+
+class SystemCheck(Base):
+    """One run of the system check (database reachable, migrations at the newest state). Only real results are stored."""
+
+    __tablename__ = "system_checks"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    checked_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    database_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    migrations_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # None: could not be determined
+    details: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class AccountGrant(Base):
+    """An explicit permission for ONE account on top of its roles (for example the control centre for a manager)."""
+
+    __tablename__ = "account_grants"
+    __table_args__ = (UniqueConstraint("account_id", "grant_name", name="uq_account_grant"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    grant_name: Mapped[str] = mapped_column(String(40))
+    granted_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    granted_at: Mapped[datetime] = mapped_column(server_default=func.now())

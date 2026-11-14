@@ -845,10 +845,15 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         return {"paid": {code: str(value) for code, value in paid.items()}}
 
     def audit_rows(
-        session: Session, actor: FeesActor, limit: int, actor_name: str, action: str, date_from: date | None, date_to: date | None, q: str
+        session: Session, actor: FeesActor, limit: int, actor_name: str, action: str, date_from: date | None, date_to: date | None, q: str,
+        domain: str = "finance",
     ) -> list[dict[str, Any]]:
         """The log, newest first. An accountant only ever sees their own actions; the administrator can look at anybody."""
         query = select(FeeAuditLog).order_by(FeeAuditLog.at.desc())
+        # the money log shows the money area; the other areas (sign-ins, accounts, reports ...) are for the administrator, asked for by name
+        wanted_domain = domain if actor.role == "admin" else "finance"
+        if wanted_domain != "all":
+            query = query.where(FeeAuditLog.domain == wanted_domain)
         wanted = actor.name if actor.role != "admin" else actor_name.strip()
         if wanted:
             query = query.where(FeeAuditLog.actor_name == wanted)
@@ -894,15 +899,17 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         date_from: date | None = None,
         date_to: date | None = None,
         q: str = "",
+        domain: str = "finance",
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
-        return audit_rows(session, actor, limit, actor_name, action, date_from, date_to, q)
+        return audit_rows(session, actor, limit, actor_name, action, date_from, date_to, q, domain)
 
     @router.get("/audit/actors")
     def audit_actors(
         response: Response,
+        domain: str = "finance",
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> list[str]:
@@ -910,7 +917,10 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         response.headers["Cache-Control"] = "no-store"
         if actor.role != "admin":
             return [actor.name]
-        return [name for (name,) in session.execute(select(FeeAuditLog.actor_name).distinct().order_by(FeeAuditLog.actor_name)).all() if name]
+        query = select(FeeAuditLog.actor_name).distinct().order_by(FeeAuditLog.actor_name)
+        if domain != "all":
+            query = query.where(FeeAuditLog.domain == domain)
+        return [name for (name,) in session.execute(query).all() if name]
 
     @router.get("/audit.xlsx")
     def export_audit(
@@ -919,10 +929,11 @@ def build_router(guard: Callable[..., FeesActor], manage_guard: Callable[..., Fe
         date_from: date | None = None,
         date_to: date | None = None,
         q: str = "",
+        domain: str = "finance",
         actor: FeesActor = Depends(guard),
         session: Session = Depends(get_session),
     ) -> Response:
-        entries = audit_rows(session, actor, 500, actor_name, action, date_from, date_to, q)
+        entries = audit_rows(session, actor, 500, actor_name, action, date_from, date_to, q, domain)
         return xlsx_response("system-log.xlsx", "Log", ["Time", "User", "Action", "Entity", "Details"],
                              [[e["at"].replace("T", " ")[:16], e["actor"], e["action"], e["entity_id"], e["details"]] for e in entries])
 

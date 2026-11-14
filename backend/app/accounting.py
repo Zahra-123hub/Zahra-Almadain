@@ -1689,6 +1689,7 @@ def build_router(
         if child is None:
             raise HTTPException(404, "الطفل غير موجود.")
         child.is_active = False
+        child.left_on = local_today()
         log(session, actor, "child.remove", child.id, "")
         session.commit()
         return Response(status_code=204)

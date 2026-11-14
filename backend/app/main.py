@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, community, fees, finance, mobile, security, visits, workflow
+from app import accounting, activity, community, control, fees, finance, mobile, security, visits, workflow
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -392,10 +392,43 @@ class PasswordResetRequest(BaseModel):
     password: str | None = Field(default=None, min_length=12, max_length=256)
 
 
+def effective_role_names(account: Account, portal_session: PortalSession | None) -> set[str]:
+    """The roles this session may act in right now.
+
+    A session that works in one role (`active_role`) may only use that role, whatever else the account holds; if the role was taken
+    away from the account meanwhile, nothing is allowed. A session without an active role keeps all roles of the account (older
+    sessions and single-role accounts), unless ENFORCE_ACTIVE_ROLE=1 is set: then an account with several roles must choose first."""
+    names = {role.name for role in account.roles}
+    active = portal_session.active_role if portal_session is not None else None
+    if active:
+        return {active} if active in names else set()
+    if len(names) > 1 and os.getenv("ENFORCE_ACTIVE_ROLE", "") == "1":
+        return set()
+    return names
+
+
+def touch_portal_session(session: Session, portal_session: PortalSession) -> None:
+    """Remembers when a session was last used (at most once a minute)."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    last = portal_session.last_seen_at
+    if last is None or (now - last).total_seconds() > 60:
+        portal_session.last_seen_at = now
+        session.commit()
+
+
 class PlatformPrincipal:
     def __init__(self, account: Account, portal_session: PortalSession) -> None:
         self.account = account
         self.portal_session = portal_session
+
+    @property
+    def role_names(self) -> set[str]:
+        """The roles that count for authorisation in this session."""
+        return effective_role_names(self.account, self.portal_session)
+
+    @property
+    def active_role(self) -> str | None:
+        return self.portal_session.active_role
 
 
 def _b64url(data: bytes) -> str:
@@ -533,7 +566,8 @@ def admin_like(authorization: str | None, session: Session | None, allowed_roles
             .options(selectinload(Account.roles))
             .where(Account.id == account_id, Account.is_active.is_(True), Account.approval_status == "active")
         )
-        if portal_session is not None and account is not None and any(r.name in allowed_roles for r in account.roles):
+        if portal_session is not None and account is not None and effective_role_names(account, portal_session) & set(allowed_roles):
+            touch_portal_session(session, portal_session)
             return account.username
     raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
 
@@ -575,7 +609,7 @@ def require_publisher(
             Account.approval_status == "active",
         )
     )
-    roles = {role.name for role in account.roles} if account is not None else set()
+    roles = effective_role_names(account, portal_session) if account is not None else set()
     if portal_session is None or account is None or not roles & {"teacher", "manager", "admin"}:
         raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
     return account.username
@@ -622,7 +656,8 @@ def fees_actor(
     )
     if portal_session is None or account is None:
         raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
-    roles = {role.name for role in account.roles}
+    roles = effective_role_names(account, portal_session)
+    touch_portal_session(session, portal_session)
     for name in allowed:  # the order of `allowed` decides the role shown when someone holds several
         if name in roles:
             return fees.FeesActor(account.id, account.username, name)
@@ -651,6 +686,24 @@ def require_staff_reader(
 ) -> fees.FeesActor:
     """The lists of children and employees may be read by the accountant, the management and the admin."""
     return fees_actor(authorization, session, ("accountant", "manager", "admin"), "ليس لديك صلاحية الاطّلاع على هذه القوائم.")
+
+
+def require_control(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """The control centre: the administrator, or a manager who was explicitly given it (grant `control.view`)."""
+    actor = fees_actor(authorization, session, ("admin", "manager"), "ليس لديك صلاحية لوحة المتابعة.")
+    if actor.role == "manager" and not control.has_grant(session, actor, "control.view"):
+        raise HTTPException(403, "ليس لديك صلاحية لوحة المتابعة.")
+    return actor
+
+
+def require_admin_actor(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    return fees_actor(authorization, session, ("admin",), "هذه الصلاحية للمدير فقط.")
 
 
 def get_platform_principal(
@@ -685,6 +738,7 @@ def get_platform_principal(
     )
     if portal_session is None or account is None:
         raise HTTPException(401, "Your platform session is no longer valid.")
+    touch_portal_session(session, portal_session)
     return PlatformPrincipal(account, portal_session)
 
 
@@ -692,7 +746,7 @@ def require_platform_role(role_name: str):
     def check_role(
         principal: PlatformPrincipal = Depends(get_platform_principal),
     ) -> PlatformPrincipal:
-        if role_name not in {role.name for role in principal.account.roles}:
+        if role_name not in principal.role_names:
             raise HTTPException(403, "You do not have permission to perform this action.")
         return principal
 
@@ -703,9 +757,7 @@ def require_any_platform_role(*role_names: str):
     def check_role(
         principal: PlatformPrincipal = Depends(get_platform_principal),
     ) -> PlatformPrincipal:
-        if not set(role_names).intersection(
-            {role.name for role in principal.account.roles}
-        ):
+        if not set(role_names).intersection(principal.role_names):
             raise HTTPException(403, "You do not have permission to perform this action.")
         return principal
 
@@ -713,15 +765,24 @@ def require_any_platform_role(*role_names: str):
 
 
 def portal_session_result(
-    account: Account, session: Session, secret: str
+    account: Account, session: Session, secret: str, request: Request | None = None, role: str | None = None
 ) -> dict[str, Any]:
+    """Opens a session. With one role it works in that role at once; with several the client chooses (switch-role)."""
     token_id = secrets.token_hex(16)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
+    names = sorted(r.name for r in account.roles)
+    chosen = role if role in names else (names[0] if len(names) == 1 else None)
+    user_agent = request.headers.get("user-agent", "") if request is not None else ""
     session.add(
         PortalSession(
             token_id=token_id,
             account_id=account.id,
             expires_at=expires_at,
+            active_role=chosen,
+            last_seen_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            ip_hash=activity.hash_value(secret, "ip", client_address(request)) if request is not None else "",
+            user_agent_hash=activity.hash_value(secret, "ua", user_agent) if user_agent else "",
+            device_label=activity.describe_device(user_agent),
         )
     )
     return {
@@ -730,6 +791,9 @@ def portal_session_result(
         ),
         "token_type": "bearer",
         "expires_in": SESSION_TTL_SECONDS,
+        "roles": names,
+        "active_role": chosen,
+        "needs_role_choice": chosen is None and len(names) > 1,
     }
 
 
@@ -803,6 +867,7 @@ app.include_router(fees.build_router(require_fees_user, require_people_manager))
 app.include_router(accounting.build_router(require_fees_user, require_people_manager, require_staff_reader))
 app.include_router(workflow.build_router(require_fees_user))
 app.include_router(finance.build_router(require_fees_user))
+app.include_router(control.build_router(require_control, require_admin_actor))
 
 
 @app.get("/healthz")
@@ -1322,6 +1387,7 @@ def platform_login(
     payload: PlatformLoginRequest,
     response: Response,
     session: Session = Depends(get_session),
+    request: Request = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store"
     secret = os.getenv("SESSION_SECRET", "")
@@ -1362,6 +1428,9 @@ def platform_login(
     password_matches = PASSWORD_HASHER.verify(payload.password, password_hash)
     if account is None or not password_matches:
         session.add(LoginAttempt(username_hash=username_hash, attempted_at=now))
+        if account is not None:  # a wrong password for a real account is a security event; the typed name of an unknown account is never stored
+            activity.record(session, actor_id=account.id, actor_name=account.username, domain="security", action="auth.login.failed", entity_type="session",
+                            details=activity.describe_device(request.headers.get("user-agent", "")) if request is not None else "")
         session.commit()
         raise HTTPException(401, "Incorrect username or password.")
 
@@ -1374,7 +1443,9 @@ def platform_login(
     if account.approval_status != "active" or not account.is_active:
         session.commit()
         raise HTTPException(403, "Your account has been disabled. Contact the kindergarten.")
-    result = portal_session_result(account, session, secret)
+    result = portal_session_result(account, session, secret, request)
+    activity.record(session, actor_id=account.id, actor_name=account.username, domain="security", action="auth.login", entity_type="session",
+                    after={"active_role": result["active_role"]}, details=activity.describe_device(request.headers.get("user-agent", "")) if request is not None else "")
     session.commit()
     return result
 
@@ -1447,7 +1518,7 @@ def unified_login(
                 "expires_in": SESSION_TTL_SECONDS,
             }
     try:
-        result = platform_login(payload, response, session)
+        result = platform_login(payload, response, session, request)
     except HTTPException as exc:
         if exc.status_code == 401:
             security.record_attempt(session, address_key)
@@ -1904,7 +1975,42 @@ def platform_me(
         "preferred_language": account.preferred_language,
         "roles": roles,
         "permissions": permissions,
+        "active_role": principal.active_role,
+        "needs_role_choice": principal.active_role is None and len(roles) > 1,
     }
+
+
+class SwitchRoleRequest(BaseModel):
+    role: str = Field(min_length=3, max_length=20)
+
+
+@app.post("/api/platform/auth/switch-role")
+def platform_switch_role(
+    payload: SwitchRoleRequest,
+    request: Request,
+    response: Response,
+    principal: PlatformPrincipal = Depends(get_platform_principal),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Changes the area this session works in. Only a role the account really holds is accepted; the answer is a NEW session
+    (the old one ends), so nothing of the former role stays valid."""
+    response.headers["Cache-Control"] = "no-store"
+    secret = os.getenv("SESSION_SECRET", "")
+    names = {role.name for role in principal.account.roles}
+    wanted = payload.role.strip().lower()
+    account = principal.account
+    if wanted not in names:
+        activity.record(session, actor_id=account.id, actor_name=account.username, domain="security", action="auth.switch_role.denied", entity_type="session",
+                        before={"active_role": principal.active_role}, reason=wanted[:20])
+        session.commit()
+        raise HTTPException(403, "You do not have this role.")
+    before = {"active_role": principal.active_role}
+    principal.portal_session.revoked_at = datetime.now(timezone.utc)
+    result = portal_session_result(account, session, secret, request, role=wanted)
+    activity.record(session, actor_id=account.id, actor_name=account.username, domain="security", action="auth.switch_role", entity_type="session",
+                    before=before, after={"active_role": wanted})
+    session.commit()
+    return result
 
 
 @app.post("/api/platform/auth/change-password")
@@ -2010,7 +2116,7 @@ def list_platform_children(
     session: Session = Depends(get_session),
 ) -> list[dict[str, str]]:
     response.headers["Cache-Control"] = "no-store"
-    role_names = {role.name for role in principal.account.roles}
+    role_names = principal.role_names
     if "parent" not in role_names and "admin" in role_names:
         children = session.scalars(
             select(Child)
@@ -2526,7 +2632,7 @@ def download_teacher_content(
     content = session.get(TeacherContent, content_id)
     if content is None:
         raise HTTPException(404, "Private upload not found.")
-    roles = {role.name for role in principal.account.roles}
+    roles = principal.role_names
     if content.owner_id != principal.account.id and "admin" not in roles:
         raise HTTPException(404, "Private upload not found.")
     return private_content_response(content, response)
@@ -2544,7 +2650,7 @@ def delete_teacher_content(
     )
     if owner_id is None:
         raise HTTPException(404, "Private upload not found.")
-    roles = {role.name for role in principal.account.roles}
+    roles = principal.role_names
     if owner_id != principal.account.id and "admin" not in roles:
         raise HTTPException(404, "Private upload not found.")
     session.execute(delete(TeacherContent).where(TeacherContent.id == content_id))
@@ -3081,7 +3187,7 @@ def delete_teacher_post(
     session: Session = Depends(get_session),
 ) -> Response:
     post = session.get(TeacherPost, post_id)
-    roles = {role.name for role in principal.account.roles}
+    roles = principal.role_names
     if post is None or (post.author_id != principal.account.id and "admin" not in roles):
         raise HTTPException(404, "Post not found.")
     session.execute(delete(TeacherContent).where(TeacherContent.post_id == post.id))

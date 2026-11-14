@@ -137,15 +137,12 @@ def audit(
     before: dict[str, Any] | None = None, after: dict[str, Any] | None = None, reason: str = "", details: str = "",
 ) -> None:
     """One line of the activity log: who, when (the time stamp), what, from which value to which, and why."""
-    def dump(value: dict[str, Any] | None) -> str:
-        return "" if value is None else json.dumps(value, ensure_ascii=False, default=str, sort_keys=True)
+    from app import activity
 
-    session.add(FeeAuditLog(
-        at=datetime.now(timezone.utc).replace(tzinfo=None),  # to the microsecond, so the order of actions is always clear
-        actor_id=actor.account_id, actor_name=actor.name[:80], action=action, entity_id=str(entity_id),
-        details=(details or f"{entity_type} {reason}".strip())[:1000], entity_type=entity_type,
-        before_json=dump(before), after_json=dump(after), reason=reason[:300],
-    ))
+    activity.record(
+        session, actor_id=actor.account_id, actor_name=actor.name, domain="finance", action=action, entity_type=entity_type, entity_id=entity_id,
+        before=before, after=after, reason=reason, details=details,
+    )
 
 
 # ---- movements ---------------------------------------------------------------------------------------------------------------------
