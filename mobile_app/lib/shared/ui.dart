@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -17,9 +18,11 @@ const brandAccent = Color(0xFFE8A33D);
 const _ink = Color(0xFF1B2533);
 const _line = Color(0xFFE3E9F0);
 
-ThemeData buildTheme() {
+ThemeData buildTheme([String lang = 'ar']) {
   final scheme = ColorScheme.fromSeed(seedColor: brandBlue, primary: brandBlue, secondary: brandAccent, surface: Colors.white);
-  final base = ThemeData(colorScheme: scheme, useMaterial3: true, fontFamily: 'Tajawal');
+  final arabic = lang == 'ar';
+  final family = arabic ? 'Tajawal' : 'Inter';
+  final base = ThemeData(colorScheme: scheme, useMaterial3: true, fontFamily: family, fontFamilyFallback: [arabic ? 'Inter' : 'Tajawal']);
   return base.copyWith(
     scaffoldBackgroundColor: const Color(0xFFF4F7FB),
     textTheme: base.textTheme.apply(bodyColor: _ink, displayColor: _ink),
@@ -29,17 +32,18 @@ ThemeData buildTheme() {
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
-      titleTextStyle: TextStyle(fontFamily: 'Tajawal', fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(24))),
+      titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white),
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 8,
       shadowColor: const Color(0x33000000),
-      height: 68,
+      height: 72,
       indicatorColor: brandSoft,
       iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(color: s.contains(WidgetState.selected) ? brandBlue : const Color(0xFF7A8798), size: 26)),
-      labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(fontFamily: 'Tajawal', fontSize: 12, fontWeight: s.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500, color: s.contains(WidgetState.selected) ? brandBlue : const Color(0xFF7A8798))),
+      labelTextStyle: WidgetStateProperty.resolveWith((s) => TextStyle(fontSize: 12, fontWeight: s.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500, color: s.contains(WidgetState.selected) ? brandBlue : const Color(0xFF7A8798))),
     ),
     cardTheme: CardThemeData(
       color: Colors.white,
@@ -53,7 +57,7 @@ ThemeData buildTheme() {
       backgroundColor: brandSoft,
       side: BorderSide.none,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      labelStyle: const TextStyle(fontFamily: 'Tajawal', color: brandBlue, fontWeight: FontWeight.w500),
+      labelStyle: const TextStyle(color: brandBlue, fontWeight: FontWeight.w500),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -66,7 +70,7 @@ ThemeData buildTheme() {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size.fromHeight(52),
-        textStyle: const TextStyle(fontFamily: 'Tajawal', fontSize: 16, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
@@ -74,7 +78,7 @@ ThemeData buildTheme() {
       style: OutlinedButton.styleFrom(
         foregroundColor: brandBlue,
         side: const BorderSide(color: brandBlue),
-        textStyle: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     ),
@@ -253,34 +257,127 @@ class BarTitle extends StatelessWidget {
       ]);
 }
 
-/// The welcome card at the top of the home pages.
+/// A date written out for the reader ("Saturday, 14 November"), in the language of the app.
+String longDate(BuildContext context, DateTime d) {
+  try {
+    return DateFormat.MMMMEEEEd(Localizations.localeOf(context).languageCode).format(d);
+  } catch (_) {
+    return formatDate(d);
+  }
+}
+
+/// The first letters of a user name, for the round avatar.
+String initialsOf(String name) {
+  final parts = name.trim().split(RegExp(r'[\s._-]+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+/// The round avatar with initials (blue on soft blue; gold only for the signed-in user's own avatar).
+class AvatarInitials extends StatelessWidget {
+  const AvatarInitials(this.name, {super.key, this.size = 48, this.own = false});
+  final String name;
+  final double size;
+  final bool own;
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: own ? brandAccent : brandSoft, shape: BoxShape.circle),
+        child: Text(initialsOf(name), style: TextStyle(fontSize: size * 0.36, fontWeight: FontWeight.w800, color: brandBlue)),
+      );
+}
+
+String statusLabel(S s, String status) {
+  switch (status) {
+    case 'draft':
+      return s.get('draft');
+    case 'submitted':
+      return s.get('submitted');
+    case 'rejected':
+      return s.get('returned');
+    case 'published':
+      return s.get('published');
+    default:
+      return status;
+  }
+}
+
+/// The colour of a report status: draft grey, submitted orange, published green, returned red.
+Color statusColor(String status) {
+  switch (status) {
+    case 'published':
+      return const Color(0xFF1E7A45);
+    case 'submitted':
+      return const Color(0xFF8A5200);
+    case 'rejected':
+      return const Color(0xFFB3402F);
+    default:
+      return const Color(0xFF42536A);
+  }
+}
+
+Color statusBackground(String status) {
+  switch (status) {
+    case 'published':
+      return const Color(0xFFE4F4EA);
+    case 'submitted':
+      return const Color(0xFFFDF1DD);
+    case 'rejected':
+      return const Color(0xFFFCE9E6);
+    default:
+      return const Color(0xFFEEF2F6);
+  }
+}
+
+/// The same small coloured pill for a report status everywhere.
+class StatusPill extends StatelessWidget {
+  const StatusPill(this.status, {super.key});
+  final String status;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: statusBackground(status), borderRadius: BorderRadius.circular(999)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 6, height: 6, decoration: BoxDecoration(color: statusColor(status), shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Text(statusLabel(S.of(context), status), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: statusColor(status))),
+        ]),
+      );
+}
+
+/// The welcome card at the top of the home pages: avatar, today's date, greeting.
 class HeroCard extends StatelessWidget {
   const HeroCard({super.key, required this.title, this.subtitle});
   final String title;
   final String? subtitle;
   @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          gradient: const LinearGradient(colors: [brandBlue, brandDeep], begin: Alignment.topRight, end: Alignment.bottomLeft),
-          boxShadow: const [BoxShadow(color: Color(0x2916406F), blurRadius: 18, offset: Offset(0, 8))],
-        ),
+  Widget build(BuildContext context) {
+    final name = SessionScope.of(context).username ?? '';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
         child: Row(children: [
+          AvatarInitials(name, size: 54, own: true),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700, height: 1.3)),
-              if (subtitle != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle!, style: const TextStyle(color: Color(0xCCFFFFFF), fontSize: 14))),
+              Text(longDate(context, DateTime.now()), style: const TextStyle(fontSize: 13, color: Color(0xFF6A7686))),
+              const SizedBox(height: 2),
+              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, height: 1.25)),
+              if (subtitle != null) Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle!, style: const TextStyle(fontSize: 13.5, color: Color(0xFF5B6878)))),
             ]),
           ),
-          const SizedBox(width: 12),
-          const LogoPlate(height: 54),
         ]),
-      );
+      ),
+    );
+  }
 }
 
-/// A small number card (children, unread messages, ...) that opens a tab.
+/// A number card (children, to review, unread ...) that opens its page. Hover and focus are visible on Windows.
 class StatTile extends StatelessWidget {
   const StatTile({super.key, required this.icon, required this.value, required this.label, required this.onTap, this.color = brandBlue});
   final IconData icon;
@@ -292,24 +389,39 @@ class StatTile extends StatelessWidget {
   Widget build(BuildContext context) => Card(
         child: InkWell(
           onTap: onTap,
+          hoverColor: color.withValues(alpha: 0.05),
           child: Padding(
             padding: const EdgeInsets.all(14),
-            child: Row(children: [
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: color, size: 22),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, height: 1.1)),
-                  Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
-                ]),
-              ),
+              const SizedBox(height: 12),
+              Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, height: 1.1, letterSpacing: -0.5)),
+              const SizedBox(height: 2),
+              Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Color(0xFF5B6878))),
             ]),
           ),
         ),
+      );
+}
+
+/// A wide button for the one thing most often done on a home page ("New report", "New section").
+class QuickAction extends StatelessWidget {
+  const QuickAction({super.key, required this.icon, required this.label, required this.onTap, this.primary = false});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 52,
+        child: primary
+            ? FilledButton.icon(onPressed: onTap, icon: Icon(icon, size: 20), label: Text(label), style: FilledButton.styleFrom(minimumSize: const Size(0, 52)))
+            : OutlinedButton.icon(onPressed: onTap, icon: Icon(icon, size: 20), label: Text(label), style: OutlinedButton.styleFrom(minimumSize: const Size(0, 52))),
       );
 }
 
@@ -318,12 +430,8 @@ class SectionTitle extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 20, 4, 6),
-        child: Row(children: [
-          Container(width: 4, height: 20, decoration: BoxDecoration(color: brandAccent, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(width: 8),
-          Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: brandBlue)),
-        ]),
+        padding: const EdgeInsets.fromLTRB(4, 22, 4, 8),
+        child: Text(text, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
       );
 }
 

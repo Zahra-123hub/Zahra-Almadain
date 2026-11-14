@@ -10,7 +10,7 @@ import '../teachers/teacher_pages.dart';
 // ---- home --------------------------------------------------------------------------------------------------------------------
 class ManagementHome extends StatelessWidget {
   const ManagementHome({super.key, required this.goTo});
-  final void Function(int) goTo;
+  final void Function(String) goTo;
 
   @override
   Widget build(BuildContext context) {
@@ -25,20 +25,26 @@ class ManagementHome extends StatelessWidget {
       },
       builder: (context, d, reload) {
         final (reports, sections) = d;
-        Widget tile(IconData icon, int n, String label, int tab, [Color color = brandBlue]) =>
+        Widget tile(IconData icon, int n, String label, String tab, [Color color = brandBlue]) =>
             Expanded(child: StatTile(icon: icon, value: '$n', label: label, color: color, onTap: () => goTo(tab)));
         return RefreshIndicator(
           onRefresh: reload,
           child: ListView(padding: const EdgeInsets.all(16), children: [
             HeroCard(title: s.fill('welcome', session.username ?? '')),
             Row(children: [
-              tile(Icons.hourglass_bottom, reports.length, s.get('toReview'), 1, brandAccent),
+              tile(Icons.hourglass_bottom, reports.length, s.get('toReview'), 'review', const Color(0xFF8A5200)),
               const SizedBox(width: 10),
-              tile(Icons.school_outlined, sections.length, s.get('sectionsCount'), 2),
+              tile(Icons.school_outlined, sections.length, s.get('sectionsCount'), 'course'),
             ]),
             Row(children: [
-              tile(Icons.visibility_off_outlined, sections.where((p) => p.hidden).length, s.get('hiddenCount'), 2, const Color(0xFF6B7785)),
+              tile(Icons.visibility_off_outlined, sections.where((p) => p.hidden).length, s.get('hiddenCount'), 'course', const Color(0xFF6B7785)),
               const Expanded(child: SizedBox()),
+            ]),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: QuickAction(icon: Icons.fact_check_outlined, label: s.get('reviewReports'), primary: true, onTap: () => goTo('review'))),
+              const SizedBox(width: 10),
+              Expanded(child: QuickAction(icon: Icons.add, label: s.get('newSection'), onTap: () => goTo('course'))),
             ]),
           ]),
         );
@@ -71,7 +77,7 @@ class ReviewReports extends StatelessWidget {
                   leading: const CircleAvatar(backgroundColor: brandSoft, child: Icon(Icons.description_outlined, color: brandBlue)),
                   title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text([if (r.childName.isNotEmpty) r.childName, formatDate(r.createdAt)].join(' · ')),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const StatusPill('submitted'),
                   onTap: () async {
                     final done = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => _ReviewPage(r)));
                     if (done == true) await reload();

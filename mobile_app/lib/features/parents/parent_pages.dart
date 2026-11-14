@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../design/tokens.dart';
 import '../../localization/strings.dart';
 import '../../models/models.dart';
 import '../../services/api.dart';
@@ -103,7 +104,7 @@ class PostCard extends StatelessWidget {
 // ---- home ------------------------------------------------------------------------------------------------------------------
 class ParentHome extends StatelessWidget {
   const ParentHome({super.key, required this.goTo});
-  final void Function(int) goTo;
+  final void Function(String) goTo;
 
   @override
   Widget build(BuildContext context) {
@@ -135,9 +136,9 @@ class ParentHome extends StatelessWidget {
         return ListView(padding: const EdgeInsets.all(16), children: [
           HeroCard(title: s.fill('welcome', session.username ?? '')),
           Row(children: [
-            Expanded(child: StatTile(icon: Icons.child_care, value: '${names.length}', label: s.get('myChildren'), onTap: () => goTo(1))),
+            Expanded(child: StatTile(icon: Icons.child_care, value: '${names.length}', label: s.get('myChildren'), onTap: () => goTo('children'))),
             const SizedBox(width: 10),
-            Expanded(child: StatTile(icon: Icons.notifications_active_outlined, value: '$unread', label: s.get('unread'), color: brandAccent, onTap: () => goTo(5))),
+            Expanded(child: StatTile(icon: Icons.notifications_active_outlined, value: '$unread', label: s.get('unread'), color: brandAccent, onTap: () => goTo('notifications'))),
           ]),
           SectionTitle(s.get('newReports')),
           if (reports.isEmpty) Padding(padding: const EdgeInsets.all(12), child: Text(s.get('noReports'))),
@@ -262,7 +263,6 @@ class ParentReports extends StatelessWidget {
 
 
 // ---- learning material shown like a course page (a section with a list of files) ----------------------------------------------
-const _courseTeal = Color(0xFF0E8FA6);
 
 IconData _fileIcon(String ext, bool image) {
   if (image) return Icons.image_outlined;
@@ -296,6 +296,27 @@ IconData _fileIcon(String ext, bool image) {
       return Icons.slideshow_outlined;
     default:
       return Icons.insert_drive_file_outlined;
+  }
+}
+
+/// Background and icon colour of a file type: PDF red, video blue, ZIP gold, image green, everything else blue-grey.
+(Color, Color) _fileTint(String ext, bool image) {
+  if (image) return (const Color(0xFFE4F4EA), const Color(0xFF1E7A45));
+  switch (ext) {
+    case 'pdf':
+      return (const Color(0xFFFCE9E6), const Color(0xFFC0392B));
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'webm':
+    case 'mkv':
+      return (const Color(0xFFE4EEF9), const Color(0xFF2F6DB5));
+    case 'zip':
+    case 'rar':
+    case '7z':
+      return (const Color(0xFFFDF1DD), const Color(0xFFB26E0B));
+    default:
+      return (const Color(0xFFEAF1F8), const Color(0xFF16406F));
   }
 }
 
@@ -333,7 +354,7 @@ class _MaterialSectionState extends State<MaterialSection> {
                 width: 44,
                 height: 44,
                 decoration: const BoxDecoration(color: Color(0xFFE9ECEF), shape: BoxShape.circle),
-                child: Icon(_open ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up, size: 28, color: const Color(0xFF1B2533)),
+                child: AnimatedRotation(turns: _open ? 0 : 0.5, duration: Dur.normal, child: const Icon(Icons.keyboard_arrow_down, size: 28, color: Color(0xFF1B2533))),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -347,7 +368,10 @@ class _MaterialSectionState extends State<MaterialSection> {
             ]),
           ),
         ),
-        if (_open) ...[
+        AnimatedSize(
+          duration: Dur.normal,
+          alignment: Alignment.topCenter,
+          child: _open ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (post.body.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text(post.body, style: TextStyle(color: Colors.grey.shade700, height: 1.5))),
           for (var i = 0; i < post.files.length; i++) ...[
             Divider(height: 1, indent: 16, endIndent: 16, color: Colors.grey.shade300),
@@ -361,7 +385,12 @@ class _MaterialSectionState extends State<MaterialSection> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                   child: Row(children: [
-                    Icon(_fileIcon(ext, f.isImage), color: _courseTeal, size: 30),
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(color: _fileTint(ext, f.isImage).$1, borderRadius: BorderRadius.circular(12)),
+                      child: Icon(_fileIcon(ext, f.isImage), color: _fileTint(ext, f.isImage).$2, size: 23),
+                    ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Text.rich(
@@ -380,7 +409,8 @@ class _MaterialSectionState extends State<MaterialSection> {
           if (post.files.isEmpty && post.body.isEmpty) const SizedBox(height: 8),
           if (widget.footer != null) widget.footer!,
           const SizedBox(height: 4),
-        ],
+        ]) : const SizedBox(width: double.infinity),
+        ),
       ]),
     );
   }
