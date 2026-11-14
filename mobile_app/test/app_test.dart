@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -55,6 +56,35 @@ void main() {
         'files': [{'id': 'f', 'filename': 'a.png', 'media_type': 'image/png', 'size': 10}]
       });
       expect(p.files.single.isImage, isTrue);
+    });
+  });
+
+  group('roles', () {
+    setUpAll(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+        (call) async => call.method == 'read' ? 'abc' : null,
+      );
+    });
+
+    test('a manager who is also a teacher and a parent may open three areas, and the last one is remembered', () async {
+      Session make() => Session(ApiClient(client: MockClient((_) async => json({'id': 'a1', 'username': 'x', 'roles': ['parent', 'teacher', 'manager']}))))..api.token = null;
+      final session = make();
+      await session.start();
+      expect(session.areas, [Area.management, Area.teacher, Area.parent]);
+      expect(session.area, Area.management);
+      await session.setArea(Area.parent);
+      final again = make();
+      await again.start();
+      expect(again.area, Area.parent);
+    });
+
+    test('admin and accounting accounts have no area in the app', () async {
+      final session = Session(ApiClient(client: MockClient((_) async => json({'id': 'a1', 'username': 'x', 'roles': ['admin', 'accountant']}))))..api.token = 'abc';
+      await session.start();
+      expect(session.areas, isEmpty);
+      expect(session.hasMobileArea, isFalse);
     });
   });
 
@@ -243,6 +273,101 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
       await tester.pumpAndSettle();
       expect(calls.last, 'DELETE /api/platform/manager/materials/s1/files/f1');
+    });
+
+    testWidgets('the management returns a report with a reason and sees the child and the files', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final calls = <String>[];
+      Object? sent;
+      final report = {'id': 'r1', 'child_id': 'c1', 'child_name': 'Amal', 'title': 'Happy day', 'body': 'Played', 'activities': '', 'meals': '', 'status': 'submitted', 'review_note': ''};
+      final session = Session(ApiClient(client: MockClient((r) async {
+        if (r.method == 'PATCH') {
+          calls.add('PATCH ${r.url.path}');
+          sent = jsonDecode(r.body);
+          return json({...report, 'status': 'rejected'});
+        }
+        if (r.url.path.endsWith('/attachments')) return json([{'id': 'f1', 'filename': 'photo.pdf', 'media_type': 'application/pdf', 'size': 20}]);
+        return json([report]);
+      })));
+      await tester.pumpWidget(MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+        builder: (context, child) => SessionScope(session: session, child: child!),
+        home: const Scaffold(body: ReviewReports()),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Amal'), findsOneWidget);
+      await tester.tap(find.text('Happy day'));
+      await tester.pumpAndSettle();
+      expect(find.text('photo.pdf'), findsOneWidget);
+      await tester.tap(find.text('Return to teacher'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Please add the meals.');
+      await tester.tap(find.widgetWithText(FilledButton, 'Return to teacher'));
+      await tester.pumpAndSettle();
+      expect(calls, ['PATCH /api/platform/review/reports/r1']);
+      expect(sent, {'status': 'rejected', 'note': 'Please add the meals.'});
+    });
+
+    testWidgets('a parent sees the attachments of a published report', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final paths = <String>[];
+      final session = Session(ApiClient(client: MockClient((r) async {
+        paths.add(r.url.path);
+        return json([{'id': 'f1', 'filename': 'trip.pdf', 'media_type': 'application/pdf', 'size': 20}]);
+      })));
+      await tester.pumpWidget(MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+        home: SessionScope(session: session, child: Scaffold(body: ReportCard(Report(id: 'r1', childId: 'c1', title: 'T', body: 'B', activities: '', meals: '', status: 'published'), files: 'parent'))),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('trip.pdf'), findsOneWidget);
+      expect(paths, ['/api/platform/children/c1/reports/r1/attachments']);
+    });
+
+    testWidgets('a returned report shows the reason and leaving with unsaved text asks first', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json([]))));
+      final report = Report(id: 'r1', childId: 'c1', title: 'T', body: 'B', activities: '', meals: '', status: 'rejected', reviewNote: 'Please add the meals.');
+      await tester.pumpWidget(MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+        builder: (context, child) => SessionScope(session: session, child: child!),
+        home: Builder(builder: (context) => Scaffold(body: TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ReportEditor(report: report, children: [Child('c1', 'Amal')]))), child: const Text('open')))),
+      ));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('Please add the meals.'), findsOneWidget);
+      // nothing typed yet: leaving is free
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportEditor), findsNothing);
+      // typed text: the app asks, "Cancel" stays, "Leave" goes
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'New title');
+      await tester.pump();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('You have unsaved changes. Leave anyway?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportEditor), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Leave'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportEditor), findsNothing);
     });
 
     testWidgets('German login is left-to-right', (tester) async {

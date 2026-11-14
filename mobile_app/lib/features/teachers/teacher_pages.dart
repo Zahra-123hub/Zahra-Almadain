@@ -12,9 +12,6 @@ import '../../shared/ui.dart';
 import '../common/common_pages.dart';
 import '../parents/parent_pages.dart';
 
-List<T> _list<T>(dynamic data, T Function(Map<String, dynamic>) make) =>
-    (data as List).map((e) => make(e as Map<String, dynamic>)).toList();
-
 String categoryOf(String filename) {
   final ext = filename.contains('.') ? filename.split('.').last.toLowerCase() : '';
   if (const ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(ext)) return 'image';
@@ -115,8 +112,8 @@ class TeacherHome extends StatelessWidget {
         final notices = await api.getCached('/api/platform/announcements');
         return Cached({
           'children': (children.data as List).length,
-          'reports': _list(reports.data, Report.fromJson),
-          'notices': _list(notices.data, Notice.fromJson),
+          'reports': parseList(reports.data, Report.fromJson),
+          'notices': parseList(notices.data, Notice.fromJson),
         }, fromCache: children.fromCache || reports.fromCache || notices.fromCache);
       },
       builder: (context, d, reload) {
@@ -146,7 +143,7 @@ class TeacherChildren extends StatelessWidget {
     return Loader<List<Child>>(
       load: () async {
         final c = await api.getCached('/api/platform/teacher/children');
-        return Cached(_list(c.data, Child.fromJson), fromCache: c.fromCache);
+        return Cached(parseList(c.data, Child.fromJson), fromCache: c.fromCache);
       },
       builder: (context, children, reload) {
         if (children.isEmpty) return EmptyNote(s.get('noChildren'));
@@ -180,7 +177,7 @@ class TeacherReports extends StatelessWidget {
       load: () async {
         final reports = await api.getCached('/api/platform/teacher/reports');
         final children = await api.getCached('/api/platform/teacher/children');
-        return Cached((_list(reports.data, Report.fromJson), _list(children.data, Child.fromJson)), fromCache: reports.fromCache || children.fromCache);
+        return Cached((parseList(reports.data, Report.fromJson), parseList(children.data, Child.fromJson)), fromCache: reports.fromCache || children.fromCache);
       },
       builder: (context, d, reload) {
         final (reports, children) = d;
@@ -245,6 +242,12 @@ class _ReportEditorState extends State<ReportEditor> {
   List<FileInfo> _existing = [];
   bool _busy = false;
   String? _error;
+  bool _dirty = false;
+
+  /// The first change makes leaving the screen ask for a confirmation.
+  void _touch() {
+    if (!_dirty) setState(() => _dirty = true);
+  }
 
   String get _draftKey => 'draft:report:${widget.report?.id ?? 'new'}';
 
@@ -258,7 +261,7 @@ class _ReportEditorState extends State<ReportEditor> {
       _activities.text = r.activities;
       _meals.text = r.meals;
       _childId = r.childId;
-      _loadExisting();
+      Future.microtask(_loadExisting);
     } else {
       _childId = widget.presetChild?.id;
     }
@@ -291,7 +294,7 @@ class _ReportEditorState extends State<ReportEditor> {
     try {
       final api = SessionScope.of(context).api;
       final data = await api.get('/api/platform/teacher/reports/${widget.report!.id}/attachments');
-      if (mounted) setState(() => _existing = _list(data, FileInfo.fromJson));
+      if (mounted) setState(() => _existing = parseList(data, FileInfo.fromJson));
     } catch (_) {}
   }
 
@@ -339,6 +342,7 @@ class _ReportEditorState extends State<ReportEditor> {
       await prefs.remove(_draftKey);
       if (!mounted) return;
       toast(context, s.get('saved'));
+      _dirty = false;
       Navigator.pop(context, true);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -354,11 +358,34 @@ class _ReportEditorState extends State<ReportEditor> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final api = SessionScope.of(context).api;
-    return Scaffold(
+    final note = widget.report?.status == 'rejected' ? widget.report!.reviewNote : '';
+    return PopScope(
+      canPop: !_dirty || _busy,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        if (await confirmLeave(context)) navigator.pop();
+      },
+      child: Scaffold(
       appBar: AppBar(title: Text(widget.report == null ? s.get('newReport') : s.get('editReport'))),
       body: AbsorbPointer(
         absorbing: _busy,
         child: ListView(padding: const EdgeInsets.all(16), children: [
+          if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+          if (note.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(12)),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.reply_outlined, color: Color(0xFFD25B5B)),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(s.get('reviewNote'), style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFD25B5B))),
+                  Text(note),
+                ])),
+              ]),
+            ),
           DropdownButtonFormField<String>(
             initialValue: _childId,
             decoration: InputDecoration(labelText: s.get('child')),
@@ -366,14 +393,14 @@ class _ReportEditorState extends State<ReportEditor> {
             onChanged: widget.report == null ? (v) => setState(() => _childId = v) : null,
           ),
           const SizedBox(height: 12),
-          TextField(controller: _title, maxLength: 120, onChanged: (_) => _keepDraft(), decoration: InputDecoration(labelText: s.get('title'))),
-          TextField(controller: _body, maxLength: 3000, minLines: 4, maxLines: 10, onChanged: (_) => _keepDraft(), decoration: InputDecoration(labelText: s.get('text'))),
+          TextField(controller: _title, maxLength: 120, onChanged: (_) { _touch(); _keepDraft(); }, decoration: InputDecoration(labelText: s.get('title'))),
+          TextField(controller: _body, maxLength: 3000, minLines: 4, maxLines: 10, onChanged: (_) { _touch(); _keepDraft(); }, decoration: InputDecoration(labelText: s.get('text'))),
           const SizedBox(height: 8),
-          TextField(controller: _activities, maxLength: 1000, minLines: 2, maxLines: 5, decoration: InputDecoration(labelText: s.get('activities'))),
-          TextField(controller: _meals, maxLength: 500, minLines: 2, maxLines: 4, decoration: InputDecoration(labelText: s.get('meals'))),
+          TextField(controller: _activities, maxLength: 1000, minLines: 2, maxLines: 5, onChanged: (_) => _touch(), decoration: InputDecoration(labelText: s.get('activities'))),
+          TextField(controller: _meals, maxLength: 500, minLines: 2, maxLines: 4, onChanged: (_) => _touch(), decoration: InputDecoration(labelText: s.get('meals'))),
           SectionTitle(s.get('attachments')),
           for (final f in _existing) FileTile(file: f, path: '/api/platform/teacher/content/${f.id}/download'),
-          AttachmentPicker(files: _files, max: 5 - _existing.length, onChanged: (v) => setState(() => _files = v)),
+          AttachmentPicker(files: _files, max: 5 - _existing.length, onChanged: (v) => setState(() { _files = v; _dirty = true; })),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
           const SizedBox(height: 16),
           FilledButton.icon(onPressed: () => _save(), icon: const Icon(Icons.save_outlined), label: Text(s.get('saveDraft'))),
@@ -384,6 +411,7 @@ class _ReportEditorState extends State<ReportEditor> {
           if (_busy) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
           SizedBox(height: api.token == null ? 0 : 24),
         ]),
+      ),
       ),
     );
   }
@@ -400,7 +428,7 @@ class TeacherPosts extends StatelessWidget {
       load: () async {
         final posts = await api.getCached('/api/platform/teacher/posts');
         final children = await api.getCached('/api/platform/teacher/children');
-        return Cached((_list(posts.data, Post.fromJson), _list(children.data, Child.fromJson)), fromCache: posts.fromCache || children.fromCache);
+        return Cached((parseList(posts.data, Post.fromJson), parseList(children.data, Child.fromJson)), fromCache: posts.fromCache || children.fromCache);
       },
       builder: (context, d, reload) {
         final (posts, children) = d;
@@ -615,9 +643,9 @@ class _TeacherMaterialsState extends State<TeacherMaterials> {
         final storage = await api.getCached('/api/platform/teacher/storage');
         final posts = await api.getCached('/api/platform/teacher/posts');
         final children = await api.getCached('/api/platform/teacher/children');
-        final mine = _list(items.data, MaterialFile.fromJson).where((m) => m.category != 'report_attachment').toList();
-        final shared = _list(posts.data, Post.fromJson).where((p) => p.kind == 'material').toList();
-        return Cached((mine, storage.data as Map<String, dynamic>, shared, _list(children.data, Child.fromJson)),
+        final mine = parseList(items.data, MaterialFile.fromJson).where((m) => m.category != 'report_attachment').toList();
+        final shared = parseList(posts.data, Post.fromJson).where((p) => p.kind == 'material').toList();
+        return Cached((mine, storage.data as Map<String, dynamic>, shared, parseList(children.data, Child.fromJson)),
             fromCache: items.fromCache || storage.fromCache || posts.fromCache || children.fromCache);
       },
       builder: (context, d, reload) {

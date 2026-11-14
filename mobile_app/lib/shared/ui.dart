@@ -341,6 +341,95 @@ Future<void> openPrivateFile(BuildContext context, ApiClient api, String path, S
   }
 }
 
+/// Asks before something is deleted.
+Future<bool> confirmDelete(BuildContext context) async {
+  final s = S.of(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      content: Text(s.get('confirmDelete')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))),
+        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, true), child: Text(s.get('delete'))),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+/// A small dialog with one text field. Returns the typed text, or null when cancelled.
+Future<String?> askText(BuildContext context, String title, {String initial = '', int maxLength = 180, int maxLines = 1, String confirm = 'save'}) {
+  final s = S.of(context);
+  final controller = TextEditingController(text: initial);
+  return showDialog<String>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(title),
+      content: TextField(controller: controller, autofocus: true, maxLength: maxLength, maxLines: maxLines, minLines: 1),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(s.get('cancel'))),
+        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(s.get(confirm))),
+      ],
+    ),
+  );
+}
+
+/// Asks whether unsaved work may be thrown away.
+Future<bool> confirmLeave(BuildContext context) async {
+  final s = S.of(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      content: Text(s.get('discardChanges')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))),
+        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, true), child: Text(s.get('leave'))),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+/// The attachments of one report, loaded from the server (the list and the files depend on who is looking).
+class ReportFiles extends StatefulWidget {
+  const ReportFiles({super.key, required this.listPath, required this.filePath});
+  final String listPath;
+  final String Function(FileInfo) filePath;
+  @override
+  State<ReportFiles> createState() => _ReportFilesState();
+}
+
+class _ReportFilesState extends State<ReportFiles> {
+  List<FileInfo> _files = [];
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_load); // the session is looked up after the first build, not inside initState
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await SessionScope.of(context).api.get(widget.listPath);
+      if (mounted) setState(() => _files = parseList(data, FileInfo.fromJson));
+    } catch (_) {
+      // the report itself stays readable without its files
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_files.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(S.of(context).get('attachments'), style: const TextStyle(fontWeight: FontWeight.w700, color: brandBlue)),
+        for (final f in _files) FileTile(file: f, path: widget.filePath(f)),
+      ]),
+    );
+  }
+}
+
 class FileTile extends StatelessWidget {
   const FileTile({super.key, required this.file, required this.path});
   final FileInfo file;
@@ -348,10 +437,13 @@ class FileTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final api = SessionScope.of(context).api;
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      decoration: BoxDecoration(color: brandSoft, borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Material(
+        color: brandSoft,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
         dense: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         leading: Icon(file.isImage ? Icons.image_outlined : Icons.attach_file, color: brandBlue),
@@ -359,6 +451,7 @@ class FileTile extends StatelessWidget {
         subtitle: Text(formatSize(file.size)),
         trailing: const Icon(Icons.download_outlined, color: brandBlue),
         onTap: () => openPrivateFile(context, api, path, file.filename),
+        ),
       ),
     );
   }

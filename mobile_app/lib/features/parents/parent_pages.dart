@@ -6,14 +6,13 @@ import '../../services/api.dart';
 import '../../shared/ui.dart';
 import '../common/common_pages.dart';
 
-List<T> _list<T>(dynamic data, T Function(Map<String, dynamic>) make) =>
-    (data as List).map((e) => make(e as Map<String, dynamic>)).toList();
-
 // ---- shared small views -------------------------------------------------------------------------------------------------
 class ReportCard extends StatelessWidget {
-  const ReportCard(this.report, {super.key, this.childName});
+  const ReportCard(this.report, {super.key, this.childName, this.files});
   final Report report;
   final String? childName;
+  /// Who looks decides which attachments endpoint is used: 'parent' (own child's published report) or 'review' (management).
+  final String? files;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +50,17 @@ class ReportCard extends StatelessWidget {
           Text(report.body, style: const TextStyle(height: 1.55)),
           if (report.activities.isNotEmpty) block(Icons.palette_outlined, s.get('activities'), report.activities),
           if (report.meals.isNotEmpty) block(Icons.restaurant_outlined, s.get('meals'), report.meals),
+          if (report.status == 'rejected' && report.reviewNote.isNotEmpty) block(Icons.reply_outlined, s.get('reviewNote'), report.reviewNote),
+          if (files == 'parent')
+            ReportFiles(
+              listPath: '/api/platform/children/${report.childId}/reports/${report.id}/attachments',
+              filePath: (f) => '/api/platform/children/${report.childId}/reports/${report.id}/files/${f.id}',
+            ),
+          if (files == 'review')
+            ReportFiles(
+              listPath: '/api/platform/review/reports/${report.id}/attachments',
+              filePath: (f) => '/api/platform/review/reports/${report.id}/files/${f.id}',
+            ),
         ]),
       ),
     );
@@ -108,14 +118,14 @@ class ParentHome extends StatelessWidget {
         final reports = <Report>[];
         var cached = children.fromCache || notices.fromCache || notes.fromCache;
         final names = <String, String>{};
-        for (final c in _list(children.data, Child.fromJson)) {
+        for (final c in parseList(children.data, Child.fromJson)) {
           names[c.id] = c.name;
           final r = await api.getCached('/api/platform/children/${c.id}/reports');
           cached = cached || r.fromCache;
-          reports.addAll(_list(r.data, Report.fromJson).where((x) => x.status == 'published'));
+          reports.addAll(parseList(r.data, Report.fromJson).where((x) => x.status == 'published'));
         }
         reports.sort((a, b) => (b.day ?? DateTime(0)).compareTo(a.day ?? DateTime(0)));
-        return Cached({'children': names, 'notices': _list(notices.data, Notice.fromJson), 'unread': (notes.data as Map)['unread'] ?? 0, 'reports': reports}, fromCache: cached);
+        return Cached({'children': names, 'notices': parseList(notices.data, Notice.fromJson), 'unread': (notes.data as Map)['unread'] ?? 0, 'reports': reports}, fromCache: cached);
       },
       builder: (context, d, reload) {
         final names = d['children'] as Map<String, String>;
@@ -131,7 +141,7 @@ class ParentHome extends StatelessWidget {
           ]),
           SectionTitle(s.get('newReports')),
           if (reports.isEmpty) Padding(padding: const EdgeInsets.all(12), child: Text(s.get('noReports'))),
-          for (final r in reports) ReportCard(r, childName: names[r.childId]),
+          for (final r in reports) ReportCard(r, childName: names[r.childId], files: 'parent'),
           if (notices.isNotEmpty) SectionTitle(s.get('notices')),
           NoticeCards(notices),
         ]);
@@ -155,7 +165,7 @@ class _ParentChildrenState extends State<ParentChildren> {
     return Loader<List<Child>>(
       load: () async {
         final c = await api.getCached('/api/platform/children');
-        return Cached(_list(c.data, Child.fromJson), fromCache: c.fromCache);
+        return Cached(parseList(c.data, Child.fromJson), fromCache: c.fromCache);
       },
       builder: (context, children, reload) {
         if (children.isEmpty) return EmptyNote(s.get('noChildren'));
@@ -209,12 +219,12 @@ class _ChildReportsPageState extends State<ChildReportsPage> {
         load: () async {
           final c = await api.getCached('/api/platform/children/${widget.child.id}/reports');
           // only what the management / the teacher released; the server filters as well
-          return Cached(_list(c.data, Report.fromJson).where((r) => r.status == 'published').toList(), fromCache: c.fromCache);
+          return Cached(parseList(c.data, Report.fromJson).where((r) => r.status == 'published').toList(), fromCache: c.fromCache);
         },
         builder: (context, reports, reload) {
           final shown = _day == null ? reports : reports.where((r) => r.day != null && formatDate(r.day) == formatDate(_day)).toList();
           if (shown.isEmpty) return EmptyNote(s.get('noReports'));
-          return ListView(padding: const EdgeInsets.all(12), children: [if (_day != null) Chip(label: Text(formatDate(_day))), for (final r in shown) ReportCard(r)]);
+          return ListView(padding: const EdgeInsets.all(12), children: [if (_day != null) Chip(label: Text(formatDate(_day))), for (final r in shown) ReportCard(r, files: 'parent')]);
         },
       ),
     );
@@ -232,10 +242,10 @@ class ParentReports extends StatelessWidget {
         final children = await api.getCached('/api/platform/children');
         var cached = children.fromCache;
         final all = <(Report, String)>[];
-        for (final c in _list(children.data, Child.fromJson)) {
+        for (final c in parseList(children.data, Child.fromJson)) {
           final r = await api.getCached('/api/platform/children/${c.id}/reports');
           cached = cached || r.fromCache;
-          for (final report in _list(r.data, Report.fromJson).where((x) => x.status == 'published')) {
+          for (final report in parseList(r.data, Report.fromJson).where((x) => x.status == 'published')) {
             all.add((report, c.name));
           }
         }
@@ -244,7 +254,7 @@ class ParentReports extends StatelessWidget {
       },
       builder: (context, items, reload) {
         if (items.isEmpty) return EmptyNote(s.get('noReports'));
-        return ListView(padding: const EdgeInsets.all(12), children: [for (final i in items) ReportCard(i.$1, childName: i.$2)]);
+        return ListView(padding: const EdgeInsets.all(12), children: [for (final i in items) ReportCard(i.$1, childName: i.$2, files: 'parent')]);
       },
     );
   }
@@ -386,7 +396,7 @@ class ParentLearning extends StatelessWidget {
     return Loader<List<Post>>(
       load: () async {
         final posts = await api.getCached('/api/platform/parent/posts');
-        return Cached(_list(posts.data, Post.fromJson).where((p) => p.kind == 'material').toList(), fromCache: posts.fromCache);
+        return Cached(parseList(posts.data, Post.fromJson).where((p) => p.kind == 'material').toList(), fromCache: posts.fromCache);
       },
       builder: (context, items, reload) {
         if (items.isEmpty) return EmptyNote(s.get('noLearning'));
@@ -409,7 +419,7 @@ class ParentPosts extends StatelessWidget {
       load: () async {
         final posts = await api.getCached('/api/platform/parent/posts');
         final notices = await api.getCached('/api/platform/announcements');
-        return Cached((_list(posts.data, Post.fromJson), _list(notices.data, Notice.fromJson)), fromCache: posts.fromCache || notices.fromCache);
+        return Cached((parseList(posts.data, Post.fromJson), parseList(notices.data, Notice.fromJson)), fromCache: posts.fromCache || notices.fromCache);
       },
       builder: (context, d, reload) {
         final (all, notices) = d;

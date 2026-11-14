@@ -69,6 +69,33 @@ class CommunityTests(ControlsBase):
         self.client.patch(P + "/review/reports/" + made["id"], headers=self.manager, json={"status": "rejected"})
         self.assertEqual(self.kinds(self.teacher), ["report_returned"])
 
+    def test_the_review_shows_child_names_files_and_the_reason_for_a_return(self):
+        made = self.client.post(P + "/teacher/reports", headers=self.teacher, json={
+            "child_id": self.amal, "title": "t", "body": "b"}).json()
+        up = self.client.post(P + "/teacher/content", headers=self.teacher, data={"category": "report_attachment", "report_id": made["id"]},
+                              files={"file": ("a.pdf", b"%PDF-1.4 a", "application/pdf")})
+        self.assertEqual(up.status_code, 201, up.text)
+        self.client.patch(P + "/teacher/reports/" + made["id"], headers=self.teacher, json={"title": "t", "body": "b", "submit_for_review": True})
+        queue = self.client.get(P + "/review/reports", headers=self.manager).json()
+        self.assertEqual([(r["child_name"], r["status"]) for r in queue], [("Amal", "submitted")])
+        files = self.client.get(f"{P}/review/reports/{made['id']}/attachments", headers=self.manager).json()
+        self.assertEqual([f["filename"] for f in files], ["a.pdf"])
+        self.assertEqual(self.client.get(f"{P}/review/reports/{made['id']}/files/{files[0]['id']}", headers=self.manager).status_code, 200)
+        self.assertEqual(self.client.get(f"{P}/review/reports/{made['id']}/attachments", headers=self.teacher).status_code, 403)
+        # returned with a reason the teacher can read; the family sees nothing yet
+        self.client.patch(P + "/review/reports/" + made["id"], headers=self.manager, json={"status": "rejected", "note": "Please add the meals."})
+        mine = self.client.get(P + "/teacher/reports", headers=self.teacher).json()
+        self.assertEqual((mine[0]["status"], mine[0]["review_note"]), ("rejected", "Please add the meals."))
+        self.assertEqual(self.client.get(f"{P}/children/{self.amal}/reports/{made['id']}/attachments", headers=self.parent).status_code, 404)
+        # sent again and published: the reason is cleared and the family may open the files, nobody else
+        self.client.patch(P + "/teacher/reports/" + made["id"], headers=self.teacher, json={"title": "t", "body": "b", "submit_for_review": True})
+        self.client.patch(P + "/review/reports/" + made["id"], headers=self.manager, json={"status": "published"})
+        self.assertEqual(self.client.get(P + "/teacher/reports", headers=self.teacher).json()[0]["review_note"], "")
+        seen = self.client.get(f"{P}/children/{self.amal}/reports/{made['id']}/attachments", headers=self.parent)
+        self.assertEqual([f["filename"] for f in seen.json()], ["a.pdf"])
+        self.assertEqual(self.client.get(f"{P}/children/{self.amal}/reports/{made['id']}/files/{seen.json()[0]['id']}", headers=self.parent).status_code, 200)
+        self.assertEqual(self.client.get(f"{P}/children/{self.amal}/reports/{made['id']}/attachments", headers=self.parent2).status_code, 404)
+
     def test_a_draft_notifies_nobody(self):
         self.client.post(P + "/teacher/reports", headers=self.teacher, json={"child_id": self.amal, "title": "t", "body": "b"})
         self.assertEqual(self.kinds(self.manager), [])

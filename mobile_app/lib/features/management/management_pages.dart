@@ -7,24 +7,6 @@ import '../../shared/ui.dart';
 import '../parents/parent_pages.dart';
 import '../teachers/teacher_pages.dart';
 
-List<T> _list<T>(dynamic data, T Function(Map<String, dynamic>) make) =>
-    (data as List).map((e) => make(e as Map<String, dynamic>)).toList();
-
-Future<bool> _confirm(BuildContext context) async {
-  final s = S.of(context);
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (_) => AlertDialog(
-      content: Text(s.get('confirmDelete')),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))),
-        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, true), child: Text(s.get('delete'))),
-      ],
-    ),
-  );
-  return ok == true;
-}
-
 // ---- home --------------------------------------------------------------------------------------------------------------------
 class ManagementHome extends StatelessWidget {
   const ManagementHome({super.key, required this.goTo});
@@ -37,9 +19,9 @@ class ManagementHome extends StatelessWidget {
     final api = session.api;
     return Loader<(List<Report>, List<Post>)>(
       load: () async {
-        final reports = await api.get('/api/platform/review/reports');
-        final sections = await api.get('/api/platform/manager/materials');
-        return Cached((_list(reports, Report.fromJson), _list(sections, Post.fromJson)));
+        final reports = await api.getCached('/api/platform/review/reports');
+        final sections = await api.getCached('/api/platform/manager/materials');
+        return Cached((parseList(reports.data, Report.fromJson), parseList(sections.data, Post.fromJson)), fromCache: reports.fromCache || sections.fromCache);
       },
       builder: (context, d, reload) {
         final (reports, sections) = d;
@@ -74,7 +56,10 @@ class ReviewReports extends StatelessWidget {
     final s = S.of(context);
     final api = SessionScope.of(context).api;
     return Loader<List<Report>>(
-      load: () async => Cached(_list(await api.get('/api/platform/review/reports'), Report.fromJson)),
+      load: () async {
+        final r = await api.getCached('/api/platform/review/reports');
+        return Cached(parseList(r.data, Report.fromJson), fromCache: r.fromCache);
+      },
       builder: (context, reports, reload) {
         if (reports.isEmpty) return EmptyNote(s.get('noReportsToReview'));
         return RefreshIndicator(
@@ -85,7 +70,7 @@ class ReviewReports extends StatelessWidget {
                 child: ListTile(
                   leading: const CircleAvatar(backgroundColor: brandSoft, child: Icon(Icons.description_outlined, color: brandBlue)),
                   title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(formatDate(r.createdAt)),
+                  subtitle: Text([if (r.childName.isNotEmpty) r.childName, formatDate(r.createdAt)].join(' · ')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     final done = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => _ReviewPage(r)));
@@ -113,9 +98,15 @@ class _ReviewPageState extends State<_ReviewPage> {
   Future<void> _decide(String status) async {
     final s = S.of(context);
     final api = SessionScope.of(context).api;
+    String note = '';
+    if (status == 'rejected') {
+      final typed = await askText(context, s.get('returnReport'), maxLength: 500, maxLines: 4, confirm: 'returnReport');
+      if (typed == null || !mounted) return;
+      note = typed;
+    }
     setState(() => _busy = true);
     try {
-      await api.patch('/api/platform/review/reports/${widget.report.id}', {'status': status});
+      await api.patch('/api/platform/review/reports/${widget.report.id}', {'status': status, if (note.isNotEmpty) 'note': note});
       if (!mounted) return;
       toast(context, s.get(status == 'published' ? 'reportPublished' : 'reportReturned'));
       Navigator.pop(context, true);
@@ -132,7 +123,8 @@ class _ReviewPageState extends State<_ReviewPage> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.report.title)),
       body: ListView(padding: const EdgeInsets.all(12), children: [
-        ReportCard(widget.report),
+        if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+        ReportCard(widget.report, childName: widget.report.childName.isEmpty ? null : widget.report.childName, files: 'review'),
         const SizedBox(height: 12),
         FilledButton.icon(onPressed: _busy ? null : () => _decide('published'), icon: const Icon(Icons.send), label: Text(s.get('publishReport'))),
         const SizedBox(height: 10),
@@ -153,7 +145,10 @@ class CourseEditor extends StatelessWidget {
     final s = S.of(context);
     final api = SessionScope.of(context).api;
     return Loader<List<Post>>(
-      load: () async => Cached(_list(await api.get('/api/platform/manager/materials'), Post.fromJson)),
+      load: () async {
+        final r = await api.getCached('/api/platform/manager/materials');
+        return Cached(parseList(r.data, Post.fromJson), fromCache: r.fromCache);
+      },
       builder: (context, sections, reload) {
         Future<void> run(Future<dynamic> Function() action) async {
           try {
@@ -171,7 +166,7 @@ class CourseEditor extends StatelessWidget {
         }
 
         Future<void> rename(Post p, FileInfo f) async {
-          final name = await _askText(context, s.get('renameFile'), f.filename);
+          final name = await askText(context, s.get('renameFile'), initial: f.filename);
           if (name == null || name.isEmpty || name == f.filename) return;
           await run(() => api.patch(_file(p, f), {'name': name}));
         }
@@ -214,7 +209,7 @@ class CourseEditor extends StatelessWidget {
                                 case 'add':
                                   await addFiles(p);
                                 case 'delete':
-                                  if (await _confirm(context)) await run(() => api.delete('/api/platform/manager/materials/${p.id}'));
+                                  if (await confirmDelete(context)) await run(() => api.delete('/api/platform/manager/materials/${p.id}'));
                               }
                             },
                             itemBuilder: (_) => [
@@ -232,7 +227,7 @@ class CourseEditor extends StatelessWidget {
                           onSelected: (v) async {
                             if (v == 'rename') {
                               await rename(p, f);
-                            } else if (v == 'delete' && await _confirm(context)) {
+                            } else if (v == 'delete' && await confirmDelete(context)) {
                               await run(() => api.delete(_file(p, f)));
                             }
                           },
@@ -255,22 +250,6 @@ class CourseEditor extends StatelessWidget {
 
   static PopupMenuItem<String> _item(String value, IconData icon, String label) =>
       PopupMenuItem(value: value, child: Row(children: [Icon(icon, size: 20), const SizedBox(width: 12), Flexible(child: Text(label))]));
-}
-
-Future<String?> _askText(BuildContext context, String title, String initial) {
-  final s = S.of(context);
-  final controller = TextEditingController(text: initial);
-  return showDialog<String>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: Text(title),
-      content: TextField(controller: controller, autofocus: true, maxLength: 180),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text(s.get('cancel'))),
-        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(s.get('save'))),
-      ],
-    ),
-  );
 }
 
 /// Picks files to add to an existing section.
@@ -344,6 +323,7 @@ class _SectionDialogState extends State<_SectionDialog> {
         width: 420,
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
             TextField(controller: _title, maxLength: 120, decoration: InputDecoration(labelText: s.get('sectionTitle'))),
             TextField(controller: _body, maxLines: 3, maxLength: 3000, decoration: InputDecoration(labelText: s.get('description'))),
             if (isNew) ...[
