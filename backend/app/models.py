@@ -186,6 +186,8 @@ class TeacherPost(Base):
     )
     scope: Mapped[str] = mapped_column(String(10))
     kind: Mapped[str] = mapped_column(String(10), default="post", server_default="post")
+    hidden: Mapped[bool] = mapped_column(default=False, server_default="false")
+    position: Mapped[int] = mapped_column(default=0, server_default="0")
     child_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True, nullable=True
     )

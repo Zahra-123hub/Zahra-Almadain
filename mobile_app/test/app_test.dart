@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zahra_app/features/auth/login_page.dart';
+import 'package:zahra_app/features/management/management_pages.dart';
 import 'package:zahra_app/features/parents/parent_pages.dart';
 import 'package:zahra_app/features/teachers/teacher_pages.dart';
 import 'package:zahra_app/main.dart';
@@ -203,6 +204,45 @@ void main() {
       await tester.tap(find.byType(Checkbox));
       await tester.pumpAndSettle();
       expect(find.textContaining('Für Eltern freigeben'), findsOneWidget);
+    });
+
+    testWidgets('the management edits learning material like a course', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final calls = <String>[];
+      final sections = [
+        {'id': 's1', 'scope': 'general', 'kind': 'material', 'hidden': false, 'child_name': '', 'title': 'Letters', 'body': '', 'author': 'M', 'files': [{'id': 'f1', 'filename': 'Alif.pdf', 'media_type': 'application/pdf', 'size': 10}]},
+        {'id': 's2', 'scope': 'general', 'kind': 'material', 'hidden': true, 'child_name': '', 'title': 'Numbers', 'body': '', 'author': 'M', 'files': []},
+      ];
+      final session = Session(ApiClient(client: MockClient((r) async {
+        if (r.method != 'GET') calls.add('${r.method} ${r.url.path}');
+        return r.method == 'DELETE' ? http.Response('', 204) : json(sections);
+      })));
+      await tester.pumpWidget(MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+        home: SessionScope(session: session, child: const Scaffold(body: CourseEditor())),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Letters'), findsOneWidget);
+      expect(find.text('Hidden from parents'), findsOneWidget);
+      expect(find.text('Add files'), findsWidgets);
+      // the hidden section is shown again from its menu
+      await tester.tap(find.byIcon(Icons.more_vert).at(2));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show to parents'));
+      await tester.pumpAndSettle();
+      expect(calls, ['PATCH /api/platform/manager/materials/s2']);
+      // a file is removed from its menu after a confirmation
+      await tester.tap(find.byIcon(Icons.more_vert).at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete file'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(calls.last, 'DELETE /api/platform/manager/materials/s1/files/f1');
     });
 
     testWidgets('German login is left-to-right', (tester) async {

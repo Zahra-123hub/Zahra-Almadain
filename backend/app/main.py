@@ -2788,6 +2788,41 @@ def posts_payload(session: Session, posts: list[TeacherPost]) -> list[dict[str, 
     ]
 
 
+async def prepare_uploads(uploads: list[UploadFile]) -> list[tuple[str, str, bytes]]:
+    """Reads and checks uploaded files (name, type, size, signature) and returns (filename, media_type, bytes)."""
+    prepared: list[tuple[str, str, bytes]] = []
+    for upload in uploads:
+        filename = (upload.filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+        if not filename or len(filename) > 180:
+            raise HTTPException(422, "A filename of up to 180 characters is required.")
+        extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        known = CONTENT_TYPES.get(extension)
+        if known is None:
+            _, max_size = private_content_media(filename, b"", "other")
+        else:
+            max_size = {"document": MAX_DOCUMENT_BYTES, "image": MAX_PRIVATE_IMAGE_BYTES, "video": MAX_PRIVATE_VIDEO_BYTES}[known[0]]
+        contents = await upload.read(max_size + 1)
+        await upload.close()
+        if not contents:
+            raise HTTPException(422, "The uploaded file is empty.")
+        if len(contents) > max_size:
+            raise HTTPException(413, "The file exceeds the size limit for its type.")
+        media_type, _ = private_content_media(filename, contents, "other")
+        prepared.append((filename, media_type, contents))
+    return prepared
+
+
+def check_storage(session: Session, account_id: uuid.UUID, new_bytes: int) -> None:
+    if not new_bytes:
+        return
+    session.scalar(select(Account.id).where(Account.id == account_id).with_for_update())
+    used_bytes = session.scalar(
+        select(func.coalesce(func.sum(TeacherContent.byte_size), 0)).where(TeacherContent.owner_id == account_id)
+    )
+    if (used_bytes or 0) + new_bytes > MAX_TEACHER_CONTENT_BYTES:
+        raise HTTPException(413, "The account has reached its 250 MB storage limit.")
+
+
 @app.post("/api/platform/teacher/posts", status_code=201)
 async def create_teacher_post(
     response: Response,
@@ -2964,7 +2999,7 @@ def delete_teacher_post(
 
 def visible_post_for_parent(session: Session, account_id: uuid.UUID, post_id: uuid.UUID) -> TeacherPost:
     post = session.get(TeacherPost, post_id)
-    if post is None:
+    if post is None or post.hidden:
         raise HTTPException(404, "Post not found.")
     if post.scope == "child":
         linked = session.execute(
@@ -2989,7 +3024,8 @@ def list_parent_posts(
     posts = session.scalars(
         select(TeacherPost)
         .where((TeacherPost.scope == "general") | ((TeacherPost.scope == "child") & TeacherPost.child_id.in_(own_children)))
-        .order_by(TeacherPost.created_at.desc()).limit(100)
+        .where(TeacherPost.hidden.is_(False))
+        .order_by(TeacherPost.position.asc(), TeacherPost.created_at.desc()).limit(100)
     ).all()
     data = posts_payload(session, list(posts))
     for item in data:
@@ -3034,6 +3070,241 @@ def list_parent_child_reports(
         .order_by(DailyReport.published_at.desc())
     ).all()
     return [report_data(report) for report in reports]
+
+
+# ---- learning material as a course: the management edits sections and files like in Moodle ---------------------------------------
+
+COURSE_ROLES = ("manager", "admin")
+
+
+def material_post(session: Session, post_id: uuid.UUID) -> TeacherPost:
+    post = session.get(TeacherPost, post_id)
+    if post is None or post.kind != "material":
+        raise HTTPException(404, "Learning material not found.")
+    return post
+
+
+def ordered_materials(session: Session) -> list[TeacherPost]:
+    return list(session.scalars(
+        select(TeacherPost).where(TeacherPost.kind == "material")
+        .order_by(TeacherPost.position.asc(), TeacherPost.created_at.desc())
+    ).all())
+
+
+def material_payload(session: Session, posts: list[TeacherPost]) -> list[dict[str, Any]]:
+    data = posts_payload(session, posts)
+    for item, post in zip(data, posts):
+        item["hidden"] = bool(post.hidden)
+        item["position"] = post.position
+    return data
+
+
+class MaterialUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    body: str | None = Field(default=None, max_length=3000)
+    hidden: bool | None = None
+
+
+class MaterialMove(BaseModel):
+    direction: str
+
+
+class MaterialFileRename(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+
+
+@app.get("/api/platform/manager/materials")
+def list_materials(
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    return material_payload(session, ordered_materials(session))
+
+
+@app.post("/api/platform/manager/materials", status_code=201)
+async def create_material(
+    response: Response,
+    title: str = Form(..., max_length=120),
+    body: str = Form(default="", max_length=3000),
+    scope: str = Form(default="general"),
+    child_id: uuid.UUID | None = Form(default=None),
+    hidden: bool = Form(default=False),
+    files: list[UploadFile] = File(default=[]),
+    principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    title = title.strip()
+    if not title:
+        raise HTTPException(422, "A title is required.")
+    if scope not in POST_SCOPES:
+        raise HTTPException(422, "Choose a general or a private post.")
+    if scope == "child":
+        if child_id is None:
+            raise HTTPException(422, "Select the child this private post is for.")
+        if session.scalar(select(Child.id).where(Child.id == child_id, Child.is_active.is_(True))) is None:
+            raise HTTPException(404, "Child profile not found.")
+    else:
+        child_id = None
+    prepared = await prepare_uploads([item for item in files if item.filename])
+    check_storage(session, principal.account.id, sum(len(item[2]) for item in prepared))
+    last = session.scalar(select(func.max(TeacherPost.position)).where(TeacherPost.kind == "material"))
+    post = TeacherPost(
+        author_id=principal.account.id, scope=scope, kind="material", child_id=child_id,
+        title=title, body=body.strip(), hidden=hidden, position=(last or 0) + 1,
+    )
+    session.add(post)
+    session.flush()
+    for filename, media_type, contents in prepared:
+        session.add(TeacherContent(
+            owner_id=principal.account.id, post_id=post.id, category="post_attachment",
+            original_name=filename, media_type=media_type, byte_size=len(contents), contents=contents,
+        ))
+    if not hidden:
+        community.notify(
+            session,
+            community.accounts_with_role(session, "parent") if scope == "general" else community.parents_of(session, child_id),
+            "post_new", title, "posts",
+        )
+    session.commit()
+    session.refresh(post)
+    return material_payload(session, [post])[0]
+
+
+@app.patch("/api/platform/manager/materials/{post_id}")
+def update_material(
+    post_id: uuid.UUID,
+    payload: MaterialUpdate,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    post = material_post(session, post_id)
+    if payload.title is not None:
+        if not payload.title.strip():
+            raise HTTPException(422, "A title is required.")
+        post.title = payload.title.strip()
+    if payload.body is not None:
+        post.body = payload.body.strip()
+    if payload.hidden is not None:
+        post.hidden = payload.hidden
+    session.commit()
+    session.refresh(post)
+    return material_payload(session, [post])[0]
+
+
+@app.post("/api/platform/manager/materials/{post_id}/move")
+def move_material(
+    post_id: uuid.UUID,
+    payload: MaterialMove,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    if payload.direction not in ("up", "down"):
+        raise HTTPException(422, "Choose up or down.")
+    post = material_post(session, post_id)
+    posts = ordered_materials(session)
+    index = next(i for i, item in enumerate(posts) if item.id == post.id)
+    target = index - 1 if payload.direction == "up" else index + 1
+    if 0 <= target < len(posts):
+        posts[index], posts[target] = posts[target], posts[index]
+    for number, item in enumerate(posts, start=1):
+        item.position = number
+    session.commit()
+    return material_payload(session, ordered_materials(session))
+
+
+@app.delete("/api/platform/manager/materials/{post_id}", status_code=204)
+def delete_material(
+    post_id: uuid.UUID,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> Response:
+    post = material_post(session, post_id)
+    session.execute(delete(TeacherContent).where(TeacherContent.post_id == post.id))
+    session.delete(post)
+    session.commit()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/platform/manager/materials/{post_id}/files", status_code=201)
+async def add_material_files(
+    post_id: uuid.UUID,
+    response: Response,
+    files: list[UploadFile] = File(...),
+    principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    post = material_post(session, post_id)
+    prepared = await prepare_uploads([item for item in files if item.filename])
+    if not prepared:
+        raise HTTPException(422, "Select a file.")
+    check_storage(session, principal.account.id, sum(len(item[2]) for item in prepared))
+    for filename, media_type, contents in prepared:
+        session.add(TeacherContent(
+            owner_id=principal.account.id, post_id=post.id, category="post_attachment",
+            original_name=filename, media_type=media_type, byte_size=len(contents), contents=contents,
+        ))
+    session.commit()
+    session.refresh(post)
+    return material_payload(session, [post])[0]
+
+
+def material_file(session: Session, post_id: uuid.UUID, content_id: uuid.UUID) -> TeacherContent:
+    material_post(session, post_id)
+    content = session.get(TeacherContent, content_id)
+    if content is None or content.post_id != post_id:
+        raise HTTPException(404, "File not found.")
+    return content
+
+
+@app.patch("/api/platform/manager/materials/{post_id}/files/{content_id}")
+def rename_material_file(
+    post_id: uuid.UUID,
+    content_id: uuid.UUID,
+    payload: MaterialFileRename,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    content = material_file(session, post_id, content_id)
+    name = payload.name.strip().replace("\\", "/").rsplit("/", 1)[-1]
+    if not name:
+        raise HTTPException(422, "A filename is required.")
+    content.original_name = name
+    session.commit()
+    return material_payload(session, [material_post(session, post_id)])[0]
+
+
+@app.delete("/api/platform/manager/materials/{post_id}/files/{content_id}", status_code=204)
+def delete_material_file(
+    post_id: uuid.UUID,
+    content_id: uuid.UUID,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> Response:
+    content = material_file(session, post_id, content_id)
+    session.delete(content)
+    session.commit()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/platform/manager/materials/{post_id}/files/{content_id}")
+def download_material_file(
+    post_id: uuid.UUID,
+    content_id: uuid.UUID,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role(*COURSE_ROLES)),
+    session: Session = Depends(get_session),
+) -> Response:
+    return private_content_response(material_file(session, post_id, content_id), response)
 
 
 app.include_router(visits.build_router(require_admin, client_address))

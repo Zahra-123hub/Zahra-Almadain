@@ -113,14 +113,16 @@ class ProfilePage extends StatelessWidget {
           subtitle: Text(session.roles.join(', ')),
         ),
       ),
-      if (session.isParent && session.isTeacher)
+      if (session.areas.length > 1)
         Card(
           child: Column(children: [
-            ListTile(
-              leading: const Icon(Icons.swap_horiz),
-              title: Text('${s.get('switchTo')} ${session.area == Area.teacher ? s.get('parentArea') : s.get('teacherArea')}'),
-              onTap: () => session.setArea(session.area == Area.teacher ? Area.parent : Area.teacher),
-            ),
+            for (final a in session.areas)
+              if (a != session.area)
+                ListTile(
+                  leading: const Icon(Icons.swap_horiz),
+                  title: Text('${s.get('switchTo')} ${s.get(a == Area.management ? 'managementArea' : (a == Area.teacher ? 'teacherArea' : 'parentArea'))}'),
+                  onTap: () => session.setArea(a),
+                ),
           ]),
         ),
       SectionTitle(s.get('language')),

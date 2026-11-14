@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/config.dart';
 import 'api.dart';
 
-enum Area { parent, teacher }
+enum Area { parent, teacher, management }
 
 /// Who is signed in, which area is open, which language is used.
 class Session extends ChangeNotifier {
@@ -29,7 +29,11 @@ class Session extends ChangeNotifier {
   bool get signedIn => api.token != null && username != null;
   bool get isParent => roles.contains('parent');
   bool get isTeacher => roles.contains('teacher');
-  bool get hasMobileArea => isParent || isTeacher;
+  bool get isManager => roles.contains('manager');
+  bool get hasMobileArea => isParent || isTeacher || isManager;
+
+  /// The areas this account may open, in the order they are offered.
+  List<Area> get areas => [if (isManager) Area.management, if (isTeacher) Area.teacher, if (isParent) Area.parent];
 
   Future<void> start() async {
     final prefs = await SharedPreferences.getInstance();
@@ -66,10 +70,14 @@ class Session extends ChangeNotifier {
     final preferred = me['preferred_language'] as String?;
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getString('lang') == null && preferred != null && LanguageCodes.has(preferred)) locale = Locale(preferred);
-    area ??= isTeacher && !isParent ? Area.teacher : (isParent ? Area.parent : null);
-    if (isTeacher && isParent) {
+    final open = areas;
+    if (open.isEmpty) {
+      area = null;
+    } else if (open.length == 1) {
+      area = open.first;
+    } else {
       final last = prefs.getString('area');
-      area = last == 'teacher' ? Area.teacher : Area.parent;
+      area = open.firstWhere((a) => a.name == last, orElse: () => open.first);
     }
   }
 
@@ -122,7 +130,7 @@ class Session extends ChangeNotifier {
   Future<void> setArea(Area value) async {
     area = value;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('area', value == Area.teacher ? 'teacher' : 'parent');
+    await prefs.setString('area', value.name);
     notifyListeners();
   }
 }

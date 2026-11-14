@@ -60,10 +60,11 @@ class FileInfo {
 }
 
 class Post {
-  Post({required this.id, required this.scope, this.kind = 'post', required this.childName, required this.title, required this.body, required this.author, this.createdAt, this.files = const []});
+  Post({required this.id, required this.scope, this.kind = 'post', this.hidden = false, required this.childName, required this.title, required this.body, required this.author, this.createdAt, this.files = const []});
   final String id;
   final String scope; // general | child
   final String kind; // post | material
+  final bool hidden; // learning material the management has hidden from the parents
   final String childName;
   final String title;
   final String body;
@@ -75,6 +76,7 @@ class Post {
         id: _s(j['id']),
         scope: _s(j['scope']),
         kind: _s(j['kind']).isEmpty ? 'post' : _s(j['kind']),
+        hidden: j['hidden'] == true,
         childName: _s(j['child_name']),
         title: _s(j['title']),
         body: _s(j['body']),
