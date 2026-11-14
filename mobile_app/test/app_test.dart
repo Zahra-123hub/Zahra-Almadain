@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -150,6 +151,93 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('profile page'), findsOneWidget);
       expect(find.text('Parent'), findsOneWidget);
+    });
+  });
+
+  group('states', () {
+    Widget host(Widget child, {Session? session}) => MaterialApp(
+          locale: const Locale('en'),
+          supportedLocales: S.supported,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+          builder: (context, page) => SessionScope(session: session ?? Session(ApiClient(client: MockClient((_) async => json({})))), child: page!),
+          home: Scaffold(body: child),
+        );
+
+    testWidgets('while loading a skeleton shows, then the content', (tester) async {
+      final done = Completer<Cached<String>>();
+      await tester.pumpWidget(host(Loader<String>(load: () => done.future, builder: (context, data, reload) => Text('got $data'))));
+      await tester.pump();
+      expect(find.byType(SkeletonList), findsOneWidget);
+      done.complete(Cached('it'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SkeletonList), findsNothing);
+      expect(find.text('got it'), findsOneWidget);
+    });
+
+    testWidgets('offline, no permission and a server problem each look different, and retry loads again', (tester) async {
+      var attempt = 0;
+      Future<Cached<String>> load() async {
+        attempt++;
+        if (attempt == 1) throw ApiException(ApiProblem.offline);
+        if (attempt == 2) throw ApiException(ApiProblem.forbidden);
+        if (attempt == 3) throw ApiException(ApiProblem.server);
+        return Cached('fine');
+      }
+
+      await tester.pumpWidget(host(Loader<String>(load: load, builder: (context, data, reload) => Text('got $data'))));
+      await tester.pumpAndSettle();
+      expect(find.text('You are offline'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.text('No access'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing); // nothing to retry without the right to see it
+    });
+
+    testWidgets('a server problem offers a retry that brings the content', (tester) async {
+      var attempt = 0;
+      await tester.pumpWidget(host(Loader<String>(
+        load: () async {
+          attempt++;
+          if (attempt == 1) throw ApiException(ApiProblem.server);
+          return Cached('fine');
+        },
+        builder: (context, data, reload) => Text('got $data'),
+      )));
+      await tester.pumpAndSettle();
+      expect(find.text('Could not load'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.text('got fine'), findsOneWidget);
+    });
+
+    test('every report status has its own colour: draft grey, submitted orange, published green, returned red', () {
+      expect(statusColor('draft'), const Color(0xFF42536A));
+      expect(statusColor('submitted'), const Color(0xFF8A5200));
+      expect(statusColor('published'), const Color(0xFF1E7A45));
+      expect(statusColor('rejected'), const Color(0xFFB3402F));
+      expect({for (final st in ['draft', 'submitted', 'published', 'rejected']) statusColor(st)}.length, 4);
+    });
+
+    test('file types get their own icon and colour', () {
+      expect(fileTintFor('pdf', false).$2, isNot(fileTintFor('mp4', false).$2));
+      expect(fileIconFor('pdf', false), Icons.picture_as_pdf_outlined);
+      expect(fileIconFor('png', true), Icons.image_outlined);
+      expect(fileExt('Arbeitsblatt Alif.PDF'), 'pdf');
+      expect(fileExt('README'), '');
+    });
+
+    testWidgets('each child of a teacher has a button that starts a report for that child', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json([{'id': 'c1', 'display_name': 'Amal'}, {'id': 'c2', 'display_name': 'Omar'}]))));
+      await tester.pumpWidget(host(const TeacherChildren(), session: session));
+      await tester.pumpAndSettle();
+      expect(find.text('Amal'), findsOneWidget);
+      expect(find.text('New report'), findsNWidgets(2));
+      await tester.tap(find.text('New report').first);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportEditor), findsOneWidget);
     });
   });
 

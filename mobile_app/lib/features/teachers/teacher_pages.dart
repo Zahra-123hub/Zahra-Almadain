@@ -128,14 +128,25 @@ class TeacherChildren extends StatelessWidget {
         return ListView(padding: const EdgeInsets.all(12), children: [
           for (final c in children)
             Card(
-              child: ListTile(
-                leading: const CircleAvatar(backgroundColor: brandSoft, child: Icon(Icons.child_care, color: brandBlue)),
-                title: Text(c.name),
-                trailing: const Icon(Icons.add_circle_outline),
-                onTap: () async {
-                  final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => ReportEditor(presetChild: c, children: children)));
-                  if (saved == true) await reload();
-                },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Row(children: [
+                    AvatarInitials(c.name, size: 56),
+                    const SizedBox(width: 14),
+                    Expanded(child: Text(c.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+                  ]),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                    icon: const Icon(Icons.add, size: 20),
+                    label: Text(s.get('newReport')),
+                    onPressed: () async {
+                      final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => ReportEditor(presetChild: c, children: children)));
+                      if (saved == true) await reload();
+                    },
+                  ),
+                ]),
               ),
             ),
         ]);
@@ -177,7 +188,9 @@ class TeacherReports extends StatelessWidget {
                   for (final r in reports)
                     Card(
                       child: ListTile(
-                        title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        leading: AvatarInitials(names[r.childId] ?? '?', size: 44),
+                        title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.w700)),
                         subtitle: Text('${names[r.childId] ?? ''} · ${formatDate(r.createdAt)}'),
                         trailing: StatusPill(r.status),
                         onTap: () async {
@@ -186,7 +199,7 @@ class TeacherReports extends StatelessWidget {
                             final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => ReportEditor(report: r, children: children)));
                             if (saved == true) await reload();
                           } else {
-                            await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(r.title)), body: ListView(padding: const EdgeInsets.all(12), children: [ReportCard(r, childName: names[r.childId])]))));
+                            await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(r.title)), body: ListView(padding: const EdgeInsets.all(12), children: [ReportCard(r, childName: names[r.childId], showStatus: true)]))));
                           }
                         },
                       ),
@@ -342,51 +355,79 @@ class _ReportEditorState extends State<ReportEditor> {
         if (await confirmLeave(context)) navigator.pop();
       },
       child: Scaffold(
-      appBar: AppBar(title: Text(widget.report == null ? s.get('newReport') : s.get('editReport'))),
-      body: AbsorbPointer(
-        absorbing: _busy,
-        child: ListView(padding: const EdgeInsets.all(16), children: [
-          if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
-          if (note.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(12)),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(Icons.reply_outlined, color: Color(0xFFD25B5B)),
-                const SizedBox(width: 8),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(s.get('reviewNote'), style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFD25B5B))),
-                  Text(note),
-                ])),
+        appBar: AppBar(title: Text(widget.report == null ? s.get('newReport') : s.get('editReport'))),
+        body: Column(children: [
+          Expanded(
+            child: AbsorbPointer(
+              absorbing: _busy,
+              child: ListView(padding: const EdgeInsets.all(16), children: [
+                if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+                if (note.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(14)),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.reply_outlined, color: Color(0xFFB3402F)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(s.get('reviewNote'), style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFB3402F))),
+                        Text(note),
+                      ])),
+                    ]),
+                  ),
+                FormSection(
+                  title: s.get('child'),
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _childId,
+                    decoration: InputDecoration(labelText: s.get('child')),
+                    items: [for (final c in widget.children) DropdownMenuItem(value: c.id, child: Text(c.name))],
+                    onChanged: widget.report == null ? (v) => setState(() => _childId = v) : null,
+                  ),
+                ),
+                FormSection(
+                  title: s.get('content'),
+                  child: Column(children: [
+                    TextField(controller: _title, maxLength: 120, onChanged: (_) { _touch(); _keepDraft(); }, decoration: InputDecoration(labelText: s.get('title'))),
+                    const SizedBox(height: 8),
+                    TextField(controller: _body, maxLength: 3000, minLines: 4, maxLines: 10, onChanged: (_) { _touch(); _keepDraft(); }, decoration: InputDecoration(labelText: s.get('text'))),
+                    const SizedBox(height: 8),
+                    TextField(controller: _activities, maxLength: 1000, minLines: 2, maxLines: 5, onChanged: (_) => _touch(), decoration: InputDecoration(labelText: s.get('activities'))),
+                    const SizedBox(height: 8),
+                    TextField(controller: _meals, maxLength: 500, minLines: 2, maxLines: 4, onChanged: (_) => _touch(), decoration: InputDecoration(labelText: s.get('meals'))),
+                  ]),
+                ),
+                FormSection(
+                  title: s.get('attachments'),
+                  trailing: Text('${_existing.length + _files.length} / 5', style: const TextStyle(fontSize: 12.5, color: Color(0xFF6A7686))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    for (final f in _existing) FileTile(file: f, path: '/api/platform/teacher/content/${f.id}/download'),
+                    const SizedBox(height: 8),
+                    AttachmentPicker(files: _files, max: 5 - _existing.length, onChanged: (v) => setState(() { _files = v; _dirty = true; })),
+                  ]),
+                ),
+                if (_error != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(14)),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.error_outline, size: 19, color: Color(0xFFB3402F)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_error!, style: const TextStyle(color: Color(0xFF8A2D1F), height: 1.4))),
+                    ]),
+                  ),
+                TextButton.icon(onPressed: _busy ? null : () => _save(parents: true), icon: const Icon(Icons.family_restroom), label: Text(s.get('sendParents'))),
+                SizedBox(height: api.token == null ? 0 : 8),
               ]),
             ),
-          DropdownButtonFormField<String>(
-            initialValue: _childId,
-            decoration: InputDecoration(labelText: s.get('child')),
-            items: [for (final c in widget.children) DropdownMenuItem(value: c.id, child: Text(c.name))],
-            onChanged: widget.report == null ? (v) => setState(() => _childId = v) : null,
           ),
-          const SizedBox(height: 12),
-          TextField(controller: _title, maxLength: 120, onChanged: (_) { _touch(); _keepDraft(); }, decoration: InputDecoration(labelText: s.get('title'))),
-          TextField(controller: _body, maxLength: 3000, minLines: 4, maxLines: 10, onChanged: (_) { _touch(); _keepDraft(); }, decoration: InputDecoration(labelText: s.get('text'))),
-          const SizedBox(height: 8),
-          TextField(controller: _activities, maxLength: 1000, minLines: 2, maxLines: 5, onChanged: (_) => _touch(), decoration: InputDecoration(labelText: s.get('activities'))),
-          TextField(controller: _meals, maxLength: 500, minLines: 2, maxLines: 4, onChanged: (_) => _touch(), decoration: InputDecoration(labelText: s.get('meals'))),
-          SectionTitle(s.get('attachments')),
-          for (final f in _existing) FileTile(file: f, path: '/api/platform/teacher/content/${f.id}/download'),
-          AttachmentPicker(files: _files, max: 5 - _existing.length, onChanged: (v) => setState(() { _files = v; _dirty = true; })),
-          if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
-          const SizedBox(height: 16),
-          FilledButton.icon(onPressed: () => _save(), icon: const Icon(Icons.save_outlined), label: Text(s.get('saveDraft'))),
-          const SizedBox(height: 8),
-          FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: brandAccent, foregroundColor: Colors.black), onPressed: () => _save(review: true), icon: const Icon(Icons.send_outlined), label: Text(s.get('sendReview'))),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)), onPressed: () => _save(parents: true), icon: const Icon(Icons.family_restroom), label: Text(s.get('sendParents'))),
-          if (_busy) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
-          SizedBox(height: api.token == null ? 0 : 24),
+          BottomActionBar(children: [
+            Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)), onPressed: _busy ? null : () => _save(), child: Text(s.get('saveDraft')))),
+            const SizedBox(width: 10),
+            Expanded(flex: 2, child: FilledButton(onPressed: _busy ? null : () => _save(review: true), child: Text(s.get('sendReview')))),
+          ]),
         ]),
-      ),
       ),
     );
   }
@@ -707,10 +748,21 @@ class _TeacherMaterialsState extends State<TeacherMaterials> {
             if (items.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(s.get('noFiles')))),
             for (final m in items)
               Card(
+                color: _selected.contains(m.id) ? const Color(0xFFF2F7FC) : null,
                 child: ListTile(
-                  leading: Checkbox(value: _selected.contains(m.id), onChanged: (v) => setState(() => v == true ? _selected.add(m.id) : _selected.remove(m.id))),
-                  title: Text(m.filename, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(formatSize(m.size)),
+                  contentPadding: const EdgeInsetsDirectional.fromSTEB(8, 6, 4, 6),
+                  leading: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Checkbox(value: _selected.contains(m.id), onChanged: (v) => setState(() => v == true ? _selected.add(m.id) : _selected.remove(m.id))),
+                    FileTypePlate(filename: m.filename, isImage: m.mediaType.startsWith('image/'), size: 40),
+                  ]),
+                  title: Text(m.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      Pill(s.get('private'), icon: Icons.lock_outline, foreground: const Color(0xFF42536A)),
+                      Text(formatSize(m.size), style: const TextStyle(fontSize: 12, color: Color(0xFF6A7686))),
+                    ]),
+                  ),
                   onTap: () => openPrivateFile(context, api, '/api/platform/teacher/content/${m.id}/download', m.filename),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),

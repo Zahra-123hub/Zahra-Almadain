@@ -106,6 +106,8 @@ String problemText(BuildContext context, Object error, {bool login = false}) {
         return s.get('offline');
       case ApiProblem.unauthorized:
         return login ? s.get('wrongLogin') : s.get('sessionEnded');
+      case ApiProblem.forbidden:
+        return s.get('noAccess');
       case ApiProblem.tooMany:
         return s.get('tooMany');
       case ApiProblem.pending:
@@ -189,21 +191,8 @@ class _LoaderState<T> extends State<Loader<T>> {
 
   @override
   Widget build(BuildContext context) {
-    if (_busy) return const Center(child: CircularProgressIndicator());
-    if (_value == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.wifi_off, size: 40, color: Colors.grey.shade500),
-            const SizedBox(height: 12),
-            Text(problemText(context, _error ?? ''), textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            OutlinedButton(onPressed: _reload, child: Text(S.of(context).get('retry'))),
-          ]),
-        ),
-      );
-    }
+    if (_busy) return const SkeletonList();
+    if (_value == null) return StateView.fromError(context, _error, onRetry: _reload);
     return Column(children: [
       if (_value!.fromCache) const OfflineBanner(),
       Expanded(child: RefreshIndicator(onRefresh: _reload, child: widget.builder(context, _value!.data, _reload))),
@@ -215,21 +204,161 @@ class EmptyNote extends StatelessWidget {
   const EmptyNote(this.text, {super.key});
   final String text;
   @override
-  Widget build(BuildContext context) => ListView(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(32, 72, 32, 32),
-          child: Column(children: [
+  Widget build(BuildContext context) => ListView(children: [StateView(icon: Icons.inbox_outlined, title: text)]);
+}
+
+/// One look for every state without data: a round icon, a title, a short explanation and maybe one action.
+class StateView extends StatelessWidget {
+  const StateView({super.key, required this.icon, required this.title, this.message, this.actionLabel, this.onAction, this.tone = brandBlue, this.toneBackground = brandSoft});
+  final IconData icon;
+  final String title;
+  final String? message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final Color tone;
+  final Color toneBackground;
+
+  /// The right look for what went wrong: no connection, no permission, or a server problem.
+  factory StateView.fromError(BuildContext context, Object? error, {required VoidCallback onRetry}) {
+    final s = S.of(context);
+    final problem = error is ApiException ? error.problem : ApiProblem.server;
+    if (problem == ApiProblem.offline) {
+      return StateView(icon: Icons.wifi_off_rounded, title: s.get('offlineTitle'), message: s.get('offline'), actionLabel: s.get('retry'), onAction: onRetry, tone: const Color(0xFF8A5200), toneBackground: const Color(0xFFFDF1DD));
+    }
+    if (problem == ApiProblem.forbidden) {
+      return StateView(icon: Icons.lock_outline_rounded, title: s.get('noAccess'), message: s.get('noAccessHint'));
+    }
+    return StateView(icon: Icons.error_outline_rounded, title: s.get('errorTitle'), message: problemText(context, error ?? ''), actionLabel: s.get('retry'), onAction: onRetry, tone: const Color(0xFFB3402F), toneBackground: const Color(0xFFFCE9E6));
+  }
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(32, 56, 32, 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
-              width: 84,
-              height: 84,
-              decoration: const BoxDecoration(color: brandSoft, shape: BoxShape.circle),
-              child: const Icon(Icons.inbox_outlined, size: 40, color: brandBlue),
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(color: toneBackground, borderRadius: BorderRadius.circular(24)),
+              child: Icon(icon, size: 36, color: tone),
             ),
             const SizedBox(height: 16),
-            Text(text, style: TextStyle(color: Colors.grey.shade700, fontSize: 16), textAlign: TextAlign.center),
+            Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            if (message != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(message!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF5B6878), height: 1.5))),
+            if (actionLabel != null) Padding(padding: const EdgeInsets.only(top: 16), child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size(140, 44)), onPressed: onAction, child: Text(actionLabel!))),
           ]),
         ),
-      ]);
+      );
+}
+
+/// A grey block that pulses softly while the real content loads.
+class Skeleton extends StatefulWidget {
+  const Skeleton({super.key, this.width, this.height = 14, this.radius = 7});
+  final double? width;
+  final double height;
+  final double radius;
+  @override
+  State<Skeleton> createState() => _SkeletonState();
+}
+
+class _SkeletonState extends State<Skeleton> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) => Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(color: Color.lerp(const Color(0xFFE6EDF5), const Color(0xFFF1F5F9), _c.value), borderRadius: BorderRadius.circular(widget.radius)),
+        ),
+      );
+}
+
+/// The placeholder list shown while a page loads: the same card shapes as the real lists.
+class SkeletonList extends StatelessWidget {
+  const SkeletonList({super.key, this.count = 4});
+  final int count;
+  @override
+  Widget build(BuildContext context) => ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          for (var i = 0; i < count; i++)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  const Skeleton(width: 48, height: 48, radius: 24),
+                  const SizedBox(width: 14),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Skeleton(width: 160, height: 14),
+                    const SizedBox(height: 10),
+                    Skeleton(height: 11, width: 90.0 + (i % 3) * 40),
+                  ])),
+                ]),
+              ),
+            ),
+        ],
+      );
+}
+
+/// A small coloured label ("Private", "For parents", "Learning").
+class Pill extends StatelessWidget {
+  const Pill(this.text, {super.key, this.icon, this.foreground = const Color(0xFF42536A), this.background = const Color(0xFFEEF2F6)});
+  final String text;
+  final IconData? icon;
+  final Color foreground;
+  final Color background;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(999)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon != null) ...[Icon(icon, size: 14, color: foreground), const SizedBox(width: 4)],
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: foreground)),
+        ]),
+      );
+}
+
+/// A titled card that groups the fields of a form.
+class FormSection extends StatelessWidget {
+  const FormSection({super.key, required this.title, required this.child, this.trailing});
+  final String title;
+  final Widget child;
+  final Widget? trailing;
+  @override
+  Widget build(BuildContext context) => Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF5B6878)))),
+              ?trailing,
+            ]),
+            const SizedBox(height: 12),
+            child,
+          ]),
+        ),
+      );
+}
+
+/// The bar at the bottom of an editing page with its main actions.
+class BottomActionBar extends StatelessWidget {
+  const BottomActionBar({super.key, required this.children});
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
+        decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Color(0x1A16406F), blurRadius: 20, offset: Offset(0, -6))]),
+        child: Row(children: children),
+      );
 }
 
 /// The kindergarten logo on a white rounded plate, for the dark top bar.
@@ -538,6 +667,87 @@ class _ReportFilesState extends State<ReportFiles> {
   }
 }
 
+/// The lower-case ending of a file name ("pdf"), or "" when it has none.
+String fileExt(String filename) {
+  final dot = filename.lastIndexOf('.');
+  return dot > 0 ? filename.substring(dot + 1).toLowerCase() : '';
+}
+
+IconData fileIconFor(String ext, bool image) {
+  if (image) return Icons.image_outlined;
+  switch (ext) {
+    case 'pdf':
+      return Icons.picture_as_pdf_outlined;
+    case 'zip':
+    case 'rar':
+    case '7z':
+      return Icons.folder_zip_outlined;
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'webm':
+    case 'mkv':
+      return Icons.smart_display_outlined;
+    case 'mp3':
+    case 'wav':
+    case 'm4a':
+      return Icons.audiotrack_outlined;
+    case 'doc':
+    case 'docx':
+    case 'txt':
+      return Icons.description_outlined;
+    case 'xls':
+    case 'xlsx':
+    case 'csv':
+      return Icons.table_chart_outlined;
+    case 'ppt':
+    case 'pptx':
+      return Icons.slideshow_outlined;
+    default:
+      return Icons.insert_drive_file_outlined;
+  }
+}
+
+/// Background and icon colour of a file type: PDF red, video blue, ZIP gold, image green, everything else blue.
+(Color, Color) fileTintFor(String ext, bool image) {
+  if (image) return (const Color(0xFFE4F4EA), const Color(0xFF1E7A45));
+  switch (ext) {
+    case 'pdf':
+      return (const Color(0xFFFCE9E6), const Color(0xFFC0392B));
+    case 'mp4':
+    case 'mov':
+    case 'avi':
+    case 'webm':
+    case 'mkv':
+      return (const Color(0xFFE4EEF9), const Color(0xFF2F6DB5));
+    case 'zip':
+    case 'rar':
+    case '7z':
+      return (const Color(0xFFFDF1DD), const Color(0xFFB26E0B));
+    default:
+      return (const Color(0xFFEAF1F8), const Color(0xFF16406F));
+  }
+}
+
+/// The coloured square with the icon of a file type.
+class FileTypePlate extends StatelessWidget {
+  const FileTypePlate({super.key, required this.filename, this.isImage = false, this.size = 42});
+  final String filename;
+  final bool isImage;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final ext = fileExt(filename);
+    final tint = fileTintFor(ext, isImage);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: tint.$1, borderRadius: BorderRadius.circular(12)),
+      child: Icon(fileIconFor(ext, isImage), color: tint.$2, size: size * 0.55),
+    );
+  }
+}
+
 class FileTile extends StatelessWidget {
   const FileTile({super.key, required this.file, required this.path});
   final FileInfo file;
@@ -545,20 +755,30 @@ class FileTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final api = SessionScope.of(context).api;
+    final ext = fileExt(file.filename);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Material(
-        color: brandSoft,
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF6F9FC),
+        borderRadius: BorderRadius.circular(14),
         clipBehavior: Clip.antiAlias,
-        child: ListTile(
-        dense: true,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        leading: Icon(file.isImage ? Icons.image_outlined : Icons.attach_file, color: brandBlue),
-        title: Text(file.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: Text(formatSize(file.size)),
-        trailing: const Icon(Icons.download_outlined, color: brandBlue),
-        onTap: () => openPrivateFile(context, api, path, file.filename),
+        child: InkWell(
+          onTap: () => openPrivateFile(context, api, path, file.filename),
+          hoverColor: brandSoft,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(children: [
+              FileTypePlate(filename: file.filename, isImage: file.isImage, size: 40),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(file.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text([if (ext.isNotEmpty) ext.toUpperCase(), formatSize(file.size)].join(' · '), style: const TextStyle(fontSize: 12, color: Color(0xFF6A7686))),
+                ]),
+              ),
+              const Icon(Icons.download_outlined, color: brandBlue, size: 22),
+            ]),
+          ),
         ),
       ),
     );
