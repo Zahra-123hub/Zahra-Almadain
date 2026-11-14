@@ -167,6 +167,7 @@ class DailyReport(Base):
     language: Mapped[str] = mapped_column(String(35), default="ar", server_default="ar")
     activities: Mapped[str] = mapped_column(String(1000), default="", server_default="")
     meals: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    review_note: Mapped[str] = mapped_column(String(500), default="", server_default="")
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -22,6 +22,8 @@ class Report {
     required this.status,
     this.createdAt,
     this.publishedAt,
+    this.reviewNote = '',
+    this.childName = '',
   });
   final String id;
   final String childId;
@@ -30,6 +32,8 @@ class Report {
   final String activities;
   final String meals;
   final String status; // draft, submitted, published, rejected, archived
+  final String reviewNote; // why the management returned it
+  final String childName; // only in the management's review list
   final DateTime? createdAt;
   final DateTime? publishedAt;
 
@@ -45,8 +49,14 @@ class Report {
         status: _s(j['status']),
         createdAt: _date(j['created_at']),
         publishedAt: _date(j['published_at']),
+        reviewNote: _s(j['review_note']),
+        childName: _s(j['child_name']),
       );
 }
+
+/// Reads a JSON list of objects.
+List<T> parseList<T>(dynamic data, T Function(Map<String, dynamic>) make) =>
+    (data as List).map((e) => make(e as Map<String, dynamic>)).toList();
 
 class FileInfo {
   FileInfo(this.id, this.filename, this.mediaType, this.size);

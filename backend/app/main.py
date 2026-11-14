@@ -348,6 +348,7 @@ class DailyReportUpdateRequest(BaseModel):
 
 class ReportStatusRequest(BaseModel):
     status: str = Field(pattern="^(published|rejected|archived)$")
+    note: str = Field(default="", max_length=500)
 
 
 class PreferredLanguageRequest(BaseModel):
@@ -2040,6 +2041,7 @@ def report_data(report: DailyReport) -> dict[str, Any]:
         "activities": report.activities,
         "meals": report.meals,
         "language": report.language,
+        "review_note": report.review_note or "",
         "status": report.status,
         "created_at": report.created_at.isoformat() if report.created_at else None,
         "published_at": report.published_at.isoformat() if report.published_at else None,
@@ -2698,7 +2700,93 @@ def list_reports_for_review(
         .where(DailyReport.status == "submitted")
         .order_by(DailyReport.created_at.asc())
     ).all()
-    return [report_data(report) for report in reports]
+    names = {
+        row.id: row.display_name
+        for row in session.execute(select(Child.id, Child.display_name).where(Child.id.in_({r.child_id for r in reports})))
+    } if reports else {}
+    return [{**report_data(report), "child_name": names.get(report.child_id, "")} for report in reports]
+
+
+def report_files(session: Session, report_id: uuid.UUID) -> list[dict[str, Any]]:
+    rows = session.execute(
+        select(TeacherContent.id, TeacherContent.original_name, TeacherContent.media_type, TeacherContent.byte_size)
+        .where(TeacherContent.report_id == report_id)
+        .order_by(TeacherContent.created_at.asc())
+    ).all()
+    return [{"id": str(r.id), "filename": r.original_name, "media_type": r.media_type, "size": r.byte_size} for r in rows]
+
+
+def report_file(session: Session, report_id: uuid.UUID, content_id: uuid.UUID) -> TeacherContent:
+    content = session.get(TeacherContent, content_id)
+    if content is None or content.report_id != report_id:
+        raise HTTPException(404, "File not found.")
+    return content
+
+
+@app.get("/api/platform/review/reports/{report_id}/attachments")
+def list_review_report_attachments(
+    report_id: uuid.UUID,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role("manager", "admin")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    if session.get(DailyReport, report_id) is None:
+        raise HTTPException(404, "Report not found.")
+    return report_files(session, report_id)
+
+
+@app.get("/api/platform/review/reports/{report_id}/files/{content_id}")
+def download_review_report_file(
+    report_id: uuid.UUID,
+    content_id: uuid.UUID,
+    response: Response,
+    _principal: PlatformPrincipal = Depends(require_any_platform_role("manager", "admin")),
+    session: Session = Depends(get_session),
+) -> Response:
+    if session.get(DailyReport, report_id) is None:
+        raise HTTPException(404, "Report not found.")
+    return private_content_response(report_file(session, report_id, content_id), response)
+
+
+def published_report_of_own_child(session: Session, account_id: uuid.UUID, child_id: uuid.UUID, report_id: uuid.UUID) -> DailyReport:
+    linked = session.execute(
+        select(parent_child_links.c.child_id).where(
+            parent_child_links.c.account_id == account_id, parent_child_links.c.child_id == child_id
+        )
+    ).first()
+    report = session.scalar(select(DailyReport).where(
+        DailyReport.id == report_id, DailyReport.child_id == child_id, DailyReport.status == "published",
+    ))
+    if linked is None or report is None:
+        raise HTTPException(404, "Report not found.")
+    return report
+
+
+@app.get("/api/platform/children/{child_id}/reports/{report_id}/attachments")
+def list_parent_report_attachments(
+    child_id: uuid.UUID,
+    report_id: uuid.UUID,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("parent")),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    response.headers["Cache-Control"] = "no-store"
+    report = published_report_of_own_child(session, principal.account.id, child_id, report_id)
+    return report_files(session, report.id)
+
+
+@app.get("/api/platform/children/{child_id}/reports/{report_id}/files/{content_id}")
+def download_parent_report_file(
+    child_id: uuid.UUID,
+    report_id: uuid.UUID,
+    content_id: uuid.UUID,
+    response: Response,
+    principal: PlatformPrincipal = Depends(require_platform_role("parent")),
+    session: Session = Depends(get_session),
+) -> Response:
+    report = published_report_of_own_child(session, principal.account.id, child_id, report_id)
+    return private_content_response(report_file(session, report.id, content_id), response)
 
 
 @app.patch("/api/platform/review/reports/{report_id}")
@@ -2717,6 +2805,7 @@ def update_report_status(
     if report is None:
         raise HTTPException(404, "Submitted report not found.")
     report.status = payload.status
+    report.review_note = payload.note.strip() if payload.status == "rejected" else ""
     if payload.status == "published":
         report.published_at = datetime.now(timezone.utc)
         community.notify(session, community.parents_of(session, report.child_id), "report_published", child_name(session, report.child_id), "reports")
