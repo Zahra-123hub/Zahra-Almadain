@@ -101,7 +101,9 @@ class ApiClient {
       _decode(await _send(() => _http.delete(_uri(path), headers: _headers())));
 
   /// multipart/form-data with files (reports' attachments, posts, teaching material).
-  Future<dynamic> multipart(String path, Map<String, String> fields, List<UploadFile> files, {String fileField = 'files'}) async {
+  ///
+  /// `onProgress` (0 to 1) reports how much of the request has been handed over for sending.
+  Future<dynamic> multipart(String path, Map<String, String> fields, List<UploadFile> files, {String fileField = 'files', void Function(double)? onProgress}) async {
     return _decode(await _send(() async {
       final request = http.MultipartRequest('POST', _uri(path));
       request.headers.addAll(_headers(json: false));
@@ -109,7 +111,26 @@ class ApiClient {
       for (final f in files) {
         request.files.add(await http.MultipartFile.fromPath(fileField, f.path, filename: f.name));
       }
-      return http.Response.fromStream(await _http.send(request));
+      if (onProgress == null) return http.Response.fromStream(await _http.send(request));
+      final total = request.contentLength;
+      final body = request.finalize(); // sets the multipart content type
+      final streamed = http.StreamedRequest('POST', request.url)
+        ..headers.addAll(request.headers)
+        ..contentLength = total;
+      var sent = 0;
+      body.listen(
+        (chunk) {
+          sent += chunk.length;
+          streamed.sink.add(chunk);
+          onProgress(total == 0 ? 1.0 : (sent / total).clamp(0.0, 1.0));
+        },
+        onDone: streamed.sink.close,
+        onError: (Object e, StackTrace st) {
+          streamed.sink.addError(e, st);
+          streamed.sink.close();
+        },
+      );
+      return http.Response.fromStream(await _http.send(streamed));
     }));
   }
 

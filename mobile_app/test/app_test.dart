@@ -210,6 +210,67 @@ void main() {
       expect(find.text('got fine'), findsOneWidget);
     });
 
+    test('an upload reports its progress up to 100 percent and sends the whole file', () async {
+      final dir = Directory.systemTemp.createTempSync('upload');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/a.pdf')..writeAsBytesSync(List.filled(300000, 7));
+      String? contentType;
+      var received = 0;
+      final api = ApiClient(client: MockClient((r) async {
+        contentType = r.headers['content-type'];
+        received = r.bodyBytes.length;
+        return json({'ok': true});
+      }))..token = 'abc';
+      final seen = <double>[];
+      await api.multipart('/api/x', {'title': 't'}, [UploadFile(file.path, 'a.pdf')], onProgress: seen.add);
+      expect(seen, isNotEmpty);
+      expect(seen.last, 1.0);
+      expect(seen, orderedEquals([...seen]..sort())); // never goes backwards
+      expect(contentType, startsWith('multipart/form-data; boundary='));
+      expect(received, greaterThan(300000));
+    });
+
+    testWidgets('a post can be previewed the way the parents see it before it is sent', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = Session(ApiClient(client: MockClient((_) async => json([]))));
+      await tester.pumpWidget(host(PostComposer(children: [Child('c1', 'Amal')]), session: session));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Trip on Friday');
+      await tester.enterText(find.byType(TextField).at(1), 'Bring a hat.');
+      await tester.tap(find.text('Preview'));
+      await tester.pumpAndSettle();
+      final sheet = find.byType(BottomSheet);
+      expect(find.descendant(of: sheet, matching: find.text('Trip on Friday')), findsOneWidget);
+      expect(find.descendant(of: sheet, matching: find.text('Bring a hat.')), findsOneWidget);
+      expect(find.descendant(of: sheet, matching: find.byType(PostCard)), findsOneWidget);
+    });
+
+    testWidgets('ticking files turns the add button into a bar for sharing, and Cancel clears the ticks', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      Object body(String path) {
+        if (path.endsWith('/content')) return [{'id': 'f1', 'category': 'document', 'filename': 'a.pdf', 'media_type': 'application/pdf', 'size': 10}];
+        if (path.endsWith('/storage')) return {'used_bytes': 10, 'limit_bytes': 1000};
+        return [];
+      }
+      final session = Session(ApiClient(client: MockClient((r) async => json(body(r.url.path)))));
+      await tester.pumpWidget(host(const TeacherMaterials(), session: session));
+      await tester.pumpAndSettle();
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(find.byType(BottomActionBar), findsNothing);
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.descendant(of: find.byType(BottomActionBar), matching: find.textContaining('Share with parents (1)')), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomActionBar), findsNothing);
+      expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+    });
+
     test('every report status has its own colour: draft grey, submitted orange, published green, returned red', () {
       expect(statusColor('draft'), const Color(0xFF42536A));
       expect(statusColor('submitted'), const Color(0xFF8A5200));

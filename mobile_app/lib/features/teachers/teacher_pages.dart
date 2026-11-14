@@ -231,6 +231,7 @@ class _ReportEditorState extends State<ReportEditor> {
   bool _busy = false;
   String? _error;
   bool _dirty = false;
+  double? _progress; // 0 to 1 while attachments are uploaded, null = not measured
 
   /// The first change makes leaving the screen ask for a confirmation.
   void _touch() {
@@ -318,9 +319,15 @@ class _ReportEditorState extends State<ReportEditor> {
       } else {
         await api.patch('/api/platform/teacher/reports/$id', {...fields, 'submit_for_review': false, 'publish_to_parents': false});
       }
+      final totalFiles = _files.length;
+      var doneFiles = 0;
       while (_files.isNotEmpty) {
         final file = _files.first;
-        await api.multipart('/api/platform/teacher/content', {'category': 'report_attachment', 'report_id': id}, [file], fileField: 'file');
+        await api.multipart('/api/platform/teacher/content', {'category': 'report_attachment', 'report_id': id}, [file], fileField: 'file',
+            onProgress: (p) {
+          if (mounted) setState(() => _progress = (doneFiles + p) / totalFiles);
+        });
+        doneFiles++;
         _files = _files.sublist(1); // an upload that went through is not sent twice when the user retries
       }
       if (review || parents) {
@@ -361,7 +368,14 @@ class _ReportEditorState extends State<ReportEditor> {
             child: AbsorbPointer(
               absorbing: _busy,
               child: ListView(padding: const EdgeInsets.all(16), children: [
-                if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+                if (_busy)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(children: [
+                      Expanded(child: LinearProgressIndicator(value: _progress, minHeight: 6, borderRadius: BorderRadius.circular(6))),
+                      if (_progress != null) Padding(padding: const EdgeInsetsDirectional.only(start: 10), child: Text('${(_progress! * 100).round()} %', style: const TextStyle(fontSize: 12.5, color: Color(0xFF5B6878)))),
+                    ]),
+                  ),
                 if (note.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -506,7 +520,33 @@ class _PostComposerState extends State<PostComposer> {
   late bool _material = widget.material;
   List<UploadFile> _files = [];
   bool _busy = false;
+  double? _progress;
   String? _error;
+
+  /// Shows the post the way the parents will see it, before it is sent.
+  void _preview() {
+    final s = S.of(context);
+    final session = SessionScope.of(context);
+    final matches = widget.children.where((c) => c.id == _childId);
+    final post = Post(
+      id: 'preview', scope: _scope, kind: _material ? 'material' : 'post', childName: matches.isEmpty ? '' : matches.first.name,
+      title: _title.text.trim().isEmpty ? '…' : _title.text.trim(), body: _body.text.trim(), author: session.username ?? '', createdAt: DateTime.now(),
+    );
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(s.get('preview'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF5B6878))),
+            PostCard(post, filePath: (_, _) => ''),
+            if (_files.isNotEmpty) Wrap(spacing: 8, runSpacing: 6, children: [for (final f in _files) Chip(avatar: const Icon(Icons.attach_file, size: 16), label: Text(f.name))]),
+          ]),
+        ),
+      ),
+    );
+  }
 
   Future<void> _send() async {
     final s = S.of(context);
@@ -526,7 +566,9 @@ class _PostComposerState extends State<PostComposer> {
         'title': _title.text.trim(),
         'body': _body.text.trim(),
         if (_scope == 'child') 'child_id': _childId!,
-      }, _files);
+      }, _files, onProgress: (p) {
+        if (mounted) setState(() => _progress = p);
+      });
       if (!mounted) return;
       toast(context, s.get('saved'));
       Navigator.pop(context, true);
@@ -569,8 +611,17 @@ class _PostComposerState extends State<PostComposer> {
           AttachmentPicker(files: _files, onChanged: (v) => setState(() => _files = v)),
           if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
           const SizedBox(height: 16),
-          FilledButton.icon(onPressed: _send, icon: const Icon(Icons.send_outlined), label: Text(s.get('publish'))),
-          if (_busy) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
+          OutlinedButton.icon(onPressed: _busy ? null : _preview, icon: const Icon(Icons.visibility_outlined), label: Text(s.get('preview'))),
+          const SizedBox(height: 10),
+          FilledButton.icon(onPressed: _busy ? null : _send, icon: const Icon(Icons.send_outlined), label: Text(s.get('publish'))),
+          if (_busy)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(children: [
+                Expanded(child: LinearProgressIndicator(value: _progress, minHeight: 6, borderRadius: BorderRadius.circular(6))),
+                if (_progress != null) Padding(padding: const EdgeInsetsDirectional.only(start: 10), child: Text('${(_progress! * 100).round()} %')),
+              ]),
+            ),
         ]),
       ),
     );
@@ -670,7 +721,7 @@ class _TeacherMaterialsState extends State<TeacherMaterials> {
         final limit = (storage['limit_bytes'] as num).toInt();
         return Scaffold(
           backgroundColor: Colors.transparent,
-          floatingActionButton: FloatingActionButton.extended(
+          floatingActionButton: _selected.isNotEmpty ? null : FloatingActionButton.extended(
             backgroundColor: brandAccent,
             icon: const Icon(Icons.upload_file),
             label: Text(s.get('uploadFile')),
@@ -700,6 +751,19 @@ class _TeacherMaterialsState extends State<TeacherMaterials> {
               }
             },
           ),
+          bottomNavigationBar: _selected.isEmpty
+              ? null
+              : BottomActionBar(children: [
+                  TextButton(onPressed: () => setState(_selected.clear), child: Text(s.get('cancel'))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _share(items, children, reload),
+                      icon: const Icon(Icons.family_restroom),
+                      label: Text('${s.get('shareSelected')} (${_selected.length})'),
+                    ),
+                  ),
+                ]),
           body: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 90), children: [
             Card(
               child: Padding(
@@ -734,17 +798,7 @@ class _TeacherMaterialsState extends State<TeacherMaterials> {
                 },
               ),
             SectionTitle(s.get('myPrivateFiles')),
-            if (items.isNotEmpty)
-              _selected.isEmpty
-                  ? Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, 6), child: Text(s.get('selectToShare'), style: TextStyle(color: Colors.grey.shade700, fontSize: 13)))
-                  : Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: FilledButton.icon(
-                        onPressed: () => _share(items, children, reload),
-                        icon: const Icon(Icons.family_restroom),
-                        label: Text('${s.get('shareSelected')} (${_selected.length})'),
-                      ),
-                    ),
+            if (items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, 6), child: Text(s.get('selectToShare'), style: TextStyle(color: Colors.grey.shade700, fontSize: 13))),
             if (items.isEmpty) Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(s.get('noFiles')))),
             for (final m in items)
               Card(
