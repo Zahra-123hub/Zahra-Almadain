@@ -310,6 +310,7 @@ class _SectionDialogState extends State<_SectionDialog> {
   List<UploadFile> _files = [];
   bool _hidden = false;
   bool _busy = false;
+  double? _progress;
 
   Future<void> _save() async {
     final s = S.of(context);
@@ -321,7 +322,9 @@ class _SectionDialogState extends State<_SectionDialog> {
     setState(() => _busy = true);
     try {
       if (widget.section == null) {
-        await api.multipart('/api/platform/manager/materials', {'title': _title.text.trim(), 'body': _body.text.trim(), 'hidden': '$_hidden'}, _files);
+        await api.multipart('/api/platform/manager/materials', {'title': _title.text.trim(), 'body': _body.text.trim(), 'hidden': '$_hidden'}, _files, onProgress: (p) {
+          if (mounted) setState(() => _progress = p);
+        });
       } else {
         await api.patch('/api/platform/manager/materials/${widget.section!.id}', {'title': _title.text.trim(), 'body': _body.text.trim()});
       }
@@ -343,7 +346,7 @@ class _SectionDialogState extends State<_SectionDialog> {
         width: 420,
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            if (_busy) const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator()),
+            if (_busy) Padding(padding: const EdgeInsets.only(bottom: 12), child: LinearProgressIndicator(value: _progress)),
             TextField(controller: _title, maxLength: 120, decoration: InputDecoration(labelText: s.get('sectionTitle'))),
             TextField(controller: _body, maxLines: 3, maxLength: 3000, decoration: InputDecoration(labelText: s.get('description'))),
             if (isNew) ...[

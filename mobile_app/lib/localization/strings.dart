@@ -147,6 +147,7 @@ class S {
     'offlineTitle': {'ar': 'لا يوجد اتصال', 'de': 'Keine Verbindung', 'en': 'You are offline'},
     'noAccess': {'ar': 'لا تملك صلاحية لهذه الصفحة', 'de': 'Keine Berechtigung', 'en': 'No access'},
     'noAccessHint': {'ar': 'إذا كنت تعتقد أن هذا خطأ فتواصل مع إدارة الروضة.', 'de': 'Wenn das ein Fehler ist, wende dich an die Leitung.', 'en': 'If this is a mistake, please contact the management.'},
+    'preview': {'ar': 'معاينة', 'de': 'Vorschau', 'en': 'Preview'},
     'uploadFile': {'ar': 'رفع ملف', 'de': 'Datei hochladen', 'en': 'Upload file'},
     'storage': {'ar': 'المساحة المستخدمة', 'de': 'Genutzter Speicher', 'en': 'Storage used'},
     'draftLocal': {'ar': 'تم حفظ مسودة على هذا الجهاز', 'de': 'Entwurf auf diesem Gerät gesichert', 'en': 'Draft kept on this device'},
