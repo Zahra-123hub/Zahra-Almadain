@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import ledger as book
 from app.database import get_session
 from app.timeutil import local_today
+from app import staff_export
 from app.fees import (
     CURRENCIES,
     ZERO,
@@ -201,6 +202,9 @@ class EmployeeIn(BaseModel):
     account_id: uuid.UUID | None = None  # the person's platform account (teacher / accountant)
     salary: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)  # usual monthly salary
     salary_currency: str = Field(default="SYP", pattern="^(USD|SYP)$")
+    phone: str = Field(default="", max_length=40)
+    hired_on: date | None = None
+    notes: str = Field(default="", max_length=500)
 
 
 class SalaryIn(BaseModel):
@@ -805,8 +809,19 @@ def build_router(
 
     # ---- employees ----------------------------------------------------------
 
-    def employee_data(e: Employee, usernames: dict[uuid.UUID, str]) -> dict[str, Any]:
+    def next_employee_no(session: Session) -> str:
+        highest = 0
+        for number in session.scalars(select(Employee.employee_no).where(Employee.employee_no.is_not(None))):
+            tail = number.rsplit("-", 1)[-1]
+            if tail.isdigit():
+                highest = max(highest, int(tail))
+        return f"M-{highest + 1:04d}"
+
+    def employee_data(e: Employee, usernames: dict[uuid.UUID, str], notes: bool = True) -> dict[str, Any]:
         return {
+            "employee_no": e.employee_no or "", "phone": e.phone,
+            "hired_on": e.hired_on.isoformat() if e.hired_on else None, "left_on": e.left_on.isoformat() if e.left_on else None,
+            "is_active": e.is_active, "notes": e.notes if notes else "",
             "id": str(e.id), "name": e.name, "job_title": e.job_title,
             "salary": None if e.salary is None else str(money(e.salary)),
             "salary_currency": e.salary_currency,
@@ -858,7 +873,26 @@ def build_router(
             a.id: a.username
             for a in session.scalars(select(Account).where(Account.id.in_([e.account_id for e in rows if e.account_id])))
         }
-        return [employee_data(e, usernames) for e in rows]
+        return [employee_data(e, usernames, notes=_actor.role in ("manager", "admin")) for e in rows]
+
+    @router.get("/employees/export.{fmt}")
+    def export_employees(
+        fmt: str,
+        scope: str = "all",
+        actor: FeesActor = Depends(manage_guard),
+        session: Session = Depends(get_session),
+    ) -> Response:
+        """The staff list as XLSX or CSV (management and admin only). A plain output of the central table."""
+        if fmt not in ("xlsx", "csv") or scope not in ("all", "active"):
+            raise HTTPException(422, "صيغة أو نطاق غير صالح.")
+        query = select(Employee).order_by(Employee.employee_no, Employee.name)
+        if scope == "active":
+            query = query.where(Employee.is_active.is_(True))
+        rows = list(session.scalars(query).all())
+        log(session, actor, "employee.export", scope, f"{fmt} {len(rows)}")
+        session.commit()
+        name = f"staff-{scope}-{local_today().isoformat()}.{fmt}"
+        return staff_export.csv_response(name, rows) if fmt == "csv" else staff_export.xlsx_response(name, rows)
 
     @router.get("/staff-accounts")
     def staff_accounts(
@@ -896,7 +930,14 @@ def build_router(
         if existing is not None:  # the same person again: the old record (and everything tied to it) comes back
             employee = existing
             employee.is_active = True
+            employee.left_on = None
             employee.job_title = payload.job_title.strip() or employee.job_title
+            if payload.phone.strip():
+                employee.phone = payload.phone.strip()
+            if payload.hired_on is not None:
+                employee.hired_on = payload.hired_on
+            if payload.notes.strip():
+                employee.notes = payload.notes.strip()
             if payload.salary is not None:
                 employee.salary = money(payload.salary)
                 employee.salary_currency = payload.salary_currency
@@ -910,6 +951,7 @@ def build_router(
             name=payload.name.strip(), job_title=payload.job_title.strip(),
             salary=None if payload.salary is None else money(payload.salary),
             salary_currency=payload.salary_currency,
+            employee_no=next_employee_no(session), phone=payload.phone.strip(), hired_on=payload.hired_on, notes=payload.notes.strip(),
         )
         session.add(employee)
         session.flush()
@@ -940,6 +982,10 @@ def build_router(
             raise HTTPException(409, "يوجد موظف بهذا الاسم.")
         employee.name = payload.name.strip()
         employee.job_title = payload.job_title.strip()
+        for field in ("phone", "hired_on", "notes"):  # only touched when the form sends them
+            if field in payload.model_fields_set:
+                value = getattr(payload, field)
+                setattr(employee, field, value.strip() if isinstance(value, str) else value)
         followed = 0
         if "salary" in payload.model_fields_set:  # only touched when the form sends it
             old_salary, old_currency = employee.salary, employee.salary_currency
@@ -977,6 +1023,7 @@ def build_router(
         if employee is None:
             raise HTTPException(404, "الموظف غير موجود.")
         employee.is_active = False
+        employee.left_on = employee.left_on or local_today()
         log(session, actor, "employee.remove", employee.id, "")
         session.commit()
         return Response(status_code=204)

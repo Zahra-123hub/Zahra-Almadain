@@ -1402,7 +1402,7 @@
   function renderManager(shellMain) {
     if (typeof window.ZMManagement !== "function") { shellMain.appendChild(element("p", "p-alert error", t("genericError"))); return; }
     window.ZMManagement({
-      element: element, request: request, t: t, button: button, showError: showError, errorMessage: errorMessage,
+      element: element, request: request, t: t, button: button, showError: showError, errorMessage: errorMessage, download: downloadByPath,
       viewShell: viewShell, statTile: statTile, profile: function () { return profile; }, lang: function () { return lang; },
       renderNotifications: renderNotifications, renderProfile: renderProfile, renderAnnouncements: renderAnnouncements,
       renderDashboardWelcome: renderDashboardWelcome, loadReviewQueue: loadReviewQueue, dateLabel: dateLabel, childNames: childNames

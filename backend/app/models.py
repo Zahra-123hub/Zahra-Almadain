@@ -355,6 +355,11 @@ class Employee(Base):
     # Usual monthly salary, saved once and used to pre-fill / generate the monthly payroll.
     salary: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     salary_currency: Mapped[str] = mapped_column(String(3), default="SYP", server_default="SYP")
+    employee_no: Mapped[str | None] = mapped_column(String(20), nullable=True, unique=True)  # M-0001 ...
+    phone: Mapped[str] = mapped_column(String(40), default="", server_default="")
+    hired_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    left_on: Mapped[date | None] = mapped_column(Date, nullable=True)  # set when deactivated; the person stays in old payroll
+    notes: Mapped[str] = mapped_column(String(500), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

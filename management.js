@@ -42,6 +42,16 @@
       noEmp: "لا يوجد موظفون محفوظون بعد.",
       empRemoved: "أُزيل الموظف من القائمة (تبقى رواتبه القديمة).",
       linkedTo: "مرتبط بـ",
+      phoneLabel: "الهاتف",
+      hiredLabel: "تاريخ المباشرة",
+      notesLabel: "ملاحظات",
+      empNo: "رقم الموظف",
+      exportTitle: "تصدير قائمة الموظفين",
+      exportAll: "كل الموظفين",
+      exportActive: "الفعّالون فقط",
+      exportXlsx: "تنزيل Excel (XLSX)",
+      exportCsv: "تنزيل CSV",
+      leftOn: "غادر في",
       teacherRole: "معلمة",
       accountantRole: "محاسب",
       followed: "وتحدّث راتب {n} سطر لم يُدفع بعد ليوافق الراتب الجديد.",
@@ -98,6 +108,16 @@
       noEmp: "No employees are saved yet.",
       empRemoved: "The employee was removed from the list (old salaries stay).",
       linkedTo: "linked to",
+      phoneLabel: "Phone",
+      hiredLabel: "Start date",
+      notesLabel: "Notes",
+      empNo: "Employee no.",
+      exportTitle: "Export the staff list",
+      exportAll: "All employees",
+      exportActive: "Active only",
+      exportXlsx: "Download Excel (XLSX)",
+      exportCsv: "Download CSV",
+      leftOn: "Left on",
       teacherRole: "Teacher",
       accountantRole: "Accountant",
       followed: "and {n} unpaid salary line(s) follow the new salary.",
@@ -422,8 +442,22 @@
       empListCard.appendChild(el("h2", "", m("empList")));
       var empBox = el("div", "p-child-list");
       empListCard.appendChild(empBox);
+      var exportCard = el("section", "p-card");
+      exportCard.appendChild(el("h2", "", m("exportTitle")));
+      var exportScope = el("select");
+      exportScope.appendChild(new Option(m("exportAll"), "all"));
+      exportScope.appendChild(new Option(m("exportActive"), "active"));
+      exportCard.appendChild(field(m("exportTitle"), exportScope));
+      var exportRow = el("div", "p-row");
+      ["xlsx", "csv"].forEach(function(kind){
+        exportRow.appendChild(api.button(kind === "xlsx" ? m("exportXlsx") : m("exportCsv"), "outline", function(){
+          api.download(ACCOUNTING + "/employees/export." + kind + "?scope=" + exportScope.value, "staff-" + exportScope.value + "." + kind);
+        }));
+      });
+      exportCard.appendChild(exportRow);
       panes.employees.appendChild(empCard);
       panes.employees.appendChild(empListCard);
+      panes.employees.appendChild(exportCard);
       var staffAccounts = [];
       function empNote(text, kind){ empMsg.className = "p-alert " + (kind || "success"); empMsg.textContent = text; }
       function accountSelect(current){
@@ -445,23 +479,31 @@
         select.value = value || "SYP";
         return select;
       }
-      function salaryBody(name, job, salary, currency, account){
-        return {name: name.trim(), job_title: job.trim(), salary: salary === "" ? null : salary, salary_currency: currency, account_id: account || null};
+      function salaryBody(name, job, salary, currency, account, extra){
+        var body = {name: name.trim(), job_title: job.trim(), salary: salary === "" ? null : salary, salary_currency: currency, account_id: account || null};
+        if(extra){ body.phone = extra.phone.value.trim(); body.hired_on = extra.hired.value || null; body.notes = extra.notes.value.trim(); }
+        return body;
       }
-      var eName, eJob, eSalary, eCurrency, eAccount;
+      function extraInputs(person){
+        var phone = textInput(person && person.phone, 40); phone.inputMode = "tel"; phone.dir = "ltr";
+        var hired = el("input"); hired.type = "date"; hired.value = (person && person.hired_on) || "";
+        var notes = textInput(person && person.notes, 500);
+        return {phone: phone, hired: hired, notes: notes};
+      }
+      var eName, eJob, eSalary, eCurrency, eAccount, eExtra;
       function drawEmpForm(){
         eName = textInput("", 120); eName.required = true; eName.placeholder = m("fullName"); eName.autocomplete = "off";
         eJob = textInput("", 80);
         eSalary = el("input"); eSalary.type = "number"; eSalary.min = "0"; eSalary.step = "0.01"; eSalary.inputMode = "decimal";
-        eCurrency = currencySelect("SYP"); eAccount = accountSelect("");
+        eCurrency = currencySelect("SYP"); eAccount = accountSelect(""); eExtra = extraInputs(null);
         empForm.innerHTML = "";
-        [field(m("fullName"), eName), field(m("jobTitle"), eJob), field(m("salaryLabel"), eSalary), field(m("salaryCurrency"), eCurrency), field(m("empAccount"), eAccount)].forEach(function(node){ empForm.appendChild(node); });
+        [field(m("fullName"), eName), field(m("jobTitle"), eJob), field(m("salaryLabel"), eSalary), field(m("salaryCurrency"), eCurrency), field(m("empAccount"), eAccount), field(m("phoneLabel"), eExtra.phone), field(m("hiredLabel"), eExtra.hired), field(m("notesLabel"), eExtra.notes)].forEach(function(node){ empForm.appendChild(node); });
         var save = el("button", "p-button sun", m("saveEmp")); save.type = "submit";
         empForm.appendChild(save);
       }
       empForm.addEventListener("submit", function(event){
         event.preventDefault();
-        var body = salaryBody(eName.value, eJob.value, eSalary.value, eCurrency.value, eAccount.value);
+        var body = salaryBody(eName.value, eJob.value, eSalary.value, eCurrency.value, eAccount.value, eExtra);
         if(body.salary === null){ delete body.salary; }
         request(ACCOUNTING + "/employees", {method: "POST", body: JSON.stringify(body)}).then(function(){
           empNote(m("empSaved"), "success");
@@ -476,15 +518,16 @@
           var head = el("div", "p-child-head");
           head.appendChild(el("span", "p-avatar sun", (person.name || "?").charAt(0)));
           head.appendChild(el("h3", "", person.name));
+          if(person.employee_no) head.appendChild(el("span", "p-badge", person.employee_no));
           if(person.account_username) head.appendChild(el("span", "p-badge p-status-active", person.account_username));
           card.appendChild(head);
           var nameInput = textInput(person.name, 120), jobInput = textInput(person.job_title, 80);
           var salaryInput = el("input"); salaryInput.type = "number"; salaryInput.min = "0"; salaryInput.step = "0.01"; salaryInput.inputMode = "decimal"; salaryInput.value = person.salary || "";
-          var currencyInput = currencySelect(person.salary_currency), accountInput = accountSelect(person.account_id);
-          [field(m("fullName"), nameInput), field(m("jobTitle"), jobInput), field(m("salaryLabel"), salaryInput), field(m("salaryCurrency"), currencyInput), field(m("empAccount"), accountInput)].forEach(function(node){ card.appendChild(node); });
+          var currencyInput = currencySelect(person.salary_currency), accountInput = accountSelect(person.account_id), extra = extraInputs(person);
+          [field(m("fullName"), nameInput), field(m("jobTitle"), jobInput), field(m("salaryLabel"), salaryInput), field(m("salaryCurrency"), currencyInput), field(m("empAccount"), accountInput), field(m("phoneLabel"), extra.phone), field(m("hiredLabel"), extra.hired), field(m("notesLabel"), extra.notes)].forEach(function(node){ card.appendChild(node); });
           var row = el("div", "p-row");
           row.appendChild(api.button(m("save"), "sun", function(){
-            request(ACCOUNTING + "/employees/" + encodeURIComponent(person.id), {method: "PATCH", body: JSON.stringify(salaryBody(nameInput.value, jobInput.value, salaryInput.value, currencyInput.value, accountInput.value))})
+            request(ACCOUNTING + "/employees/" + encodeURIComponent(person.id), {method: "PATCH", body: JSON.stringify(salaryBody(nameInput.value, jobInput.value, salaryInput.value, currencyInput.value, accountInput.value, extra))})
               .then(function(saved){ empNote(m("saved") + (saved.updated_salary_rows ? " " + m("followed").replace("{n}", saved.updated_salary_rows) : ""), "success"); return reloadEmployees(); })
               .catch(function(error){ note(card, api.errorMessage(error), "error"); });
           }));

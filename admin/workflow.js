@@ -385,9 +385,9 @@ function staffStep(){
   request("/api/admin/accounting/employees").then(function(rows){
     if(!rows.length){ list.appendChild(h("div", {class:"a-empty", text:"لا يوجد موظفون مسجَّلون بعد. تضيفهم الإدارة."})); return; }
     list.appendChild(h("div", {class:"a-table-wrap"}, [labelCells(h("table", {class:"a-table compact"}, [
-      h("thead", {}, [h("tr", {}, ["الاسم", "المسمى الوظيفي", "الراتب المعتاد", "حساب الدخول"].map(function(t){ return h("th", {text:t}); }))]),
+      h("thead", {}, [h("tr", {}, ["الرقم", "الاسم", "المسمى الوظيفي", "الهاتف", "الراتب المعتاد", "حساب الدخول"].map(function(t){ return h("th", {text:t}); }))]),
       h("tbody", {}, rows.map(function(e){
-        return h("tr", {}, [h("td", {class:"name", dir:"auto", text:e.name}), h("td", {dir:"auto", text:e.job_title || "—"}),
+        return h("tr", {}, [h("td", {dir:"ltr", text:e.employee_no || "—"}), h("td", {class:"name", dir:"auto", text:e.name}), h("td", {dir:"auto", text:e.job_title || "—"}), h("td", {dir:"ltr", text:e.phone || "—"}),
           h("td", {class:"num", dir:"ltr", text:e.salary ? money(e.salary) + " " + (e.salary_currency || "") : "—"}), h("td", {text:e.account_username || "—"})]);
       }))]))]));
   }).catch(function(error){ setMsg(msg, errText(error), "err"); });
