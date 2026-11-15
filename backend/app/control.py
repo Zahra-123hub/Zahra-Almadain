@@ -29,7 +29,7 @@ from app.models import (
 )
 from app.timeutil import local_day_bounds, local_now, local_today, to_local
 
-GRANTS = ("control.view", "finance.view")
+GRANTS = ("control.view", "finance.view", "books.view", "books.write")
 
 
 def has_grant(session: Session, actor: FeesActor, name: str) -> bool:

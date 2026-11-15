@@ -1947,7 +1947,7 @@ def build_router(
     @router.post("/rates/refresh")
     def refresh_rate(
         force: bool = False,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         """Asks the online feed again right now. A rate typed by hand for today is kept unless `force` says to replace it."""
@@ -1971,7 +1971,7 @@ def build_router(
     @router.put("/rates")
     def set_rate(
         payload: RateIn,
-        actor: FeesActor = Depends(guard),
+        actor: FeesActor = Depends(manage_guard),  # the exchange rate is set by the management (and the admin)
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         """The value of one dollar in pounds from a day on. Setting a day again replaces that day's rate."""

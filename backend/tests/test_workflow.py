@@ -65,7 +65,7 @@ class WorkflowTests(ControlsBase):
         self.assertEqual(self.status("basics")["status"], "pending")
         self.capital()
         self.assertEqual(self.status("basics")["status"], "in_progress")
-        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
+        self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
         self.assertEqual(self.status("basics")["status"], "done")
         self.assertEqual(self.status("fees")["status"], "pending")
         charge = self.charge(month=1, amount="1000")
@@ -116,7 +116,7 @@ class WorkflowTests(ControlsBase):
 
     def test_next_step_moves_on_and_a_whole_month_ends_closed_and_archived(self):
         self.capital()
-        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
+        self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
         charge = self.charge(month=1, amount="1000")
         self.pay(charge, "1000", "2026-01-10")
         self.entry("2026-01-12", "operating", expense="40", receipt_no="R-1")
@@ -268,12 +268,12 @@ class WorkflowTests(ControlsBase):
         again = self.client.get(A + "/rates", headers=self.acc).json()  # kept for the day: the feed is not asked again
         self.assertEqual(again["current"]["rate"], "12200")
         # a typed rate for the same day is never replaced by the feed unless that is asked for
-        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": date.today().isoformat(), "syp_per_usd": "13000"})
+        self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": date.today().isoformat(), "syp_per_usd": "13000"})
         with patch("app.accounting.fetch_online_rate", return_value=Decimal("12300")):
-            self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.acc).status_code, 409)
-            forced = self.client.post(A + "/rates/refresh?force=true", headers=self.acc)
+            self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.mgr).status_code, 409)
+            forced = self.client.post(A + "/rates/refresh?force=true", headers=self.mgr)
         self.assertEqual((forced.status_code, forced.json()["current"]["rate"], forced.json()["current"]["source"]), (200, "12300", "auto"))
-        self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.acc).status_code, 503)  # the feed is down (the test patch): said honestly
+        self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.mgr).status_code, 503)  # the feed is down (the test patch): said honestly
         self.assertEqual(self.client.post(A + "/rates/refresh", headers=self.teacher).status_code, 403)
 
     def test_the_status_list_counts_the_automatic_rate(self):
@@ -320,7 +320,7 @@ class WorkflowTests(ControlsBase):
 
     # ---- the net after the conversion is exact ----
     def test_the_converted_net_is_made_from_exact_amounts(self):
-        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": "2026-01-01", "syp_per_usd": "12181.8547"})
+        self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": "2026-01-01", "syp_per_usd": "12181.8547"})
         self.entry("2026-01-12", "buffet", income="555")
         self.entry("2026-01-12", "buffet", income="0.51", currency="USD")
         self.entry("2026-01-12", "operating", expense="30000")
@@ -455,14 +455,14 @@ class WorkflowTests(ControlsBase):
     def test_the_log_can_be_filtered_and_an_accountant_sees_only_their_own_work(self):
         self.save_as(self.acc, "2026-01-12", "operating", "40")
         self.save_as(self.acc2, "2026-01-13", "purchases", "15")
-        self.client.put(A + "/rates", headers=self.acc2, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
+        self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
         L = "/api/admin/fees/audit"
         mine = self.client.get(L, headers=self.acc).json()
         self.assertEqual({row["actor"] for row in mine}, {"acc"})
         self.assertEqual({row["actor"] for row in self.client.get(L, headers=self.acc2).json()}, {"acc2"})
         self.assertEqual({row["actor"] for row in self.client.get(L + "?actor_name=acc2", headers=self.acc).json()}, {"acc"})  # asking for somebody else changes nothing
         everyone = self.client.get(L, headers=self.admin).json()
-        self.assertEqual({row["actor"] for row in everyone}, {"acc", "acc2"})
+        self.assertEqual({row["actor"] for row in everyone}, {"acc", "acc2", "mgr0"})  # the rate is set by the management
         self.assertEqual({row["actor"] for row in self.client.get(L + "?actor_name=acc2", headers=self.admin).json()}, {"acc2"})
         self.assertEqual({row["action"] for row in self.client.get(L + "?action=rate.set", headers=self.admin).json()}, {"rate.set"})
         self.assertEqual(len(self.client.get(L + "?q=purchases", headers=self.admin).json()), 1)
@@ -471,7 +471,7 @@ class WorkflowTests(ControlsBase):
         today = date.today().isoformat()
         self.assertEqual(len(self.client.get(f"{L}?date_from={today}&date_to={today}", headers=self.admin).json()), len(everyone))
         self.assertEqual(self.client.get(f"{L}?date_to=2000-01-01", headers=self.admin).json(), [])
-        self.assertEqual(self.client.get(L + "/actors", headers=self.admin).json(), ["acc", "acc2"])
+        self.assertEqual(self.client.get(L + "/actors", headers=self.admin).json(), ["acc", "acc2", "mgr0"])
         self.assertEqual(self.client.get(L + "/actors", headers=self.acc).json(), ["acc"])
         for headers in (self.teacher, self.parent, self.mgr):
             self.assertEqual(self.client.get(L, headers=headers).status_code, 403)
@@ -519,7 +519,7 @@ class WorkflowTests(ControlsBase):
 
     def test_confirmed_steps_open_the_way_to_closing_but_flagged_lines_still_block(self):
         self.capital()
-        self.client.put(A + "/rates", headers=self.acc, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
+        self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": "2026-01-02", "syp_per_usd": "15000"})
         for step in ("staff", "fees", "income", "expenses", "payroll", "reconcile"):
             self.confirm(step)
         data = self.flow()
@@ -552,7 +552,7 @@ class WorkflowTests(ControlsBase):
         return self.client.post(A + "/convert", headers=self.acc, json=body)
 
     def set_rate(self, day, rate):
-        self.assertEqual(self.client.put(A + "/rates", headers=self.acc, json={"effective_date": day, "syp_per_usd": rate}).status_code, 200)
+        self.assertEqual(self.client.put(A + "/rates", headers=self.mgr, json={"effective_date": day, "syp_per_usd": rate}).status_code, 200)
 
     def test_a_past_day_is_converted_with_the_rate_of_that_day_not_with_todays(self):
         from datetime import date

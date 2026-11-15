@@ -41,18 +41,20 @@ from app.models import (
 )
 
 # ---- categories ------------------------------------------------------------------------------------------------------------
-INCOME_CATEGORIES = ("fees", "donations", "other_income")
+INCOME_CATEGORIES = ("fees", "registration", "donations", "other_income")
 EXPENSE_CATEGORIES = (
-    "salaries", "rent", "food", "operating", "activities", "material", "transport", "advertising", "other_expense",
+    "salaries", "rent", "food", "utilities", "operating", "activities", "material", "transport", "advertising", "other_expense",
 )
 SYSTEM_CATEGORIES = ("fees", "salaries")  # only the fee payments and the salary payments may carry these
 CATEGORY_LABELS: dict[str, dict[str, str]] = {
     "fees": {"ar": "رسوم الأطفال", "de": "Gebühren"},
+    "registration": {"ar": "رسوم التسجيل", "de": "Anmeldung"},
     "donations": {"ar": "تبرعات", "de": "Spenden"},
     "other_income": {"ar": "إيرادات أخرى", "de": "Sonstige Einnahmen"},
     "salaries": {"ar": "الرواتب", "de": "Gehälter"},
     "rent": {"ar": "الإيجار", "de": "Miete"},
     "food": {"ar": "الطعام", "de": "Lebensmittel"},
+    "utilities": {"ar": "الكهرباء والماء", "de": "Strom und Wasser"},
     "operating": {"ar": "المصروفات التشغيلية", "de": "Laufender Betrieb"},
     "activities": {"ar": "الأنشطة", "de": "Aktivitäten"},
     "material": {"ar": "المواد والمستلزمات", "de": "Material"},
@@ -287,6 +289,12 @@ def movements(
             void_reason=t.void_reason or "", voided_by=t.voided_by or "", voided_at=t.voided_at, counterparty=t.counterparty or "",
             receipt_no=t.receipt_no or "", receipts=counts.get(t.id, 0), legacy_note=t.legacy_note or "",
             editable=(t.origin == "manual" and not voided), version=t.version or 1,
+            extra={k: v for k, v in {
+                "amount_other": None if t.amount_other is None else str(money(t.amount_other)),
+                "rate": None if t.rate_syp_per_usd is None else format(Decimal(t.rate_syp_per_usd).normalize(), "f"),
+                "rate_source": t.rate_source if t.rate_syp_per_usd is not None else None,
+                "note": t.note or None, "employee_id": str(t.employee_id) if t.employee_id else None, "child_id": str(t.child_id) if t.child_id else None,
+            }.items() if v is not None},
         ))
 
     rows = [m for m in rows if (start is None or m.day >= start) and (end is None or m.day <= end)]

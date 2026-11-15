@@ -51,6 +51,9 @@
       exportActive: "الفعّالون فقط",
       exportXlsx: "تنزيل Excel (XLSX)",
       exportCsv: "تنزيل CSV",
+      booksTitle: "المحاسبة",
+      booksHint: "ثلاث صفحات فقط: الإيرادات، المصروفات، الملخص الشهري. هنا تحدّد الإدارة سعر الصرف أيضاً.",
+      booksOpen: "فتح المحاسبة",
       leftOn: "غادر في",
       teacherRole: "معلمة",
       accountantRole: "محاسب",
@@ -117,6 +120,9 @@
       exportActive: "Active only",
       exportXlsx: "Download Excel (XLSX)",
       exportCsv: "Download CSV",
+      booksTitle: "Accounting",
+      booksHint: "Three pages only: income, expenses and the month overview. The management also sets the exchange rate there.",
+      booksOpen: "Open the accounting",
       leftOn: "Left on",
       teacherRole: "Teacher",
       accountantRole: "Accountant",
@@ -182,6 +188,13 @@
 
       // ---- home: numbers and notices
       api.renderDashboardWelcome(panes.home);
+      var booksCard = el("section", "p-card");
+      booksCard.appendChild(el("h2", "", m("booksTitle")));
+      booksCard.appendChild(el("p", "p-muted", m("booksHint")));
+      var booksLink = el("a", "p-button sun", m("booksOpen"));
+      booksLink.href = "../admin/";
+      booksCard.appendChild(booksLink);
+      panes.home.appendChild(booksCard);
       var stats = el("div", "p-stats");
       var tiles = {
         children: api.statTile(t("statChildren"), "kids", views.show),

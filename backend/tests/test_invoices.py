@@ -18,7 +18,7 @@ D = Decimal
 
 class InvoiceTests(LedgerBase):
     def set_rate(self, value, day=None, reason="", headers=None):
-        return self.client.put(A + "/rates", headers=headers or self.acc, json={"effective_date": (day or local_today()).isoformat(), "syp_per_usd": value, "reason": reason})
+        return self.client.put(A + "/rates", headers=headers or self.mgr, json={"effective_date": (day or local_today()).isoformat(), "syp_per_usd": value, "reason": reason})
 
     def invoice(self, currency="USD", lines=(("fee", "20"), ("extra", "5")), month=1, year=2026, headers=None):
         body = {"child_id": str(self.child_id()), "year": year, "month": month, "currency": currency,
@@ -155,8 +155,8 @@ class InvoiceTests(LedgerBase):
             self.assertEqual(self.invoice(headers=headers).status_code, 403)
         self.assertEqual(self.invoice(headers=self.mgr).status_code, 201)  # the management may manage invoices
         self.assertEqual(self.client.get(I, headers=self.mgr).status_code, 200)
-        self.assertEqual(self.client.get(A + "/rates", headers=self.mgr).status_code, 200)  # and look at the rate
-        self.assertEqual(self.set_rate("13000", reason="not allowed", headers=self.mgr).status_code, 403)  # but not set it
+        self.assertEqual(self.client.get(A + "/rates", headers=self.mgr).status_code, 200)  # and the accountant look at the rate
+        self.assertEqual(self.set_rate("13000", reason="not allowed", headers=self.acc).status_code, 403)  # the accountant cannot set it: the management does
 
     def test_the_list_sums_each_currency_in_its_own_currency_only(self):
         self.set_rate("12000")

@@ -731,6 +731,15 @@ class CashTransaction(Base):
         Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     legacy_note: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    # The three accounting pages: `currency`/`amount` stay what was really handed over; the value in the other currency is
+    # frozen with the rate of the booking, which a later rate never changes.
+    amount_other: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    rate_syp_per_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rate_source: Mapped[str] = mapped_column(String(14), default="none", server_default="none")
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    child_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="SET NULL"), nullable=True)
     adjusts_salary_line_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("salary_lines.id", ondelete="RESTRICT"), nullable=True, index=True
     )

@@ -392,8 +392,8 @@ class BookingTests(LedgerBase):
         self.assertEqual(self.new_booking(booked_on=(local_today() + timedelta(days=1)).isoformat()).status_code, 422)
         self.assertEqual(self.new_booking(kind="income", category="donations", amount="250").status_code, 201)
         categories = self.client.get(A + "/finance/categories", headers=self.acc).json()
-        self.assertEqual([c["key"] for c in categories["income"]], ["fees", "donations", "other_income"])
-        self.assertEqual(len(categories["expense"]), 9)
+        self.assertEqual([c["key"] for c in categories["income"]], ["fees", "registration", "donations", "other_income"])
+        self.assertEqual(len(categories["expense"]), 10)
 
     def test_the_balance_follows_the_bookings_and_both_figures_are_shown_apart_per_currency(self):
         self.new_booking(kind="income", category="donations", amount="250")

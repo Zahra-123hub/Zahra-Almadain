@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, activity, community, control, fees, finance, invoicing, mobile, security, visits, workflow
+from app import accounting, activity, books, community, control, fees, finance, invoicing, mobile, security, visits, workflow
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -688,6 +688,28 @@ def require_invoice_user(
     return fees_actor(authorization, session, ("accountant", "manager", "admin"), "ليس لديك صلاحية الوصول إلى الفواتير.")
 
 
+def require_books_reader(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """The three accounting pages: the management and the admin always; an accountant only with the grant `books.view`."""
+    actor = fees_actor(authorization, session, ("admin", "manager", "accountant"), "ليس لديك صلاحية الوصول إلى المحاسبة.")
+    if actor.role == "accountant" and not control.has_grant(session, actor, "books.view"):
+        raise HTTPException(403, "لم تُمنح صلاحية عرض المحاسبة. تمنحها الإدارة.")
+    return actor
+
+
+def require_books_writer(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """Adding, changing and cancelling bookings: the management and the admin always; an accountant only with `books.write`."""
+    actor = fees_actor(authorization, session, ("admin", "manager", "accountant"), "ليس لديك صلاحية الوصول إلى المحاسبة.")
+    if actor.role == "accountant" and not (control.has_grant(session, actor, "books.view") and control.has_grant(session, actor, "books.write")):
+        raise HTTPException(403, "لم تُمنح صلاحية تسجيل الحركات. تمنحها الإدارة.")
+    return actor
+
+
 def require_staff_reader(
     authorization: str | None = Header(default=None),
     session: Session | None = Depends(optional_session),
@@ -873,6 +895,7 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
 
 app.include_router(fees.build_router(require_fees_user, require_people_manager))
 app.include_router(accounting.build_router(require_fees_user, require_people_manager, require_staff_reader))
+app.include_router(books.build_router(require_books_reader, require_books_writer, require_people_manager))
 app.include_router(invoicing.build_router(require_invoice_user, require_fees_user, require_admin_actor))
 app.include_router(workflow.build_router(require_fees_user))
 app.include_router(finance.build_router(require_fees_user))

@@ -509,7 +509,7 @@ class AccountingApiTests(unittest.TestCase):
 
     # ---- switching the currency of a form converts what was typed ----
     def _rate(self, day, rate, headers=None, reason=""):
-        return self.client.put("/api/admin/accounting/rates", headers=headers or self.acc, json={"effective_date": day, "syp_per_usd": rate, "reason": reason})
+        return self.client.put("/api/admin/accounting/rates", headers=headers or self.mgr, json={"effective_date": day, "syp_per_usd": rate, "reason": reason})
 
     def _convert(self, amounts, source, target, headers=None):
         return self.client.post("/api/admin/accounting/convert", headers=headers or self.acc, json={"amounts": amounts, "source": source, "target": target})

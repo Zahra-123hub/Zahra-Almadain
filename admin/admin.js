@@ -3,15 +3,19 @@ var API_BASE = (window.ZM_API_BASE || (/^(localhost|127.0.0.1)$/.test(location.h
 var ADMIN_TOKEN = sessionStorage.getItem("zm-admin-session") || "";
 // Teachers publish website content with their portal session; accounts and settings stay admin-only.
 // An account may hold several roles (e.g. teacher + accountant): the tabs are the union of what its roles allow.
-var TEACHER_MODE = false, ACCOUNTANT_MODE = false, PORTALS = [];
+var TEACHER_MODE = false, ACCOUNTANT_MODE = false, BOOKS_MODE = false, BOOKS_LIVE = false, PORTALS = [];  // BOOKS_MODE: the management works in the three accounting pages
 if(!ADMIN_TOKEN){
   try{ PORTALS = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); }catch(e){}
   var teacherSession = sessionStorage.getItem("zm-teacher-session") || "", accountantSession = sessionStorage.getItem("zm-accountant-session") || "";
   ADMIN_TOKEN = accountantSession || teacherSession;
   TEACHER_MODE = !!ADMIN_TOKEN && (PORTALS.length ? PORTALS.indexOf("teacher") !== -1 : !!teacherSession);
   ACCOUNTANT_MODE = !!ADMIN_TOKEN && (PORTALS.length ? PORTALS.indexOf("accountant") !== -1 : !!accountantSession);
-  if(!TEACHER_MODE && !ACCOUNTANT_MODE) ADMIN_TOKEN = "";
-  if(ACCOUNTANT_MODE && !TEACHER_MODE) tab = "fees";
+  if(!TEACHER_MODE && !ACCOUNTANT_MODE){
+    var managerSession = sessionStorage.getItem("zm-manager-session") || "";
+    if(managerSession && (!PORTALS.length || PORTALS.indexOf("manager") !== -1)){ ADMIN_TOKEN = managerSession; ACCOUNTANT_MODE = true; BOOKS_MODE = true; }
+    else ADMIN_TOKEN = "";
+  }
+  if(ACCOUNTANT_MODE && !TEACHER_MODE) tab = "income";
 }
 // the portals this account may enter (shown as links in the header, like in the portals)
 if(!PORTALS.length){ try{ PORTALS = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); }catch(e){} }
@@ -341,7 +345,7 @@ var EN_TEXT = {
   "تأكيد خطوة":"Step confirmed",
   "إلغاء تأكيد خطوة":"Step confirmation taken back",
   "بوابة المحاسبة":"Accounting portal",
-  "لوحة المتابعة":"Overview", "الفواتير":"Invoices", "سعر الصرف":"Exchange rate",
+  "لوحة المتابعة":"Overview", "الفواتير":"Invoices", "سعر الصرف":"Exchange rate", "الإيرادات":"Income", "المصروفات":"Expenses", "الملخص الشهري":"Month overview",
   "أنجز خطوات الشهر بالترتيب، وتابع ما بقي دون أن تفوتك خطوة.":"Do the steps of the month in order and follow what is left, so no step is forgotten.",
   "الشهر مغلق":"Month closed",
   "الشهر مفتوح":"Month open",
@@ -1722,11 +1726,19 @@ function tabFees(){
   return h("section", {}, [filterCard, addForm, genForm, tables, resetBox]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["fees","المحاسبة"],["invoices","الفواتير"],["rates","سعر الصرف"],["cashbook","دفتر الصندوق"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
-  .filter(function(t){
+var ALL_TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["income","الإيرادات"],["expense","المصروفات"],["summary","الملخص الشهري"],["fees","المحاسبة"],["invoices","الفواتير"],["rates","سعر الصرف"],["cashbook","دفتر الصندوق"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]];
+var BOOKS_TABS = ["income", "expense", "summary"], LEGACY_ACCOUNTING_TABS = ["fees", "invoices", "rates", "cashbook"];
+/* The accounting is three pages once the new cash book is live; before that the old pages stay as the way over. */
+function computeTabs(){
+  return ALL_TABS.filter(function(t){
+    var books = BOOKS_TABS.indexOf(t[0]) !== -1, legacy = LEGACY_ACCOUNTING_TABS.indexOf(t[0]) !== -1;
+    if(legacy && BOOKS_LIVE) return false;
+    if(BOOKS_MODE) return books;
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
-    return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && (t[0] === "fees" || t[0] === "cashbook" || t[0] === "invoices" || t[0] === "rates"));
+    return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && (books || legacy));
   });
+}
+var TABS = computeTabs();
 if(TABS.length && !TABS.some(function(t){ return t[0] === tab; })) tab = TABS[0][0];
 /* "Hello <username>" in the top bar: the server admin's name is inside the session token, other accounts are looked up. */
 function adminName(){
@@ -1740,7 +1752,7 @@ function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
   // the admin area looks like the portals: the same header, the same pill navigation, the same cards and tiles
   var skin = true;  // the whole admin area wears the look of the portals
-  var accounting = ACCOUNTANT_MODE || tab === "fees" || tab === "cashbook" || tab === "invoices" || tab === "rates";
+  var accounting = ACCOUNTANT_MODE || tab === "income" || tab === "expense" || tab === "summary" || tab === "fees" || tab === "cashbook" || tab === "invoices" || tab === "rates";
   document.body.classList.toggle("skin-portal", skin);
   document.body.classList.toggle("skin-solo", ACCOUNTANT_MODE && TABS.length <= 1);
   var out = h("button", {type:"button", class:"p-button outline", text:"تسجيل الخروج", onclick:function(){ clearSessions(); start(); }});
@@ -1759,7 +1771,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tab === "cashbook" ? tabCashbook() : tab === "control" ? tabControl() : tab === "invoices" ? tabInvoices() : tab === "rates" ? tabRates() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tab === "cashbook" ? tabCashbook() : tab === "income" ? tabIncome() : tab === "expense" ? tabExpense() : tab === "summary" ? tabSummary() : tab === "control" ? tabControl() : tab === "invoices" ? tabInvoices() : tab === "rates" ? tabRates() : tabMedia("image"));
   adminName().then(function(name){
     if(!name) return;
     document.getElementById("a-hello-name").textContent = name;
@@ -1848,7 +1860,15 @@ async function loadContent(){
 }
 function start(){
   if(!ADMIN_TOKEN){ window.location.replace("../login/"); return; }
-  loadContent().then(function(data){ DATA = data; draw(); }, function(e){
+  loadContent().then(function(data){
+    DATA = data;
+    // is the new cash book live? Then the accounting is the three pages only (the old pages are not offered any more)
+    return request("/api/admin/books/status").then(function(st){ BOOKS_LIVE = !!st.live; }, function(){ BOOKS_LIVE = false; }).then(function(){
+      TABS = computeTabs();
+      if(TABS.length && !TABS.some(function(t){ return t[0] === tab; })) tab = TABS[0][0];
+      draw();
+    });
+  }, function(e){
     clearSessions(); window.location.replace("../login/");
   });
 }
