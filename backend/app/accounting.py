@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import ledger as book
 from app.database import get_session
 from app.timeutil import local_today
-from app import staff_export
+from app import activity, staff_export
 from app.fees import (
     CURRENCIES,
     ZERO,
@@ -245,6 +245,7 @@ class SalaryUpdate(BaseModel):
 class RateIn(BaseModel):
     effective_date: date
     syp_per_usd: Decimal = Field(gt=0, max_digits=18, decimal_places=6)  # pounds for one dollar
+    reason: str = Field(default="", max_length=300)  # required (5+ characters) when a rate that is already saved is replaced
 
 
 class ConvertIn(BaseModel):
@@ -419,9 +420,9 @@ class Ledger:
         payments = [
             (paid_on, money(amount), year, month)
             for paid_on, amount, year, month in session.execute(
-                select(FeePayment.paid_on, FeePayment.amount, FeeCharge.year, FeeCharge.month)
+                select(FeePayment.paid_on, func.coalesce(FeePayment.paid_amount, FeePayment.amount), FeeCharge.year, FeeCharge.month)
                 .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
-                .where(FeePayment.deleted_at.is_(None), FeeCharge.currency == currency)
+                .where(FeePayment.deleted_at.is_(None), func.coalesce(FeePayment.paid_currency, FeeCharge.currency) == currency)
             )
         ]
         salaries = [
@@ -1927,7 +1928,8 @@ def build_router(
         book = RateBook.load(session)
         return {
             "rates": [
-                {"id": str(r.id), "date": r.effective_date.isoformat(), "rate": rate_text(r.syp_per_usd), "source": "auto" if r.created_by == AUTO_RATE else "manual"}
+                {"id": str(r.id), "date": r.effective_date.isoformat(), "rate": rate_text(r.syp_per_usd), "source": "auto" if r.created_by == AUTO_RATE else "manual",
+                 "reason": r.reason or "", "by": "" if r.created_by == AUTO_RATE else r.created_by}
                 for r in reversed(book.rows)
             ],
             "current": None if found is None else {"rate": rate_text(found[0]), "date": found[1].isoformat(), "source": found[2], "stale": found[3]},
@@ -1936,7 +1938,7 @@ def build_router(
     @router.get("/rates")
     def list_rates(
         response: Response,
-        _actor: FeesActor = Depends(guard),
+        _actor: FeesActor = Depends(read_guard),
         session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
@@ -1974,12 +1976,21 @@ def build_router(
     ) -> dict[str, Any]:
         """The value of one dollar in pounds from a day on. Setting a day again replaces that day's rate."""
         row = session.scalar(select(ExchangeRate).where(ExchangeRate.effective_date == payload.effective_date))
+        reason = payload.reason.strip()
+        if row is not None and row.created_by != AUTO_RATE and len(reason) < 5:  # a saved (manual) rate is only changed with a reason
+            raise HTTPException(422, "اكتب سبب تغيير السعر المحفوظ (5 أحرف على الأقل). الفواتير القديمة لا تتغير.")
+        before = None if row is None else {"date": row.effective_date.isoformat(), "rate": rate_text(row.syp_per_usd), "by": row.created_by, "reason": row.reason}
         if row is None:
             row = ExchangeRate(effective_date=payload.effective_date)
             session.add(row)
         row.syp_per_usd = payload.syp_per_usd
+        row.reason = reason
         row.created_by = actor.name[:80] if actor.name != AUTO_RATE else "admin"
-        log(session, actor, "rate.set", payload.effective_date.isoformat(), str(payload.syp_per_usd))
+        activity.record(
+            session, actor_id=actor.account_id, actor_name=actor.name, domain="finance", action="rate.set", entity_type="rate",
+            entity_id=payload.effective_date.isoformat(), before=before,
+            after={"date": payload.effective_date.isoformat(), "rate": rate_text(payload.syp_per_usd)}, reason=reason,
+        )
         session.commit()
         return rate_state(session)
 

@@ -100,8 +100,8 @@ def finance_block(session: Session, today: date) -> dict[str, Any]:
             report = legacy_cash_report(session, code, today)
         now = next((m for m in report["months"] if (m["year"], m["month"]) == (today.year, today.month)), None)
         paid_month = session.scalar(
-            select(func.coalesce(func.sum(FeePayment.amount), 0)).join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
-            .where(FeeCharge.currency == code, FeePayment.deleted_at.is_(None), FeePayment.paid_on >= first, FeePayment.paid_on <= last)
+            select(func.coalesce(func.sum(func.coalesce(FeePayment.paid_amount, FeePayment.amount)), 0)).join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
+            .where(func.coalesce(FeePayment.paid_currency, FeeCharge.currency) == code, FeePayment.deleted_at.is_(None), FeePayment.paid_on >= first, FeePayment.paid_on <= last)
         )
         salaries_month = session.scalar(
             select(func.coalesce(func.sum(SalaryLine.base), 0)).where(SalaryLine.currency == code, SalaryLine.voided_at.is_(None), SalaryLine.paid_on >= first, SalaryLine.paid_on <= last)

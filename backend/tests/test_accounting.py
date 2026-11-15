@@ -508,8 +508,8 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self._row(self._sheet(period_type="month", year=2026, month=10, currency="SYP"), "registration")["income"], "400.00")
 
     # ---- switching the currency of a form converts what was typed ----
-    def _rate(self, day, rate, headers=None):
-        return self.client.put("/api/admin/accounting/rates", headers=headers or self.acc, json={"effective_date": day, "syp_per_usd": rate})
+    def _rate(self, day, rate, headers=None, reason=""):
+        return self.client.put("/api/admin/accounting/rates", headers=headers or self.acc, json={"effective_date": day, "syp_per_usd": rate, "reason": reason})
 
     def _convert(self, amounts, source, target, headers=None):
         return self.client.post("/api/admin/accounting/convert", headers=headers or self.acc, json={"amounts": amounts, "source": source, "target": target})
@@ -534,7 +534,8 @@ class AccountingApiTests(unittest.TestCase):
         self.assertEqual(self._convert(["5"], "EUR", "SYP").status_code, 422)
         self.assertEqual(self._convert(["1"] * 31, "USD", "SYP").status_code, 422)
         # setting a day again replaces that day's rate; the rate must be positive
-        again = self._rate(today.isoformat(), "14000").json()
+        self.assertEqual(self._rate(today.isoformat(), "14000").status_code, 422)  # a saved rate is only changed with a reason
+        again = self._rate(today.isoformat(), "14000", reason="market moved").json()
         self.assertEqual(again["current"]["rate"], "14000")
         self.assertEqual(self._rate(today.isoformat(), "0").status_code, 422)
         self.assertEqual(self._rate(today.isoformat(), "-3").status_code, 422)

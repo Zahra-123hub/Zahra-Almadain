@@ -200,7 +200,7 @@ function tabBasics(){
         h("tbody", {}, ITEMS.map(function(i){ return h("tr", {}, [h("td", {class:"name", text:i[0]}), h("td", {text:i[1]})]); }))]))])]);
   }
   function resetRow(){
-    if(!isAdmin) return "";
+    if(!isAdmin || !window.ZM_ALLOW_RESET) return "";
     return h("div", {class:"a-card"}, [h("h3", {text:"تصفير البيانات المالية"}), h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn danger", text:"تصفير كل البيانات المالية", onclick:async function(){
       if(!window.confirm("سيُحذف كل ما أُدخل من اشتراكات ودفعات ورواتب وأسطر جداول، لتبدأ الأرقام من الصفر. تبقى أسماء الأطفال والموظفين والحسابات. هل تريد المتابعة؟")) return;
       var word = window.prompt("للتأكيد اكتب الكلمة RESET بالأحرف الكبيرة:");
@@ -319,6 +319,8 @@ function accLogCard(opts){
 /* ------------------------------------------------------------------ zero a table on purpose (administrator only) */
 /* `opts.period()` gives {year, month}; `opts.scopes` the parts that can be emptied; `opts.onDone` reloads the screen. */
 function accResetCard(opts){
+  // Wiping finance data is switched off on the real database (the server refuses it); the card is no longer offered.
+  if(!window.ZM_ALLOW_RESET) return h("div", {hidden:"hidden"});
   var card = h("div", {class:"a-card a-reset", hidden:"hidden"});
   var msg = h("div", {class:"a-msg", role:"status", "aria-live":"polite"});
   var boxes = {};

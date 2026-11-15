@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, activity, community, control, fees, finance, mobile, security, visits, workflow
+from app import accounting, activity, community, control, fees, finance, invoicing, mobile, security, visits, workflow
 from app.database import get_engine, get_session
 from app.models import (
     Account,
@@ -680,6 +680,14 @@ def require_people_manager(
     return fees_actor(authorization, session, ("manager", "admin"), "إضافة الأطفال والموظفين وتعديلهم من مهام الإدارة.")
 
 
+def require_invoice_user(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> fees.FeesActor:
+    """Invoices and their payments: the accountant, the management and the admin."""
+    return fees_actor(authorization, session, ("accountant", "manager", "admin"), "ليس لديك صلاحية الوصول إلى الفواتير.")
+
+
 def require_staff_reader(
     authorization: str | None = Header(default=None),
     session: Session | None = Depends(optional_session),
@@ -865,6 +873,7 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
 
 app.include_router(fees.build_router(require_fees_user, require_people_manager))
 app.include_router(accounting.build_router(require_fees_user, require_people_manager, require_staff_reader))
+app.include_router(invoicing.build_router(require_invoice_user, require_fees_user, require_admin_actor))
 app.include_router(workflow.build_router(require_fees_user))
 app.include_router(finance.build_router(require_fees_user))
 app.include_router(control.build_router(require_control, require_admin_actor))

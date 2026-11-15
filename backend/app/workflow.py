@@ -354,8 +354,9 @@ def build_router(guard: Callable) -> APIRouter:
             )
         ).all()
         for payment, charge in rows:
-            paid[charge.currency]["count"] += 1
-            paid[charge.currency]["amount"] += money(payment.amount)
+            code = payment.paid_currency or charge.currency  # counted in the money that was really handed over
+            paid[code]["count"] += 1
+            paid[code]["amount"] += money(payment.paid_amount if payment.paid_currency else payment.amount)
         entries = session.scalars(
             select(AccountingEntry).where(AccountingEntry.period_type != "month", AccountingEntry.week_start >= monday, AccountingEntry.week_start <= sunday)
         ).all()

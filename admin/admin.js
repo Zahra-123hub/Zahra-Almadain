@@ -341,7 +341,7 @@ var EN_TEXT = {
   "تأكيد خطوة":"Step confirmed",
   "إلغاء تأكيد خطوة":"Step confirmation taken back",
   "بوابة المحاسبة":"Accounting portal",
-  "لوحة المتابعة":"Overview",
+  "لوحة المتابعة":"Overview", "الفواتير":"Invoices", "سعر الصرف":"Exchange rate",
   "أنجز خطوات الشهر بالترتيب، وتابع ما بقي دون أن تفوتك خطوة.":"Do the steps of the month in order and follow what is left, so no step is forgotten.",
   "الشهر مغلق":"Month closed",
   "الشهر مفتوح":"Month open",
@@ -1722,10 +1722,10 @@ function tabFees(){
   return h("section", {}, [filterCard, addForm, genForm, tables, resetBox]);
 }
 
-var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["fees","المحاسبة"],["cashbook","دفتر الصندوق"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
+var TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["fees","المحاسبة"],["invoices","الفواتير"],["rates","سعر الصرف"],["cashbook","دفتر الصندوق"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]]
   .filter(function(t){
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
-    return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && (t[0] === "fees" || t[0] === "cashbook"));
+    return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && (t[0] === "fees" || t[0] === "cashbook" || t[0] === "invoices" || t[0] === "rates"));
   });
 if(TABS.length && !TABS.some(function(t){ return t[0] === tab; })) tab = TABS[0][0];
 /* "Hello <username>" in the top bar: the server admin's name is inside the session token, other accounts are looked up. */
@@ -1740,7 +1740,7 @@ function draw(){
   var root = document.getElementById("app"); root.innerHTML = "";
   // the admin area looks like the portals: the same header, the same pill navigation, the same cards and tiles
   var skin = true;  // the whole admin area wears the look of the portals
-  var accounting = ACCOUNTANT_MODE || tab === "fees" || tab === "cashbook";
+  var accounting = ACCOUNTANT_MODE || tab === "fees" || tab === "cashbook" || tab === "invoices" || tab === "rates";
   document.body.classList.toggle("skin-portal", skin);
   document.body.classList.toggle("skin-solo", ACCOUNTANT_MODE && TABS.length <= 1);
   var out = h("button", {type:"button", class:"p-button outline", text:"تسجيل الخروج", onclick:function(){ clearSessions(); start(); }});
@@ -1759,7 +1759,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tab === "cashbook" ? tabCashbook() : tab === "control" ? tabControl() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "fees" ? tabAccounting() : tab === "cashbook" ? tabCashbook() : tab === "control" ? tabControl() : tab === "invoices" ? tabInvoices() : tab === "rates" ? tabRates() : tabMedia("image"));
   adminName().then(function(name){
     if(!name) return;
     document.getElementById("a-hello-name").textContent = name;

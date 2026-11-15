@@ -79,6 +79,18 @@ def run_ledger_command(args: argparse.Namespace) -> int:
     return 0 if result.get("ok", True) else 2
 
 
+def run_invoices_command(args: argparse.Namespace) -> int:
+    """Gives old fee lines their invoice number and freezes the rate on them. Only looks unless --apply is given."""
+    from app import invoicing
+    from app.fees import FeesActor
+
+    actor = FeesActor(None, (args.by or getpass.getuser())[:80], "admin")
+    with Session(get_engine()) as session:
+        result = invoicing.backfill(session, args.apply, actor)
+    print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage platform accounts and the accounting switch.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -92,10 +104,15 @@ def main() -> None:
                        ("ledger-discard", "Remove the taken-over bookings again (only in shadow)."), ("ledger-status", "Show the state of the switch.")):
         sub = commands.add_parser(name, help=text)
         sub.add_argument("--by", help="Who runs this (written to the activity log).")
+    backfill = commands.add_parser("invoices-backfill", help="Freeze the rate and number old fee lines (default: only look). --apply writes.")
+    backfill.add_argument("--apply", action="store_true", help="Write the numbers and the frozen rates (amounts and payments are not touched).")
+    backfill.add_argument("--by", help="Who runs this (written to the activity log).")
     create = commands.add_parser("create-account", help="Create an account with a platform role.")
     create.add_argument("--username", required=True)
     create.add_argument("--role", required=True, choices=("admin", "manager", "teacher", "accountant", "parent"))
     args = parser.parse_args()
+    if args.command == "invoices-backfill":
+        sys.exit(run_invoices_command(args))
     if args.command.startswith("ledger-"):
         sys.exit(run_ledger_command(args))
 

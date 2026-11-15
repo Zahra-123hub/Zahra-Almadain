@@ -297,10 +297,35 @@ class FeeCharge(Base):
     voided_at: Mapped[datetime | None] = mapped_column(nullable=True)  # cancelled (storno): stays visible, counts no more
     voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    # The invoice side: a fee line IS the invoice of one child for one month. The rate used to show the other currency is
+    # frozen here when the invoice is made; a later rate never changes it. source: manual | auto | reconstructed | none.
+    invoice_no: Mapped[str | None] = mapped_column(String(20), nullable=True, unique=True)
+    rate_syp_per_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rate_source: Mapped[str] = mapped_column(String(14), default="none", server_default="none")
+    lines: Mapped[list[FeeChargeLine]] = relationship(
+        back_populates="charge", cascade="all, delete-orphan", lazy="selectin", order_by="FeeChargeLine.position"
+    )
     payments: Mapped[list[FeePayment]] = relationship(
         back_populates="charge", cascade="all, delete-orphan", lazy="selectin",
         order_by="FeePayment.paid_on",
     )
+
+
+class FeeChargeLine(Base):
+    """One position of an invoice, in the currency of the invoice. The amount in the other currency is frozen with it."""
+
+    __tablename__ = "fee_charge_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    charge_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("fee_charges.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    description: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    amount_other: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    charge: Mapped[FeeCharge] = relationship(back_populates="lines")
 
 
 class FeePayment(Base):
@@ -321,6 +346,11 @@ class FeePayment(Base):
     )
     created_by_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
     payer_name: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the money over
+    # What was really handed over. `amount` stays the value credited to the invoice (in the invoice currency); these three
+    # stay empty for a payment made in the currency of the invoice. The cash book counts paid_amount in paid_currency.
+    paid_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    paid_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    pay_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)  # the time it was cancelled (storno)
     voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
@@ -463,6 +493,7 @@ class ExchangeRate(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     effective_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
     syp_per_usd: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
     created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

@@ -17,12 +17,13 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import event, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_session
 from app.models import Child, ExchangeRate, FeeAuditLog, FeeCharge, FeePayment, PeriodLock
+from app.timeutil import local_today
 
 CURRENCIES = ("SYP", "USD")  # the Syrian pound is the main currency and always comes first
 CENT = Decimal("0.01")
@@ -44,6 +45,15 @@ def convert(amount: Decimal | int | str, source: str, target: str, rate: Decimal
     if source == "USD":  # dollars -> pounds
         return exact(amount * rate)
     return exact(amount / rate)  # pounds -> dollars
+
+
+def to_other(amount: Decimal | int | str, base: str, rate: Decimal) -> Decimal:
+    """The same value in the other currency, rounded once and half up: dollars -> whole pounds, pounds -> cents.
+    This is the one rounding rule of the invoices (see app.invoicing)."""
+    amount = Decimal(amount)
+    if base == "USD":
+        return (amount * Decimal(rate)).quantize(Decimal("1"), rounding=ROUND_HALF_UP).quantize(CENT)
+    return exact(amount / Decimal(rate))
 
 
 def rate_text(rate: Decimal) -> str:
@@ -71,6 +81,33 @@ class RateBook:
             if row.effective_date <= day:
                 chosen = row
         return Decimal(chosen.syp_per_usd), chosen.effective_date
+
+
+@event.listens_for(Session, "before_flush")
+def _freeze_new_invoices(session: Session, _context: Any, _instances: Any) -> None:
+    """Every new fee line, however it is made (form, monthly generation, import), becomes an invoice: it gets a number and the
+    rate of that day is frozen on it (when a rate exists). Later rates never change it."""
+    fresh = [item for item in session.new if isinstance(item, FeeCharge) and item.invoice_no is None]
+    if not fresh:
+        return
+    with session.no_autoflush:
+        book = RateBook.load(session)
+        found = book.on(local_today())
+        counters: dict[int, int] = {}
+        for item in fresh:
+            if item.rate_syp_per_usd is None and found is not None:
+                row = next((r for r in book.rows if r.effective_date == found[1]), None)
+                item.rate_syp_per_usd, item.rate_date = found[0], found[1]
+                item.rate_source = "auto" if row is not None and row.created_by == "auto-rate" else "manual"
+            year = item.year
+            if year not in counters:
+                numbers = [
+                    int(n.rsplit("-", 1)[-1]) for (n,) in session.execute(select(FeeCharge.invoice_no).where(FeeCharge.invoice_no.like(f"INV-{year}-%")))
+                    if n and n.rsplit("-", 1)[-1].isdigit()
+                ]
+                counters[year] = max(numbers or [0])
+            counters[year] += 1
+            item.invoice_no = f"INV-{year}-{counters[year]:04d}"
 
 
 @dataclass

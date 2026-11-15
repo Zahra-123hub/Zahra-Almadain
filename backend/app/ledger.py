@@ -226,19 +226,20 @@ def movements(
         select(FeePayment, FeeCharge, Child)
         .join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
         .join(Child, Child.id == FeeCharge.child_id)
-        .where(FeeCharge.currency == currency)
+        .where(func.coalesce(FeePayment.paid_currency, FeeCharge.currency) == currency)
     ).all()
     for payment, charge, child in payments:
         voided = payment.deleted_at is not None
         if voided and not include_voided:
             continue
         refund = money(payment.amount) < 0
+        cash_amount = money(payment.paid_amount) if payment.paid_currency else money(payment.amount)
         if payment.paid_on is not None:
             day, basis = payment.paid_on, "actual"
         else:  # an imported payment without a date: counted on the last day of the month of its fee, and marked as such
             day, basis = last_day(charge.year, charge.month), "estimated_fee_month"
         rows.append(Movement(
-            day=day, currency=currency, kind="income", amount=money(payment.amount), category="fees",
+            day=day, currency=currency, kind="income", amount=cash_amount, category="fees",
             description=("استرداد: " if refund else "") + (payment.note or "").strip(), source="fee_payment", source_id=str(payment.id),
             date_basis=basis, actor=payment.created_by_name or "", created_at=payment.created_at, voided=voided,
             void_reason=payment.void_reason or "", voided_by=payment.voided_by or "", voided_at=payment.deleted_at,
@@ -527,6 +528,8 @@ def guard_reset(session: Session) -> None:
     isolated test setup: the server variable ALLOW_FINANCE_RESET=1 AND a SQLite database. Never on PostgreSQL (the real database)."""
     import os
 
+    if session.get_bind().dialect.name != "sqlite":  # the real database (PostgreSQL): finance data is never wiped, cancel with a reason instead
+        raise HTTPException(423, "التصفير معطّل على قاعدة البيانات الحقيقية. لا تُحذف البيانات المالية؛ استعمل الإلغاء (Storno) مع سبب.")
     if not is_live(session):
         return
     isolated = os.getenv("ALLOW_FINANCE_RESET", "") == "1" and session.get_bind().dialect.name == "sqlite"

@@ -37,5 +37,5 @@ The take-over of the old sheets is a separate, deliberate step on the server (`p
   *historical adjustments* (not in the cash balance). When the salary is paid: an adjustment in an open month is cancelled,
   an adjustment in a closed month stays and a counter-booking in the month of the payment cancels it historically.
 * Nothing financial is deleted: it is cancelled with a reason (at least 5 characters) and stays visible.
-* Resets (`/accounting/reset`, `reset-part`) are blocked once live; only possible on SQLite with `ALLOW_FINANCE_RESET=1`.
+* Resets (`/accounting/reset`, `reset-part`) are refused on PostgreSQL (the real database) at all times, and on SQLite once live unless `ALLOW_FINANCE_RESET=1`.
 * Business dates and month ends follow `Asia/Damascus` (`APP_TIMEZONE` can change it; time stamps are stored in UTC).

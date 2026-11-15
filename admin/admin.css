@@ -478,3 +478,10 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-statusbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px;padding:10px 14px;border:2px solid var(--line);border-radius:14px;background:var(--surface)}
 .a-statusbar.s-done{border-color:var(--green)}
 .a-statusbar .a-badge{margin-top:0}
+
+/* invoices */
+.a-table tr.clickable{cursor:pointer}
+.a-table tr.clickable:hover,.a-table tr.clickable:focus{background:var(--bg2)}
+.a-table tr.voided{opacity:.55;text-decoration:line-through}
+.a-table tr.total th,.a-table tr.total td{font-weight:700;border-top:2px solid var(--line)}
+.a-table th[scope],.a-table tbody th{text-align:start;font-weight:600}

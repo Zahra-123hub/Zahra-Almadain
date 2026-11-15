@@ -59,7 +59,7 @@ backend/
   app/ main.py (3,4k Zeilen), models.py, database.py, security.py, community.py, mobile.py, visits.py,
        fees.py, accounting.py, workflow.py, ledger.py, legacy_migration.py, finance.py, timeutil.py,
        manage.py (CLI), import_vorlagen.py, numbers_ar.py
-  migrations/versions/ 0001 … 0029   (neueste: 0029_cash_ledger)
+  migrations/versions/ 0001 … 0036   (neueste: 0036_invoices_both; 0030–0034 Sitzungs-Metadaten, Aktivitätsprotokoll-Domäne, system_checks, children.left_on, account_grants; 0035 Mitarbeiterdaten; 0036 Rechnungen)
   tests/ test_api, test_accounting, test_accounting_controls, test_fees, test_workflow, test_ledger, test_community,
          test_children_admin, test_security, test_visits, test_mobile, test_database (+ __init__.py setzt APP_TIMEZONE=LOCAL)
   dev_server.py        lokaler Testserver mit SQLite (Port 8765, dev.db)
@@ -77,6 +77,8 @@ PROJECT_PROMPT.md      dieses Dokument
 **Inhalte:** `daily_reports` (Titel, Text, `activities`, `meals`, `status` ∈ draft/submitted/published/rejected/archived, `review_note`, `language`, `published_at`), `teacher_posts` (`scope` general|child, `kind` post|material, `child_id`, `hidden`, `position`), `teacher_content` (Dateien, Binärdaten in der DB; `owner_id`, `report_id`, `post_id`, `category`, `media_type`, `byte_size`), `notifications`, `announcements`, `site_visits`, `device_tokens` (Push-Token, noch ungenutzt).
 **Buchhaltung (alt):** `fee_charges` (Kind×Monat×Währung, `amount`, `needs_review`, Storno-Spalten), `fee_payments` (negativ = Rückerstattung, `deleted_at` = Storno), `employees`, `salary_lines`, `accounting_entries` (Blattzeilen Tag/Woche/Monat), `entry_receipts` (Belege), `exchange_rates`, `cash_openings`, `period_locks` (Monatsabschluss mit Schnappschuss), `cash_counts`, `step_confirmations`, `fee_audit_log` (Protokoll, inkl. `before_json`, `after_json`, `reason`).
 **Buchhaltung (neu):** `cash_transactions` (Kassenbuch), `ledger_cutover` (Umschalter `shadow`/`live`).
+**Rechnungen (Migration 0036):** Eine Gebührenzeile (`fee_charges`) IST die Rechnung eines Kindes für einen Monat. Zusätzlich: `invoice_no` (INV-JJJJ-NNNN, vergibt ein `before_flush`-Hook in `fees.py` für jede neue Zeile), eingefrorener Kurs (`rate_syp_per_usd`, `rate_date`, `rate_source` manual|auto|reconstructed|none), Positionen `fee_charge_lines` (Betrag in Rechnungswährung + eingefrorene Gegenseite `amount_other`), Zahlungen mit echter Währung (`paid_currency`, `paid_amount`, `pay_rate`; `amount` = der Rechnung gutgeschriebener Wert). `exchange_rates.reason`. Das Kassenbuch zählt `paid_amount` in `paid_currency`.
+**Sonstiges (0030–0035):** `account_grants` (Einzelrechte wie `control.view`, `finance.view`), `system_checks`, `portal_sessions.active_role` (+ Meta), `fee_audit_log` mit `domain/entity_type/before_json/after_json/reason` (Aktivitätsprotokoll aller Bereiche), `children.left_on`, `employees` mit `employee_no`, `phone`, `hired_on`, `left_on`, `notes`.
 
 Geldspalten sind `Numeric(14,2)`, Kurse `Numeric(18,6)`. Geld wird in Python **immer als `Decimal`** gerechnet, Rundung „half up".
 
@@ -96,7 +98,7 @@ Geldspalten sind `Numeric(14,2)`, Kurse `Numeric(18,6)`. Geld wird in Python **i
 
 ## 6. Rollen
 
-`parent`, `teacher`, `manager` (Leitung), `accountant`, `admin`. Ein Konto kann mehrere Rollen haben.
+`parent`, `teacher`, `manager` (Leitung), `accountant`, `admin`. Ein Konto kann mehrere Rollen haben, **arbeitet aber pro Sitzung in genau einer aktiven Rolle**: `POST /api/platform/auth/switch-role {role, keep_previous}` gibt eine NEUE Sitzung zurück (die alte endet, außer `keep_previous` – so halten Web-Tabs je Portal ihre eigene Sitzung). Mit `ENFORCE_ACTIVE_ROLE=1` wählen Mehrrollen-Sitzungen zuerst; Standard aus (alte Clients). App: `RoleChooserPage`. Leitungs-Einzelrecht für die Kontrollzentrale vergibt der Admin (`/api/admin/control/grants`).
 
 | Rolle | App | Web |
 |---|---|---|
@@ -132,7 +134,10 @@ Präfix `/api/admin/accounting` (`accounting.py`), `/api/admin/fees` (`fees.py`)
 - **Monatsabschluss:** `POST /periods/close` (nur beendete Monate, Blocker: Zeilen mit „Prüfung nötig"; speichert Schnappschuss der Summen), `POST /periods/reopen` (nur Admin, Grund ≥ 5 Zeichen). Geschlossene Monate sind für alles gesperrt (`ensure_open` → HTTP 423).
 - **Kurs:** automatischer Abruf aus `open.er-api.com` (neues syrisches Pfund × `SYP_RATE_SCALE` 100, wenn Wert < 1000), manuell überschreibbar, `/convert` rechnet exakt.
 - **Workflow:** 11 Schritte pro Monat (`workflow.py`), Bestätigungen, Wochenprüfung, Monatsarchiv als Excel.
-- **Reset:** `POST /accounting/reset` und `POST /accounting/reset-part` (Admin, Wort `RESET`).
+- **Reset:** `POST /accounting/reset` und `POST /accounting/reset-part` sind auf PostgreSQL (echte Datenbank) immer gesperrt (423); nur auf SQLite-Testdatenbanken möglich. Die Oberfläche bietet sie nicht mehr an. Finanzdaten werden storniert, nie gelöscht.
+- **Rechnungen** (`invoicing.py`, Präfix `/api/admin/invoices`): jede Rechnung zeigt USD und SYP nebeneinander (Positionen, Summe, bezahlt, offen). Rechnungswährung = Währung der Zeile; die Gegenseite wird mit dem beim Erstellen eingefrorenen Kurs berechnet und pro Position einmal gerundet (SYP ganze Lira, USD Cent, kaufmännisch). Zahlung in USD oder SYP: tatsächlicher Betrag/Währung bleibt gespeichert, Gutschrift mit dem Kurs des Zahltags (abweichender Kurs nur mit Grund). Überzahlung wird abgelehnt, nie gekürzt. Rechte: Buchhaltung, Leitung, Admin dürfen ansehen/erstellen/zahlen; Storno über `/finance/payments/{id}/void`. `POST /invoices/backfill?apply=` (nur Admin) und `python -m app.manage invoices-backfill [--apply]` frieren alte Zeilen ein (Kurs vom Monatsende, `reconstructed`) und nummerieren sie; Beträge und Zahlungen bleiben unberührt. Alte, nie eingefrorene Zeilen werden trotzdem in beiden Währungen angezeigt (Kurs „reconstructed", nicht gespeichert).
+- **Kurs:** `PUT /accounting/rates` verlangt einen Grund (≥ 5 Zeichen), wenn ein manuell gespeicherter Kurs ersetzt wird; Vorher/Nachher im Aktivitätsprotokoll. Leitung darf den Kurs ansehen, nicht setzen.
+- **Mitarbeiter** (`/accounting/employees`, Anlegen/Ändern/Deaktivieren nur Leitung+Admin): Nr. M-0001…, Telefon, Eintritt, Austritt (beim Deaktivieren), Notizen (für Buchhaltung ausgeblendet). Export `GET /accounting/employees/export.xlsx|csv?scope=all|active` (nur Leitung+Admin, protokolliert; Telefon/Nr. bleiben Text).
 - **Kassenbuch** (Abschnitt 11): `/finance/categories|status|overview|book|history/{id}|voided`, `/bookings…`, `/booking-receipts…`, `/finance/payments|charges|salaries/{id}/void`.
 
 ---
