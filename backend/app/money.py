@@ -553,8 +553,12 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     def closed_months(session: Session) -> set[tuple[int, int]]:
         return {(c.year, c.month) for c in session.scalars(select(MonthClosing).where(MonthClosing.reopened_at.is_(None))).all()}
 
-    def totals(rows: list[Any]) -> dict[str, str]:
-        return {code: text(code, sum((r.amount for r in rows if r.voided_at is None and r.currency == code), ZERO)) for code in CURRENCIES}
+    def totals(rows: list[Any]) -> dict[str, Any]:
+        """Per currency really paid, and the value of everything in dollars and in pounds (at the rate stored with each entry)."""
+        live = [r for r in rows if r.voided_at is None]
+        paid = {code: text(code, sum((r.amount for r in live if r.currency == code), ZERO)) for code in CURRENCIES}
+        value = {code: text(code, sum((r.amount if r.currency == code else r.amount_other for r in live), ZERO)) for code in CURRENCIES}
+        return {**paid, "value": value}
 
     def categories(session: Session) -> dict[uuid.UUID, IncomeCategory]:
         return {c.id: c for c in session.scalars(select(IncomeCategory)).all()}

@@ -122,7 +122,7 @@ function tabIncome(){
             h("td", {text:r.category})].concat(mnCells(r), [h("td", {dir:"ltr", text:uiNum(r.amount) + " " + r.currency + " @ " + uiNum(r.rate)}), h("td", {}, acts)]));
         });
         listBox.appendChild(uiTable([uiT(["التاريخ", "Date"]), uiT(["الوصف", "Description"]), uiT(["الفئة", "Category"]), "USD", "SYP", uiT(["المدفوع فعلاً", "Really paid"]), ""], rows, uiT(["لا توجد إيرادات", "No income"]), 860));
-        listBox.appendChild(h("p", {class:"hint", text:uiT(["المجموع حسب العملة المدفوعة: ", "Total per currency really paid: "]) + "USD " + uiNum(d.totals.USD) + " · SYP " + uiNum(d.totals.SYP) + " · " + d.count + " " + uiT(["حركة", "entries"])}));
+        listBox.appendChild(h("p", {class:"hint", text:uiT(["المجموع: ", "Total: "]) + "USD " + uiNum(d.totals.value.USD) + " · SYP " + uiNum(d.totals.value.SYP) + uiT([" (منها مدفوع فعلاً بالدولار ", " (of which really paid in dollars "]) + uiNum(d.totals.USD) + uiT([" وبالليرة ", " and in pounds "]) + uiNum(d.totals.SYP) + ")" + " · " + d.count + " " + uiT(["حركة", "entries"])}));
       }).catch(function(e){ uiToast(errText(e), "err"); });
     }
     function showForm(row){
@@ -293,7 +293,7 @@ function tabExpense(){
             h("td", {text:uiT([r.category_ar, r.category_en])})].concat(mnCells(r), [h("td", {dir:"auto", text:r.recipient || "—"}), h("td", {dir:"ltr", text:uiNum(r.amount) + " " + r.currency}), h("td", {}, acts)]));
         });
         listBox.appendChild(uiTable([uiT(["التاريخ", "Date"]), uiT(["الوصف", "Description"]), uiT(["الفئة", "Category"]), "USD", "SYP", uiT(["المستلم", "Recipient"]), uiT(["المدفوع فعلاً", "Really paid"]), ""], rows, uiT(["لا توجد مصروفات", "No expenses"]), 900));
-        listBox.appendChild(h("p", {class:"hint", text:uiT(["المجموع حسب العملة المدفوعة: ", "Total per currency really paid: "]) + "USD " + uiNum(d.totals.USD) + " · SYP " + uiNum(d.totals.SYP) + " · " + d.count + " " + uiT(["حركة", "entries"])}));
+        listBox.appendChild(h("p", {class:"hint", text:uiT(["المجموع: ", "Total: "]) + "USD " + uiNum(d.totals.value.USD) + " · SYP " + uiNum(d.totals.value.SYP) + uiT([" (منها مدفوع فعلاً بالدولار ", " (of which really paid in dollars "]) + uiNum(d.totals.USD) + uiT([" وبالليرة ", " and in pounds "]) + uiNum(d.totals.SYP) + ")" + " · " + d.count + " " + uiT(["حركة", "entries"])}));
       }).catch(function(e){ uiToast(errText(e), "err"); });
     }
     function cancel(row){

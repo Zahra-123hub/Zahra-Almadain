@@ -254,8 +254,18 @@ def entries_pdf(kind: str, month: str, rows: list[dict[str, Any]], signer: dict[
     for code in totals:
         total = sum((Decimal(r["amount"]) for r in live if r["currency"] == code), Decimal(0))
         totals[code] = str(int(total)) if code == "SYP" and total == total.to_integral_value() else format(total.quantize(Decimal("0.01")), "f")
-    doc.heading("المجموع حسب العملة المدفوعة فعلاً (كل عملة على حدة)")
-    doc.grid(["العملة", "المجموع"], [["دولار أمريكي (USD)", num(totals["USD"])], ["ليرة سورية (SYP)", num(totals["SYP"])]], [100, 80], numeric={1})
+
+    def column(paid_in: str | None, key: str) -> str:
+        value = sum((Decimal(r[key]) for r in live if paid_in is None or r["currency"] == paid_in), Decimal(0))
+        return str(int(value)) if key == "syp" and value == value.to_integral_value() else format(value.quantize(Decimal("0.01")), "f")
+
+    doc.heading("المجموع بالدولار والليرة")
+    doc.grid(["", "USD", "SYP"], [
+        ["ما دُفع بالدولار (وقيمته بالليرة)", num(column("USD", "usd")), num(column("USD", "syp"))],
+        ["ما دُفع بالليرة (وقيمته بالدولار)", num(column("SYP", "usd")), num(column("SYP", "syp"))],
+        ["المجموع الكلي", num(column(None, "usd")), num(column(None, "syp"))],
+    ], [100, 40, 40], bold_last=True, numeric={1, 2})
+    doc.line_text("القيمة بالعملة الأخرى محسوبة بسعر الصرف المحفوظ مع كل حركة.", 9, MUTED)
     code = verification([kind, month, totals["USD"], totals["SYP"], str(len(live))])
     doc.signature(signer, code)
     return bytes(doc.output())

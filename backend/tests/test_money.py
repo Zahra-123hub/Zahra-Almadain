@@ -112,6 +112,13 @@ class IncomeExpenseTests(MoneyBase):
         self.assertEqual(self.income("20").status_code, 409)
         self.assertEqual(self.client.get(MONEY + "/income", headers=self.acc).json()["count"], 1)
 
+    def test_the_list_total_shows_the_value_in_both_currencies(self):
+        self.income("120000", "SYP")  # all paid in pounds
+        self.income("5", "USD", description="second")
+        data = self.client.get(MONEY + "/income", headers=self.acc).json()
+        self.assertEqual((data["totals"]["USD"], data["totals"]["SYP"]), ("5.00", "120000"))  # really paid
+        self.assertEqual(data["totals"]["value"], {"USD": "15.00", "SYP": "180000"})  # the value of everything, in each currency
+
     def test_search_and_filters(self):
         today = local_today()
         self.income("10", description="bus", key="extra_fees", payer_name="Mona")
