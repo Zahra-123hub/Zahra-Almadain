@@ -1386,13 +1386,16 @@ function esc(value){ return String(value == null ? "" : value).replace(/[&<>"']/
 
 var ALL_TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["money","المحاسبة"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]];
 var BOOKS_TABS = ["money"];  // one entry; inside it: income, expenses, month overview
-/* The accounting is three pages: income, expenses, month overview. An accountant and the management see only these three. */
+/* An account that only does the accounting (accountant, management) sees nothing else; everybody else opens it from the header. */
+var MONEY_ONLY = BOOKS_MODE || (ACCOUNTANT_MODE && !TEACHER_MODE);
+var MONEY_ALLOWED = MONEY_ONLY || ACCOUNTANT_MODE || (!TEACHER_MODE && !ACCOUNTANT_MODE);
 function computeTabs(){
   return ALL_TABS.filter(function(t){
     var books = BOOKS_TABS.indexOf(t[0]) !== -1;
-    if(BOOKS_MODE) return books;
+    if(books) return MONEY_ONLY;  // otherwise the accounting is a button in the header, next to the portals
+    if(BOOKS_MODE) return false;
     if(!TEACHER_MODE && !ACCOUNTANT_MODE) return true;  // the admin sees everything
-    return (TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1) || (ACCOUNTANT_MODE && books);
+    return TEACHER_MODE && ["gallery","video","news"].indexOf(t[0]) !== -1;
   });
 }
 var TABS = computeTabs();
@@ -1418,6 +1421,11 @@ function draw(){
   [["manager", "../management/", "بوابة الإدارة"], ["teacher", "../teachers/", "بوابة المعلمات"], ["parent", "../parents/", "بوابة أولياء الأمور"]].forEach(function(p){
     if(PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"p-button outline", href:p[1], text:p[2]}));
   });
+  if(MONEY_ALLOWED && !MONEY_ONLY){  // the accounting sits on the level of the portals
+    var moneyBtn = h("button", {type:"button", class:"p-button " + (tab === "money" ? "sun" : "outline"), text:"المحاسبة", onclick:function(){ tab = "money"; draw(); }});
+    if(tab === "money") moneyBtn.setAttribute("aria-current", "page");
+    switches.unshift(moneyBtn);
+  }
   var back = TEACHER_MODE && !PORTALS.length ? h("a", {class:"p-button outline", href:"../teachers/", text:"العودة إلى بوابتي"}) : null;
   var changePw = (TEACHER_MODE || ACCOUNTANT_MODE) ? h("button", {type:"button", class:"p-button outline", text:"تغيير كلمة المرور", onclick:function(){ toggleChangePassword(); }}) : null;
   var avatar = h("span", {class:"p-avatar", id:"a-avatar", hidden:"hidden"});
