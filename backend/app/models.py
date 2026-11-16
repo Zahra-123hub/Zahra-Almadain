@@ -593,3 +593,18 @@ class MonthClosing(Base):
     reopened_at: Mapped[datetime | None] = mapped_column(nullable=True)
     reopened_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     reopen_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+
+
+class MoneyOpening(Base):
+    """The money the kindergarten has in one currency at the start of a day (`as_of`). Rows are only added; the newest one
+    of a currency counts. Income and expenses from that day on are added to it."""
+
+    __tablename__ = "money_openings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    as_of: Mapped[date] = mapped_column(Date)
+    currency: Mapped[str] = mapped_column(String(3), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    note: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

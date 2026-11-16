@@ -420,6 +420,7 @@ function tabSummary(){
             h("small", {class:"hint", dir:"ltr", text:"USD " + uiNum(d.invoices.open_amount.usd) + " · SYP " + uiNum(d.invoices.open_amount.syp)})])
         ]),
         mnExport(meta, "summary", function(){ return month; })]));
+      page.appendChild(mnBalanceCard(meta, d, draw3));
       page.appendChild(h("div", {class:"a-card"}, [h("h4", {text:uiT(["الإيرادات حسب الفئة", "Income by category"])}), catTable(d.income_by_category, function(r){ return r.name; }),
         h("h4", {text:uiT(["المصروفات حسب الفئة", "Expenses by category"])}), catTable(d.expense_by_category, function(r){ return uiT([r.ar, r.en]); })]));
     }).catch(function(e){ page.appendChild(h("p", {class:"a-msg err", text:errText(e)})); });
@@ -446,4 +447,36 @@ function tabMoney(){
   }
   show();
   return h("section", {}, [h("h2", {class:"a-pagetitle", text:uiT(["المحاسبة", "Accounting"])}), bar, holder]);
+}
+
+/* ======================================================================================== the money the kindergarten has */
+function mnBalanceCard(meta, d, again){
+  var b = d.balance, known = b.start.usd !== null || b.start.syp !== null;
+  var kids = [h("h3", {text:uiT(["رصيد الصندوق والربح / الخسارة", "Cash and profit / loss"])})];
+  if(known){
+    function line(label, pair, cls){ return h("tr", {class:cls || ""}, [h("th", {text:label}), h("td", {class:"num", dir:"ltr", text:uiNum(pair.usd)}), h("td", {class:"num", dir:"ltr", text:uiNum(pair.syp)})]); }
+    kids.push(h("div", {class:"a-table-wrap"}, [h("table", {class:"a-table compact"}, [
+      h("thead", {}, [h("tr", {}, [h("th", {text:""}), h("th", {text:"USD"}), h("th", {text:"SYP"})])]),
+      h("tbody", {}, [line(uiT(["الرصيد في أول الشهر", "Money at the start of the month"]), b.start), line(uiT(["+ الإيرادات", "+ Income"]), d.income),
+        line(uiT(["− المصروفات", "− Expenses"]), d.expense), line(uiT(["الربح / الخسارة", "Profit / loss"]), b.profit, "total"),
+        line(uiT(["الرصيد في آخر الشهر", "Money at the end of the month"]), b.end, "total")])])]));
+    kids.push(h("p", {class:"hint", text:uiT(["كل عملة على حدة، حسب المال المدفوع فعلاً بها. الرصيد الافتتاحي من ", "Each currency on its own, by the money really paid in it. Opening balance from "]) +
+      ((b.opening.USD || b.opening.SYP || {}).as_of || "")}));
+  } else {
+    kids.push(h("p", {class:"hint", text:uiT(["لم يُدخل رصيد الصندوق بعد (أو هذا الشهر قبل تاريخه). تُدخله الإدارة مرة واحدة، ثم تُحسب الإيرادات والمصروفات عليه.", "No cash balance entered yet (or this month is before its date). The management enters it once; income and expenses are then added to it."])}));
+  }
+  if(meta.rights.manage){
+    var day = h("input", {type:"date", max:meta.today, value:meta.today});
+    var usd = h("input", {type:"number", min:"0", step:"0.01", inputMode:"decimal", placeholder:"0"}), syp = h("input", {type:"number", min:"0", step:"1", inputMode:"decimal", placeholder:"0"});
+    var note = h("input", {type:"text", maxlength:"300"}), msg = mnMsg();
+    kids.push(h("details", {}, [h("summary", {text:uiT(["إدخال المال الموجود في الصندوق (للإدارة)", "Enter the money the kindergarten has (management)"])}),
+      h("p", {class:"hint", text:uiT(["أدخل ما تملكه الروضة فعلاً في بداية اليوم المختار، بالدولار وبالليرة. كل الإيرادات والمصروفات من ذلك اليوم تُحسب عليه. التصحيح إدخال جديد، والقديم يبقى في السجل.",
+        "Enter what the kindergarten really has at the start of the chosen day, in dollars and in pounds. All income and expenses from that day on are added to it. A correction is a new entry; the old one stays in the log."])}),
+      h("div", {class:"a-row"}, [uiField(uiT(["في بداية يوم", "At the start of"]), day), uiField("USD", usd), uiField("SYP", syp), uiField(uiT(["ملاحظة", "Note"]), note),
+        h("button", {type:"button", class:"a-btn sun", text:uiT(["حفظ الرصيد", "Save balance"]), onclick:function(){
+          request("/api/admin/money/opening", {method:"POST", body:JSON.stringify({as_of:day.value, usd:usd.value || "0", syp:syp.value || "0", note:note.value.trim()})})
+            .then(function(){ uiToast(uiT(["حُفظ رصيد الصندوق.", "Cash balance saved."]), "ok"); again(); }).catch(mnErr(msg));
+        }})]), msg]));
+  }
+  return h("div", {class:"a-card"}, kids);
 }

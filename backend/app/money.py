@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app import activity, pdfs
 from app.actors import Actor, has_grant
 from app.database import get_session
-from app.models import Child, CurrencyRate, Employee, ExpenseEntry, FeeAuditLog, IncomeCategory, IncomeEntry, Invoice, InvoiceItem, MonthClosing
+from app.models import Child, CurrencyRate, Employee, ExpenseEntry, FeeAuditLog, IncomeCategory, IncomeEntry, Invoice, InvoiceItem, MoneyOpening, MonthClosing
 from app.timeutil import local_today, to_local
 
 CURRENCIES = ("USD", "SYP")
@@ -359,6 +359,13 @@ class PaymentIn(BaseModel):
     category_id: uuid.UUID | None = None  # default: kindergarten fees
 
 
+class OpeningIn(BaseModel):
+    as_of: date
+    usd: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    syp: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    note: str = Field(default="", max_length=300)
+
+
 class ClosingIn(BaseModel):
     year: int = Field(ge=2000, le=2100)
     month: int = Field(ge=1, le=12)
@@ -445,6 +452,43 @@ def month_figures(session: Session, year: int, month: int) -> dict[str, Any]:
         "income_count": len(incomes), "expense_count": len(expenses), "income_cats": income_cats, "expense_cats": expense_cats,
         "converted": {"income": converted_in, "expense": converted_out, "surplus": {code: converted_in[code] - converted_out[code] for code in CURRENCIES}},
     }
+
+
+# ---- the money the kindergarten has ---------------------------------------------------------------------------------------------
+def opening_of(session: Session, currency: str) -> MoneyOpening | None:
+    """The newest opening balance of a currency (a correction is a new row; the older ones stay in the history)."""
+    return session.scalar(select(MoneyOpening).where(MoneyOpening.currency == currency).order_by(MoneyOpening.created_at.desc()).limit(1))
+
+
+def balance_at(session: Session, currency: str, day: date) -> Decimal | None:
+    """The money of one currency at the END of `day`: the opening balance plus every income minus every expense from the
+    opening day on (cancelled entries do not count, reversals do). None while no opening balance was entered."""
+    opening = opening_of(session, currency)
+    if opening is None:
+        return None
+    if day < opening.as_of:
+        return None  # before the kindergarten said what it had, nothing is known
+    def total(model: Any) -> Decimal:
+        return session.scalar(select(func.coalesce(func.sum(model.amount), 0)).where(
+            model.currency == currency, model.voided_at.is_(None), model.booked_on >= opening.as_of, model.booked_on <= day)) or ZERO
+    return cents(Decimal(opening.amount) + Decimal(total(IncomeEntry)) - Decimal(total(ExpenseEntry)))
+
+
+def balances(session: Session, year: int, month: int) -> dict[str, Any]:
+    """Per currency: the money at the start of the month, the result of the month (profit or loss) and the money at its end."""
+    first, last = month_range(year, month)
+    today = local_today()
+    end = min(last, today) if (year, month) == (today.year, today.month) else last
+    result: dict[str, Any] = {}
+    for code in CURRENCIES:
+        opening = opening_of(session, code)
+        start = None if opening is None else (Decimal(opening.amount) if opening.as_of >= first else balance_at(session, code, first - timedelta(days=1)))
+        if opening is not None and opening.as_of > last:
+            start = None
+        closing = balance_at(session, code, end) if opening is not None and opening.as_of <= end else None
+        result[code] = {"start": start, "end": closing, "profit": None if start is None or closing is None else closing - start,
+                        "opening": None if opening is None else {"amount": text(code, opening.amount), "as_of": opening.as_of.isoformat(), "by": opening.created_by}}
+    return result
 
 
 def open_invoices(session: Session) -> dict[str, Any]:
@@ -1012,6 +1056,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
 
         closing = closing_of(session, year, month)
         invoices = open_invoices(session)
+        money_now = balances(session, year, month)
         return {
             "month": f"{year}-{month:02d}", "previous_month": f"{prev_year}-{prev_month:02d}",
             "income": pair(now["income"]), "expense": pair(now["expense"]), "surplus": pair(now["surplus"]),
@@ -1028,6 +1073,12 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
             "change": {key: change(key) for key in ("income", "expense", "surplus")},
             "converted": {key: pair(now["converted"][key]) for key in ("income", "expense", "surplus")},
             "invoices": {"open": invoices["open"], "partial": invoices["partial"], "open_amount": pair(invoices["amount"])},
+            "balance": {
+                "start": {code.lower(): text(code, money_now[code]["start"]) for code in CURRENCIES},
+                "end": {code.lower(): text(code, money_now[code]["end"]) for code in CURRENCIES},
+                "profit": {code.lower(): text(code, money_now[code]["profit"]) for code in CURRENCIES},
+                "opening": {code: money_now[code]["opening"] for code in CURRENCIES},
+            },
             "closed": closing is not None,
             "closing": None if closing is None else {"by": closing.closed_by, "at": to_local(closing.closed_at).isoformat() if closing.closed_at else None},
         }
@@ -1037,6 +1088,45 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         response.headers["Cache-Control"] = "no-store"
         automatic(session)
         return summary_data(session, *parse_month(month, local_today()))
+
+    @router.get("/opening")
+    def get_opening(response: Response, _actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """The money the kindergarten has: the opening balance, today's balance and the history of corrections."""
+        response.headers["Cache-Control"] = "no-store"
+        today = local_today()
+        rows = session.scalars(select(MoneyOpening).order_by(MoneyOpening.created_at.desc()).limit(40)).all()
+        now = {code: balance_at(session, code, today) for code in CURRENCIES}
+        current = rate_on(session, today)
+        value = None
+        if current is not None and all(v is not None for v in now.values()):
+            r = Decimal(current.syp_per_usd)
+            value = {"usd": text("USD", now["USD"] + to_other(now["SYP"], "SYP", r)), "syp": text("SYP", now["SYP"] + to_other(now["USD"], "USD", r))}
+        return {
+            "opening": {code: (None if (o := opening_of(session, code)) is None else {"amount": text(code, o.amount), "as_of": o.as_of.isoformat(), "by": o.created_by, "note": o.note}) for code in CURRENCIES},
+            "today": {code: (None if v is None else text(code, v)) for code, v in now.items()},
+            "value_today": value,  # everything valued in one currency at today's rate (an estimate; the cash stays two currencies)
+            "history": [{"as_of": o.as_of.isoformat(), "currency": o.currency, "amount": text(o.currency, o.amount), "by": o.created_by,
+                         "at": to_local(o.created_at).isoformat() if o.created_at else None, "note": o.note} for o in rows],
+        }
+
+    @router.post("/opening", status_code=201)
+    def set_opening(payload: OpeningIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """The management says how much money the kindergarten has on a day, in dollars and in pounds. A correction is a new
+        entry (the older ones stay visible and logged); entries booked from that day on are added to it."""
+        need(session, actor, "manage")
+        if payload.as_of > local_today():
+            raise HTTPException(422, "لا يمكن إدخال رصيد بتاريخ مستقبلي.")
+        ensure_open(session, payload.as_of)
+        stamp_now = datetime.now(timezone.utc).replace(tzinfo=None)
+        for code, amount in (("USD", payload.usd), ("SYP", payload.syp)):
+            old = opening_of(session, code)
+            row = MoneyOpening(as_of=payload.as_of, currency=code, amount=cents(amount), note=payload.note.strip(), created_by=actor.name[:80], created_at=stamp_now)
+            session.add(row)
+            audit(session, actor, "opening.set", "opening", f"{code} {payload.as_of.isoformat()}",
+                  None if old is None else {"currency": code, "amount": str(old.amount), "as_of": old.as_of.isoformat()},
+                  {"currency": code, "amount": str(row.amount), "as_of": payload.as_of.isoformat()}, payload.note.strip())
+        session.commit()
+        return get_opening(Response(), actor, session)
 
     @router.post("/closings", status_code=201)
     def close_month(payload: ClosingIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:

@@ -503,3 +503,54 @@ class AutomaticSalaryTests(MoneyBase):
         with self.at(date(2026, 12, 3)):
             self.meta()
         self.assertEqual([(r.recipient, r.rate) for r in self.salary_rows()], [("Lina", Decimal("12500"))])
+
+
+class OpeningBalanceTests(MoneyBase):
+    """The money the kindergarten has; income and expenses are added to it, month by month."""
+
+    def opening(self, usd="1000", syp="5000000", day=None, headers=None):
+        return self.client.post(MONEY + "/opening", headers=headers or self.mgr, json={"as_of": (day or local_today()).isoformat(), "usd": usd, "syp": syp})
+
+    def test_only_the_management_enters_it_and_it_is_logged(self):
+        self.assertEqual(self.opening(headers=self.acc).status_code, 403)
+        self.assertEqual(self.opening(day=local_today() + timedelta(days=1)).status_code, 422)
+        self.assertEqual(self.opening(usd="-1").status_code, 422)
+        made = self.opening()
+        self.assertEqual(made.status_code, 201, made.text)
+        self.assertEqual(made.json()["today"], {"USD": "1000.00", "SYP": "5000000"})
+        self.assertEqual(self.actions().count("opening.set"), 2)  # one line per currency
+
+    def test_the_month_starts_with_the_money_and_ends_with_it_plus_the_result(self):
+        today = local_today()
+        self.opening("1000", "5000000", day=today.replace(day=1))
+        self.income("200", "USD")
+        self.expense("1500000", "SYP")
+        self.expense("50", "USD")
+        data = self.client.get(f"{MONEY}/summary?month={month_of(today)}", headers=self.acc).json()["balance"]
+        self.assertEqual((data["start"]["usd"], data["start"]["syp"]), ("1000.00", "5000000"))
+        self.assertEqual((data["profit"]["usd"], data["profit"]["syp"]), ("150.00", "-1500000"))  # profit in dollars, loss in pounds
+        self.assertEqual((data["end"]["usd"], data["end"]["syp"]), ("1150.00", "3500000"))
+        state = self.client.get(MONEY + "/opening", headers=self.acc).json()
+        self.assertEqual(state["today"], {"USD": "1150.00", "SYP": "3500000"})
+        self.assertEqual(state["value_today"], {"usd": "1441.67", "syp": "17300000"})  # one value at today's rate, for orientation
+
+    def test_the_next_month_starts_where_the_last_one_ended_and_cancelled_entries_do_not_count(self):
+        old = last_month(local_today())
+        self.opening("100", "0", day=old.replace(day=1))
+        self.income("40", "USD", day=old)
+        drop = self.expense("10", "USD", day=old).json()
+        self.client.post(f"{MONEY}/expenses/{drop['id']}/void", headers=self.mgr, json={"reason": "booked twice"})
+        data = self.client.get(f"{MONEY}/summary?month={month_of(local_today())}", headers=self.acc).json()["balance"]
+        self.assertEqual(data["start"]["usd"], "140.00")
+
+    def test_without_an_opening_balance_nothing_is_guessed(self):
+        data = self.client.get(MONEY + "/summary", headers=self.acc).json()["balance"]
+        self.assertEqual((data["start"]["usd"], data["end"]["syp"]), (None, None))
+        self.assertTrue(self.client.get(MONEY + "/export/summary.pdf", headers=self.mgr).content.startswith(b"%PDF"))
+
+    def test_a_correction_is_a_new_entry_and_the_old_one_stays(self):
+        self.opening("1000", "0")
+        self.opening("1200", "0")
+        state = self.client.get(MONEY + "/opening", headers=self.mgr).json()
+        self.assertEqual(state["opening"]["USD"]["amount"], "1200.00")
+        self.assertEqual([h["amount"] for h in state["history"] if h["currency"] == "USD"], ["1200.00", "1000.00"])

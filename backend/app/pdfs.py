@@ -228,6 +228,16 @@ def month_report_pdf(summary: dict[str, Any], incomes: list[dict[str, Any]], exp
         ["منها الرواتب", num(summary["salaries"]["usd"]), num(summary["salaries"]["syp"])],
         ["الفائض / العجز", num(summary["surplus"]["usd"]), num(summary["surplus"]["syp"])],
     ], [100, 40, 40], bold_last=True, numeric={1, 2})
+    b = summary.get("balance")
+    if b and (b["start"]["usd"] is not None or b["start"]["syp"] is not None):
+        doc.heading("رصيد الصندوق والربح / الخسارة")
+        doc.grid(["البند", "USD", "SYP"], [
+            ["الرصيد في أول الشهر", num(b["start"]["usd"]), num(b["start"]["syp"], "SYP")],
+            ["+ الإيرادات", num(summary["income"]["usd"]), num(summary["income"]["syp"], "SYP")],
+            ["− المصروفات", num(summary["expense"]["usd"]), num(summary["expense"]["syp"], "SYP")],
+            ["الربح / الخسارة", num(b["profit"]["usd"]), num(b["profit"]["syp"], "SYP")],
+            ["الرصيد في آخر الشهر", num(b["end"]["usd"]), num(b["end"]["syp"], "SYP")],
+        ], [100, 40, 40], bold_last=True, numeric={1, 2})
     doc.line_text(f"عدد حركات الإيراد: {summary['income_count']} · عدد حركات المصروف: {summary['expense_count']} · "
                   f"فواتير مفتوحة / جزئية: {summary['invoices']['open']} / {summary['invoices']['partial']}", 9, MUTED)
     doc.line_text(f"للمقارنة فقط (كل الحركات محوّلة بسعرها المحفوظ): الفائض بالدولار {num(summary['converted']['surplus']['usd'])} · بالليرة {num(summary['converted']['surplus']['syp'])}", 9, MUTED)
