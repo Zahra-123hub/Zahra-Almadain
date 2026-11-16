@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import os
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -227,5 +228,50 @@ def month_report_pdf(summary: dict[str, Any], incomes: list[dict[str, Any]], exp
     listing("الإيرادات", incomes, "category")
     listing("المصروفات", expenses, "category_ar")
     code = verification(["month", summary["month"], summary["income"]["usd"], summary["income"]["syp"], summary["expense"]["usd"], summary["expense"]["syp"]])
+    doc.signature(signer, code)
+    return bytes(doc.output())
+
+
+def entries_pdf(kind: str, month: str, rows: list[dict[str, Any]], signer: dict[str, str]) -> bytes:
+    """The income or the expenses of one month, every entry with both currencies, the totals per currency really paid."""
+    income = kind == "income"
+    title = ("الإيرادات" if income else "المصروفات") + f" — {month_name(month)}"
+    live = [r for r in rows if not r["voided"]]
+    cancelled = len(rows) - len(live)
+    doc = Doc(title, f"عدد الحركات: {len(live)}" + (f" · ملغاة (غير محسوبة): {cancelled}" if cancelled else ""))
+    if live:
+        def who(r: dict[str, Any]) -> str:
+            parts = [r.get("payer_name"), r.get("child")] if income else [r.get("recipient"), r.get("employee")]
+            return " · ".join(p for p in parts if p)[:26]
+
+        doc.grid(["التاريخ", "الوصف", "الفئة", "USD", "SYP", "المدفوع فعلاً", "الدافع" if income else "المستلم"],
+                 [[r["booked_on"], r["description"][:30], (r["category"] if income else r["category_ar"])[:16], num(r["usd"]), num(r["syp"]),
+                   f"{num(r['amount'])} {r['currency']}", who(r)] for r in live],
+                 [20, 44, 24, 20, 22, 24, 26], numeric={3, 4, 5})
+    else:
+        doc.line_text("لا توجد حركات في هذا الشهر.", 11, MUTED)
+    totals = {"USD": "0", "SYP": "0"}
+    for code in totals:
+        total = sum((Decimal(r["amount"]) for r in live if r["currency"] == code), Decimal(0))
+        totals[code] = str(int(total)) if code == "SYP" and total == total.to_integral_value() else format(total.quantize(Decimal("0.01")), "f")
+    doc.heading("المجموع حسب العملة المدفوعة فعلاً (كل عملة على حدة)")
+    doc.grid(["العملة", "المجموع"], [["دولار أمريكي (USD)", num(totals["USD"])], ["ليرة سورية (SYP)", num(totals["SYP"])]], [100, 80], numeric={1})
+    code = verification([kind, month, totals["USD"], totals["SYP"], str(len(live))])
+    doc.signature(signer, code)
+    return bytes(doc.output())
+
+
+def staff_pdf(people: list[dict[str, Any]], scope: str, signer: dict[str, str]) -> bytes:
+    """The staff list of the management (no private notes)."""
+    doc = Doc("قائمة الموظفين", ("كل الموظفين" if scope == "all" else "الموظفون الفعّالون فقط") + f" · العدد: {len(people)}")
+    if people:
+        doc.grid(["الرقم", "الاسم", "الوظيفة", "الهاتف", "تاريخ المباشرة", "الحالة", "الراتب"],
+                 [[p["employee_no"], p["name"][:24], (p["job_title"] or "—")[:16], p["phone"] or "—", p["hired_on"] or "—",
+                   "فعّال" if p["is_active"] else "غادر" + (f" {p['left_on']}" if p["left_on"] else ""),
+                   "—" if p["salary"] is None else f"{num(p['salary'])} {p['salary_currency']}"] for p in people],
+                 [18, 40, 26, 26, 22, 24, 24], numeric={0, 3, 4, 6})
+    else:
+        doc.line_text("لا يوجد موظفون.", 11, MUTED)
+    code = verification(["staff", scope, str(len(people))] + [p["employee_no"] for p in people])
     doc.signature(signer, code)
     return bytes(doc.output())

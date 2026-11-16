@@ -49,8 +49,7 @@
       exportTitle: "تصدير قائمة الموظفين",
       exportAll: "كل الموظفين",
       exportActive: "الفعّالون فقط",
-      exportXlsx: "تنزيل Excel (XLSX)",
-      exportCsv: "تنزيل CSV",
+      exportPdf: "تنزيل قائمة الموظفين PDF",
       booksTitle: "المحاسبة",
       booksHint: "ثلاث صفحات فقط: الإيرادات، المصروفات، الملخص الشهري. هنا تحدّد الإدارة سعر الصرف أيضاً.",
       booksOpen: "فتح المحاسبة",
@@ -118,8 +117,7 @@
       exportTitle: "Export the staff list",
       exportAll: "All employees",
       exportActive: "Active only",
-      exportXlsx: "Download Excel (XLSX)",
-      exportCsv: "Download CSV",
+      exportPdf: "Download the staff list as PDF",
       booksTitle: "Accounting",
       booksHint: "Three pages only: income, expenses and the month overview. The management also sets the exchange rate there.",
       booksOpen: "Open the accounting",
@@ -462,11 +460,9 @@
       exportScope.appendChild(new Option(m("exportActive"), "active"));
       exportCard.appendChild(field(m("exportTitle"), exportScope));
       var exportRow = el("div", "p-row");
-      ["xlsx", "csv"].forEach(function(kind){
-        exportRow.appendChild(api.button(kind === "xlsx" ? m("exportXlsx") : m("exportCsv"), "outline", function(){
-          api.download(ACCOUNTING + "/employees/export." + kind + "?scope=" + exportScope.value, "staff-" + exportScope.value + "." + kind);
-        }));
-      });
+      exportRow.appendChild(api.button(m("exportPdf"), "sun", function(){
+        api.download(ACCOUNTING + "/employees/export.pdf?scope=" + exportScope.value, "staff-" + exportScope.value + ".pdf");
+      }));
       exportCard.appendChild(exportRow);
       panes.employees.appendChild(empCard);
       panes.employees.appendChild(empListCard);

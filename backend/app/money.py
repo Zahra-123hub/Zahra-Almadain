@@ -30,7 +30,6 @@ from app import activity, pdfs
 from app.actors import Actor, has_grant
 from app.database import get_session
 from app.models import Child, CurrencyRate, Employee, ExpenseEntry, FeeAuditLog, IncomeCategory, IncomeEntry, Invoice, InvoiceItem, MonthClosing
-from app.tables import csv_response, xlsx_response
 from app.timeutil import local_today, to_local
 
 CURRENCIES = ("USD", "SYP")
@@ -1060,72 +1059,44 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         session.commit()
         return {"month": f"{year}-{month:02d}", "closed": False}
 
-    # ---- exports (both currencies and the rate in every file) -----------------------------------------------------------------------
-    def table(fmt: str, name: str, title: str, header: list[str], rows: list[list[Any]]) -> Response:
-        if fmt not in ("xlsx", "csv"):
-            raise HTTPException(422, "الصيغة xlsx أو csv.")
-        return csv_response(f"{name}.csv", header, rows) if fmt == "csv" else xlsx_response(f"{name}.xlsx", [(title, header, rows)])
-
-    def state_word(row: dict[str, Any]) -> str:
-        return "ملغاة" if row["voided"] else "قيد عكسي" if row["is_reversal"] else "مصحَّحة بقيد عكسي" if row["reversed"] else "سارية"
-
-    def money_cell(value: str | None) -> Decimal | str:
-        return "" if value is None else Decimal(value)
+    # ---- exports: signed PDF documents (both currencies and the rate in each) ------------------------------------------------------
+    def only_pdf(fmt: str) -> None:
+        if fmt != "pdf":
+            raise HTTPException(422, "التصدير بصيغة PDF فقط.")
 
     @router.get("/export/income.{fmt}")
     def export_income(fmt: str, month: str | None = None, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> Response:
+        only_pdf(fmt)
         need(session, actor, "export")
         year, mon = parse_month(month, local_today())
         rows = income_list(session, income_rows(session, *month_range(year, mon), None, ""))
         audit(session, actor, "export.income", "export", f"{year}-{mon:02d}", None, {"format": fmt, "rows": len(rows)})
         session.commit()
-        header = ["التاريخ", "الوصف", "الفئة", "USD", "SYP", "عملة الدفع", "المبلغ المدفوع", "سعر الصرف (ليرة لكل دولار)", "الدافع", "الطفل", "رقم الفاتورة", "ملاحظة", "الحالة"]
-        body = [[r["booked_on"], r["description"], r["category"], money_cell(r["usd"]), money_cell(r["syp"]), r["currency"], money_cell(r["amount"]), money_cell(r["rate"]),
-                 r["payer_name"], r["child"], r["invoice_number"], r["note"], state_word(r)] for r in rows]
-        return table(fmt, f"income-{year}-{mon:02d}", "الإيرادات", header, body)
+        return pdf_response(f"income-{year}-{mon:02d}.pdf", pdfs.entries_pdf("income", f"{year}-{mon:02d}", rows, pdfs.signer_of(actor.name, actor.role)))
 
     @router.get("/export/expenses.{fmt}")
     def export_expenses(fmt: str, month: str | None = None, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> Response:
+        only_pdf(fmt)
         need(session, actor, "export")
         year, mon = parse_month(month, local_today())
         rows = expense_list(session, expense_rows(session, *month_range(year, mon), "", ""))
         audit(session, actor, "export.expenses", "export", f"{year}-{mon:02d}", None, {"format": fmt, "rows": len(rows)})
         session.commit()
-        header = ["التاريخ", "الوصف", "الفئة", "USD", "SYP", "عملة الدفع", "المبلغ المدفوع", "سعر الصرف (ليرة لكل دولار)", "المستلم", "الموظف", "شهر الراتب", "ملاحظة", "الحالة"]
-        body = [[r["booked_on"], r["description"], r["category_ar"], money_cell(r["usd"]), money_cell(r["syp"]), r["currency"], money_cell(r["amount"]), money_cell(r["rate"]),
-                 r["recipient"], r["employee"], r["salary_month"], r["note"], state_word(r)] for r in rows]
-        return table(fmt, f"expenses-{year}-{mon:02d}", "المصروفات", header, body)
+        return pdf_response(f"expenses-{year}-{mon:02d}.pdf", pdfs.entries_pdf("expense", f"{year}-{mon:02d}", rows, pdfs.signer_of(actor.name, actor.role)))
 
     @router.get("/export/summary.{fmt}")
     def export_summary(fmt: str, month: str | None = None, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> Response:
+        only_pdf(fmt)
         need(session, actor, "export")
         year, mon = parse_month(month, local_today())
         data = summary_data(session, year, mon)
         audit(session, actor, "export.summary", "export", data["month"], None, {"format": fmt})
         session.commit()
-        current = rate_on(session, month_range(year, mon)[1])
-        if fmt == "pdf":  # the signed report of the month
-            span = month_range(year, mon)
-            incomes = income_list(session, income_rows(session, *span, None, ""))
-            expenses = expense_list(session, expense_rows(session, *span, "", ""))
-            shown = "—" if current is None else f"{pdfs.num(rate_text(current.syp_per_usd))} ليرة للدولار"
-            return pdf_response(f"report-{data['month']}.pdf", pdfs.month_report_pdf(data, incomes, expenses, pdfs.signer_of(actor.name, actor.role), shown))
-        header = ["البند", "USD (المدفوع بالدولار)", "SYP (المدفوع بالليرة)", "العدد"]
-        body: list[list[Any]] = [
-            ["إجمالي الإيرادات", money_cell(data["income"]["usd"]), money_cell(data["income"]["syp"]), data["income_count"]],
-            ["إجمالي المصروفات", money_cell(data["expense"]["usd"]), money_cell(data["expense"]["syp"]), data["expense_count"]],
-            ["الفائض / العجز", money_cell(data["surplus"]["usd"]), money_cell(data["surplus"]["syp"]), ""],
-            ["الرواتب", money_cell(data["salaries"]["usd"]), money_cell(data["salaries"]["syp"]), ""],
-            ["مصروفات أخرى", money_cell(data["other_expenses"]["usd"]), money_cell(data["other_expenses"]["syp"]), ""],
-        ]
-        body += [["إيراد: " + c["name"], money_cell(c["usd"]), money_cell(c["syp"]), c["count"]] for c in data["income_by_category"]]
-        body += [["مصروف: " + c["ar"], money_cell(c["usd"]), money_cell(c["syp"]), c["count"]] for c in data["expense_by_category"]]
-        body += [
-            ["فواتير مفتوحة (المتبقي)", money_cell(data["invoices"]["open_amount"]["usd"]), money_cell(data["invoices"]["open_amount"]["syp"]), data["invoices"]["open"] + data["invoices"]["partial"]],
-            ["القيمة الكلية محوّلة — الفائض (للمقارنة فقط)", money_cell(data["converted"]["surplus"]["usd"]), money_cell(data["converted"]["surplus"]["syp"]), ""],
-            ["سعر الصرف في نهاية الشهر (ليرة لكل دولار)", "" if current is None else Decimal(rate_text(current.syp_per_usd)), "", ""],
-            ["حالة الشهر", "مغلق" if data["closed"] else "مفتوح", "", ""],
-        ]
-        return table(fmt, f"summary-{data['month']}", "الملخص الشهري", header, body)
+        span = month_range(year, mon)
+        current = rate_on(session, span[1])
+        incomes = income_list(session, income_rows(session, *span, None, ""))
+        expenses = expense_list(session, expense_rows(session, *span, "", ""))
+        shown = "—" if current is None else f"{pdfs.num(rate_text(current.syp_per_usd))} ليرة للدولار"
+        return pdf_response(f"report-{data['month']}.pdf", pdfs.month_report_pdf(data, incomes, expenses, pdfs.signer_of(actor.name, actor.role), shown))
 
     return router

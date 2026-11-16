@@ -209,28 +209,21 @@ class CommunityTests(ControlsBase):
         self.assertIn("attachment", response.headers["content-disposition"])
         return load_workbook(io.BytesIO(response.content)).active
 
-    def test_income_export_is_a_real_excel_file(self):
+    def test_the_accounting_exports_are_pdf_documents(self):
         self.set_rate()
         self.income("20", "USD", description="=SUM(A1)")
-        sheet = self.workbook(self.client.get(MONEY + "/export/income.xlsx", headers=self.manager))
-        header = [c.value for c in sheet[1]]
-        self.assertEqual(header[:5], ["التاريخ", "الوصف", "الفئة", "USD", "SYP"])  # one column per field, both currencies
-        row = [c.value for c in sheet[2]]
-        self.assertEqual(row[1], "=SUM(A1)")  # stored as text, so it can never run as a formula
-        self.assertEqual(sheet["B2"].data_type, "s")
-        self.assertEqual((row[3], row[4]), (20, 240000))  # the amounts are numbers
-        self.assertEqual(row[header.index("سعر الصرف (ليرة لكل دولار)")], 12000)  # the rate is in the file
-        self.assertEqual(sheet.freeze_panes, "A2")
-        for headers in (self.teacher, self.parent):
-            self.assertEqual(self.client.get(MONEY + "/export/income.xlsx", headers=headers).status_code, 403)
-        self.assertEqual(self.client.get(MONEY + "/export/income.xlsx").status_code, 401)
+        self.expense("5", "USD")
+        for kind in ("income", "expenses"):
+            response = self.client.get(f"{MONEY}/export/{kind}.pdf", headers=self.manager)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertTrue(response.content.startswith(b"%PDF"))
+            for headers in (self.teacher, self.parent):
+                self.assertEqual(self.client.get(f"{MONEY}/export/{kind}.pdf", headers=headers).status_code, 403)
+            self.assertEqual(self.client.get(f"{MONEY}/export/{kind}.pdf").status_code, 401)
 
-    def test_expense_and_log_exports(self):
+    def test_the_log_export_is_a_real_excel_file(self):
         self.set_rate()
         self.expense("5", "USD")
-        expenses = self.workbook(self.client.get(MONEY + "/export/expenses.xlsx", headers=self.manager))
-        self.assertEqual([c.value for c in expenses[1]][:5], ["التاريخ", "الوصف", "الفئة", "USD", "SYP"])
-        self.assertEqual([c.value for c in expenses[2]][3:5], [5, 60000])
         log = self.workbook(self.client.get("/api/admin/activity/export.xlsx", headers=self.acc))
         self.assertEqual([c.value for c in log[1]], ["Time", "User", "Area", "Action", "Entity", "Reason", "Details"])
         self.assertIn("expense.create", [c.value for row in log.iter_rows(min_row=2) for c in row])

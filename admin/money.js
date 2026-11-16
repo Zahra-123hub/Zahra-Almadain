@@ -66,11 +66,11 @@ function mnFilters(categories, onChange){
 }
 function mnExport(meta, kind, monthOf){
   if(!meta.rights.export) return "";
-  function go(fmt){ downloadFile("/api/admin/money/export/" + kind + "." + fmt + "?month=" + monthOf(), (kind === "summary" && fmt === "pdf" ? "report" : kind) + "-" + monthOf() + "." + fmt).catch(function(e){ uiToast(errText(e), "err"); }); }
-  var buttons = [h("span", {class:"hint", text:uiT(["تصدير الشهر:", "Export the month:"])})];
-  if(kind === "summary") buttons.push(h("button", {type:"button", class:"a-btn sun", text:uiT(["تقرير PDF موقّع", "Signed PDF report"]), onclick:function(){ go("pdf"); }}));
-  buttons.push(h("button", {type:"button", class:"a-btn ghost", text:"XLSX", onclick:function(){ go("xlsx"); }}), h("button", {type:"button", class:"a-btn ghost", text:"CSV", onclick:function(){ go("csv"); }}));
-  return h("div", {class:"a-row"}, buttons);
+  var label = {income:["تنزيل الإيرادات PDF", "Download income as PDF"], expenses:["تنزيل المصروفات PDF", "Download expenses as PDF"], summary:["تقرير الشهر PDF", "Month report as PDF"]}[kind];
+  var file = {income:"income", expenses:"expenses", summary:"report"}[kind];
+  return h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:uiT(label), onclick:function(){
+    downloadFile("/api/admin/money/export/" + kind + ".pdf?month=" + monthOf(), file + "-" + monthOf() + ".pdf").catch(function(e){ uiToast(errText(e), "err"); });
+  }}), h("span", {class:"hint", text:uiT(["موقّع إلكترونياً، بالدولار والليرة", "signed, in dollars and pounds"])})]);
 }
 /* amount + currency + rate (the rate of the day is proposed; only the management may type another one) */
 function mnMoneyFields(meta, row){
@@ -352,9 +352,10 @@ function tabExpense(){
     function staffExport(){
       if(!meta.rights.manage) return "";
       var scope = uiSelect([["all", uiT(["كل الموظفين", "All staff"])], ["active", uiT(["الفعّالون فقط", "Active only"])]], "all");
-      function go(fmt){ downloadFile("/api/admin/people/employees/export." + fmt + "?scope=" + scope.value, "staff-" + scope.value + "." + fmt).catch(function(e){ uiToast(errText(e), "err"); }); }
       return h("div", {class:"a-row"}, [h("span", {class:"hint", text:uiT(["قائمة الموظفين:", "Staff list:"])}), scope,
-        h("button", {type:"button", class:"a-btn ghost", text:"XLSX", onclick:function(){ go("xlsx"); }}), h("button", {type:"button", class:"a-btn ghost", text:"CSV", onclick:function(){ go("csv"); }})]);
+        h("button", {type:"button", class:"a-btn sun", text:uiT(["تنزيل قائمة الموظفين PDF", "Download the staff list as PDF"]), onclick:function(){
+          downloadFile("/api/admin/people/employees/export.pdf?scope=" + scope.value, "staff-" + scope.value + ".pdf").catch(function(e){ uiToast(errText(e), "err"); });
+        }})]);
     }
     request("/api/admin/people/employees").then(function(list){ staff = list; showForm(null); }).catch(function(){ showForm(null); });
     page.appendChild(mnRateBar(meta, function(){ draw(); }));

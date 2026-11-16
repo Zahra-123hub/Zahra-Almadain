@@ -1,11 +1,8 @@
 """The accounting: income, expenses, invoices, salaries, the month overview, closing, exports and rights."""
 
-import csv
-import io
 from datetime import date, timedelta
 from decimal import Decimal
 
-from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -291,23 +288,34 @@ class SummaryTests(MoneyBase):
 
 
 class ExportTests(MoneyBase):
-    def test_exports_need_the_right_and_hold_both_currencies_and_the_rate(self):
+    def test_income_expenses_and_the_month_are_separate_signed_pdfs(self):
         self.income("20", "USD")
         self.expense("60000", "SYP")
-        self.assertEqual(self.client.get(MONEY + "/export/income.csv", headers=self.acc).status_code, 403)
+        for kind in ("income", "expenses", "summary"):
+            self.assertEqual(self.client.get(f"{MONEY}/export/{kind}.pdf", headers=self.acc).status_code, 403)  # needs books.export
         self.grant("books.export")
-        response = self.client.get(MONEY + "/export/income.csv", headers=self.acc)
-        rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
-        self.assertEqual(rows[0][3:5], ["USD", "SYP"])
-        self.assertEqual((rows[1][3], rows[1][4], rows[1][5], rows[1][7]), ("20.00", "240000", "USD", "12000"))
-        sheet = load_workbook(io.BytesIO(self.client.get(MONEY + "/export/expenses.xlsx", headers=self.acc).content)).active
-        values = [c.value for c in sheet[2]]
-        self.assertEqual((values[3], values[4], values[5]), (5, 60000, "SYP"))
-        summary = load_workbook(io.BytesIO(self.client.get(MONEY + "/export/summary.xlsx", headers=self.mgr).content)).active
-        first = [c.value for c in summary[2]]
-        self.assertEqual(first[:3], ["إجمالي الإيرادات", 20, 0])
-        self.assertEqual(self.client.get(MONEY + "/export/summary.doc", headers=self.mgr).status_code, 422)  # only xlsx, csv and (for the report) pdf
-        self.assertIn("export.income", self.actions())
+        for kind, name in (("income", "income-"), ("expenses", "expenses-"), ("summary", "report-")):
+            response = self.client.get(f"{MONEY}/export/{kind}.pdf", headers=self.acc)
+            self.assertEqual(response.status_code, 200, kind)
+            self.assertEqual(response.headers["content-type"], "application/pdf")
+            self.assertIn(name, response.headers["content-disposition"])
+            self.assertTrue(response.content.startswith(b"%PDF"))
+            for other in ("csv", "xlsx", "doc"):
+                self.assertEqual(self.client.get(f"{MONEY}/export/{kind}.{other}", headers=self.acc).status_code, 422)
+        self.assertTrue({"export.income", "export.expenses", "export.summary"} <= set(self.actions()))
+        empty = self.client.get(f"{MONEY}/export/income.pdf?month=2020-01", headers=self.mgr)
+        self.assertTrue(empty.content.startswith(b"%PDF"))  # a month without entries is still a document
+
+    def test_the_list_totals_count_only_money_really_paid_in_each_currency(self):
+        from app import pdfs
+
+        rows = [{"booked_on": "2026-11-01", "description": "a", "category": "x", "usd": "20.00", "syp": "240000", "amount": "20.00", "currency": "USD", "voided": False},
+                {"booked_on": "2026-11-02", "description": "b", "category": "x", "usd": "10.00", "syp": "120000", "amount": "120000", "currency": "SYP", "voided": False},
+                {"booked_on": "2026-11-03", "description": "c", "category": "x", "usd": "5.00", "syp": "60000", "amount": "5.00", "currency": "USD", "voided": True}]
+        signer = pdfs.signer_of("acc", "accountant")
+        same = pdfs.verification(["income", "2026-11", "20.00", "120000", "2"])
+        self.assertTrue(pdfs.entries_pdf("income", "2026-11", rows, signer).startswith(b"%PDF"))
+        self.assertEqual(same, pdfs.verification(["income", "2026-11", "20.00", "120000", "2"]))  # the code of exactly these totals
 
 
 class RightsTests(MoneyBase):

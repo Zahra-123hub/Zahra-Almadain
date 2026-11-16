@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app import activity, staff_export
+from app import activity, pdfs
 from app.actors import Actor
 from app.database import get_session
 from app.models import Account, Child, ChildGuardian, Employee, Role, parent_child_links
@@ -140,17 +140,19 @@ def build_router(read_guard: Callable[..., Actor], manage_guard: Callable[..., A
         actor: Actor = Depends(manage_guard),
         session: Session = Depends(get_session),
     ) -> Response:
-        """The staff list as XLSX or CSV (management and admin only). A plain output of the central table."""
-        if fmt not in ("xlsx", "csv") or scope not in ("all", "active"):
-            raise HTTPException(422, "صيغة أو نطاق غير صالح.")
+        """The staff list as a signed PDF (management and admin only). A plain output of the central table."""
+        if fmt != "pdf" or scope not in ("all", "active"):
+            raise HTTPException(422, "التصدير بصيغة PDF فقط، لكل الموظفين أو للفعّالين.")
         query = select(Employee).order_by(Employee.employee_no, Employee.name)
         if scope == "active":
             query = query.where(Employee.is_active.is_(True))
         rows = list(session.scalars(query).all())
         log(session, actor, "employee.export", scope, f"{fmt} {len(rows)}")
         session.commit()
-        name = f"staff-{scope}-{local_today().isoformat()}.{fmt}"
-        return staff_export.csv_response(name, rows) if fmt == "csv" else staff_export.xlsx_response(name, rows)
+        people = [employee_data(e, {}, notes=False) for e in rows]
+        content = pdfs.staff_pdf(people, scope, pdfs.signer_of(actor.name, actor.role))
+        return Response(content=content, media_type="application/pdf", headers={
+            "Content-Disposition": f'attachment; filename="staff-{scope}-{local_today().isoformat()}.pdf"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @router.get("/staff-accounts")
     def staff_accounts(

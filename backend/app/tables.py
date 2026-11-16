@@ -1,9 +1,8 @@
-"""Tables as files: XLSX and CSV. Text always stays text (a cell like "=SUM(A1)" can never run as a formula); amounts given
+"""Tables as Excel files (the system log). Text always stays text (a cell like "=SUM(A1)" can never run as a formula); amounts given
 as Decimal are written as numbers."""
 
 from __future__ import annotations
 
-import csv
 import io
 from decimal import Decimal
 from typing import Any
@@ -51,24 +50,5 @@ def xlsx_response(filename: str, sheets: list[tuple[str, list[str], list[list[An
     book.save(buffer)
     return Response(
         content=buffer.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"', **HEADERS},
-    )
-
-
-def csv_response(filename: str, header: list[str], rows: list[list[Any]]) -> Response:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\r\n")
-    writer.writerow(header)
-    for values in rows:
-        line = []
-        for value in values:
-            if isinstance(value, Decimal):
-                line.append(format(value, "f"))
-                continue
-            text = "" if value is None else str(value)
-            line.append("'" + text if text.startswith(FORMULA_START) else text)
-        writer.writerow(line)
-    return Response(
-        content=("﻿" + buffer.getvalue()).encode("utf-8"), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"', **HEADERS},
     )
