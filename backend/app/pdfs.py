@@ -50,13 +50,15 @@ def verification(parts: list[str]) -> str:
     return "-".join(digest[i:i + 4] for i in range(0, 16, 4))
 
 
-def num(text: str | None) -> str:
+def num(text: str | None, currency: str | None = None) -> str:
     """1234567.5 -> 1,234,567.50 ; whole pounds stay whole."""
     if text is None or text == "":
         return "—"
     negative = text.startswith("-")
     whole, _, fraction = text.lstrip("-").partition(".")
     whole = f"{int(whole):,}"
+    if fraction and set(fraction) == {"0"} and currency == "SYP":
+        fraction = ""  # pounds are whole: 1,000,000 and not 1,000,000.00
     return ("-" if negative else "") + whole + ("." + fraction if fraction else "")
 
 
@@ -127,13 +129,33 @@ class Doc(FPDF):
             for index, (value, width) in enumerate(zip(values, widths)):
                 x -= width
                 self.set_xy(x, y)
-                self.cell(width, 8, value, border=1, align="L" if index in numeric else "R", fill=bool(fill))
+                self.fit(value, width - 2, 9.5, bold)
+                self.cell(width, 8, self.shorten(value, width - 2), border=1, align="L" if index in numeric else "R", fill=bool(fill))
+            self.set_font("Tajawal", "B" if bold else "", 9.5)
             self.set_xy(self.l_margin, y + 8)
 
         row(header, NAVY, True, (255, 255, 255))
         for i, values in enumerate(rows):
             last = bold_last and i == len(rows) - 1
             row(values, SOFT if (i % 2 or last) else None, last, INK)
+
+    def fit(self, text: str, width: float, size: float, bold: bool) -> None:
+        """A text that is too wide for its cell gets a smaller font (down to 6.5 pt) instead of running over the border."""
+        style = "B" if bold else ""
+        while size > 6.5:
+            self.set_font("Tajawal", style, size)
+            if self.get_string_width(text) <= width:
+                return
+            size -= 0.5
+        self.set_font("Tajawal", style, 6.5)
+
+    def shorten(self, text: str, width: float) -> str:
+        """Still too wide at the smallest size: the end is cut and marked with an ellipsis."""
+        if self.get_string_width(text) <= width:
+            return text
+        while text and self.get_string_width(text + "…") > width:
+            text = text[:-1]
+        return text + "…"
 
     def signature(self, signer: dict[str, str], code: str) -> None:
         """The automatic signature: who issued the document, as what, when, and the code that proves the figures."""
@@ -246,7 +268,7 @@ def entries_pdf(kind: str, month: str, rows: list[dict[str, Any]], signer: dict[
 
         doc.grid(["التاريخ", "الوصف", "الفئة", "USD", "SYP", "المدفوع فعلاً", "الدافع" if income else "المستلم"],
                  [[r["booked_on"], r["description"][:30], (r["category"] if income else r["category_ar"])[:16], num(r["usd"]), num(r["syp"]),
-                   f"{num(r['amount'])} {r['currency']}", who(r)] for r in live],
+                   f"{num(r['amount'], r['currency'])} {r['currency']}", who(r)] for r in live],
                  [20, 44, 24, 20, 22, 24, 26], numeric={3, 4, 5})
     else:
         doc.line_text("لا توجد حركات في هذا الشهر.", 11, MUTED)
@@ -275,11 +297,11 @@ def staff_pdf(people: list[dict[str, Any]], scope: str, signer: dict[str, str]) 
     """The staff list of the management (no private notes)."""
     doc = Doc("قائمة الموظفين", ("كل الموظفين" if scope == "all" else "الموظفون الفعّالون فقط") + f" · العدد: {len(people)}")
     if people:
-        doc.grid(["الرقم", "الاسم", "الوظيفة", "الهاتف", "تاريخ المباشرة", "الحالة", "الراتب"],
+        doc.grid(["الرقم", "الاسم", "الوظيفة", "الهاتف", "المباشرة", "الحالة", "الراتب"],
                  [[p["employee_no"], p["name"][:24], (p["job_title"] or "—")[:16], p["phone"] or "—", p["hired_on"] or "—",
-                   "فعّال" if p["is_active"] else "غادر" + (f" {p['left_on']}" if p["left_on"] else ""),
-                   "—" if p["salary"] is None else f"{num(p['salary'])} {p['salary_currency']}"] for p in people],
-                 [18, 40, 26, 26, 22, 24, 24], numeric={0, 3, 4, 6})
+                   "نشط" if p["is_active"] else "غادر" + (f" {p['left_on']}" if p["left_on"] else ""),
+                   "—" if p["salary"] is None else f"{num(p['salary'], p['salary_currency'])} {p['salary_currency']}"] for p in people],
+                 [17, 38, 30, 24, 24, 20, 27], numeric={0, 3, 4, 6})
     else:
         doc.line_text("لا يوجد موظفون.", 11, MUTED)
     code = verification(["staff", scope, str(len(people))] + [p["employee_no"] for p in people])

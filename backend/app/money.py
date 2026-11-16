@@ -132,7 +132,7 @@ def fetch_online_rate() -> Decimal | None:
         scale = Decimal(100)
     if value < 1000 and scale > 0:
         value *= scale
-    return value.quantize(Decimal("0.000001"))
+    return value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)  # whole pounds: 12177, not 12177.0142
 
 
 def refresh_today(session: Session) -> None:

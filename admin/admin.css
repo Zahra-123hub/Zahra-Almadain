@@ -489,3 +489,10 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 /* the accounting: one menu entry, three pages in a small bar of its own */
 .a-pagetitle{margin:4px 0 10px;font-size:1.25rem}
 .a-subtabs{margin:0 0 14px}
+/* a button beside form fields sits on the line of the fields, not on the line of their labels */
+.a-row:has(> .a-field){align-items:flex-end}
+.a-row:has(> .a-field) > .a-btn{margin-bottom:2px}
+.mn-export{margin:6px 0 14px}
+.a-field .ui-month{display:flex;gap:6px;font:inherit}
+.a-field .ui-month select.ui-month-m{min-width:9.5em;width:auto}
+.a-field .ui-month select.ui-month-y{min-width:5.5em;width:auto}

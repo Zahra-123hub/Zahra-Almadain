@@ -81,3 +81,19 @@ function uiLogCard(title){
   }});
   return h("div", {class:"a-card"}, [h("h3", {text:title}), h("div", {class:"a-row"}, [uiField(uiT(["المجال", "Area"]), domain), uiField(uiT(["المستخدم", "User"]), who), uiField(uiT(["بحث", "Search"]), q), exportBtn]), body]);
 }
+
+/* A month chooser with the Arabic month names (the browser's own month field shows English names). Value "2026-11". */
+function uiMonthPicker(value, onChange){
+  var parts = String(value).split("-"), now = new Date().getFullYear();
+  var month = uiSelect(MONTHS_AR.map(function(name, i){ return [String(i + 1).padStart(2, "0"), name]; }), parts[1]);
+  var years = [];
+  for(var y = now + 1; y >= 2020; y--) years.push([String(y), String(y)]);
+  var year = uiSelect(years, parts[0]);
+  month.className = "ui-month-m"; year.className = "ui-month-y";
+  var box = h("div", {class:"ui-month"}, [month, year]);
+  box.value = value;
+  function changed(){ box.value = year.value + "-" + month.value; if(onChange) onChange(box.value); }
+  month.addEventListener("change", changed); year.addEventListener("change", changed);
+  box.set = function(v){ var p = String(v).split("-"); year.value = p[0]; month.value = p[1]; box.value = v; };
+  return box;
+}

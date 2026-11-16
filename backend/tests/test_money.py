@@ -390,10 +390,10 @@ class AutomaticRateTests(ControlsBase):
         reply = MagicMock()
         reply.json.return_value = {"rates": {"SYP": 121.66}}
         with patch("app.money.httpx.get", return_value=reply):
-            self.assertEqual(real(), Decimal("12166.000000"))
+            self.assertEqual(real(), Decimal("12166"))
         reply.json.return_value = {"rates": {"SYP": 12950.5}}
         with patch("app.money.httpx.get", return_value=reply):
-            self.assertEqual(real(), Decimal("12950.500000"))  # already old pounds: unchanged
+            self.assertEqual(real(), Decimal("12951"))  # already old pounds: only rounded to whole pounds
         with patch("app.money.httpx.get", side_effect=RuntimeError("offline")):
             self.assertIsNone(real())
         money._feed_blocked_until = None

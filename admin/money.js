@@ -28,7 +28,7 @@ function mnAsk(text){ var r = window.prompt(text); return r === null ? null : r.
 /* the rate strip: shown on every page; the management sets a new rate here (no own page) */
 function mnRateBar(meta, again){
   var r = meta.rate;
-  var shown = r ? "1 USD = " + uiNum(r.syp_per_usd) + " SYP" : uiT(["لا يوجد سعر صرف بعد", "No exchange rate yet"]);
+  var shown = r ? uiNum(r.syp_per_usd) + uiT([" ليرة للدولار الواحد", " pounds for one dollar"]) : uiT(["لا يوجد سعر صرف بعد", "No exchange rate yet"]);
   var how = !r ? uiT(["يُجلب السعر تلقائياً من الإنترنت مرة في اليوم؛ تعذّر الوصول إليه الآن.", "The rate is fetched from the internet once a day; it could not be reached right now."])
     : (r.source === "auto" ? uiT(["تلقائي من الإنترنت", "fetched automatically"]) : uiT(["أدخلته الإدارة", "set by the management"])) + " · " + uiT(["ساري من ", "valid from "]) + r.valid_from +
       (r.stale ? " · " + uiT(["لم يُحدَّث اليوم (الإنترنت غير متاح)", "not updated today (internet not reachable)"]) : "");
@@ -48,9 +48,9 @@ function mnRateBar(meta, again){
 
 /* the filters of an income / expense list: month, or a date span, a category, a search */
 function mnFilters(categories, onChange){
-  var month = h("input", {type:"month", value:mnMonthNow()}), from = h("input", {type:"date"}), to = h("input", {type:"date"});
+  var month = uiMonthPicker(mnMonthNow(), function(){ onChange(); }), from = h("input", {type:"date"}), to = h("input", {type:"date"});
   var cat = uiSelect([["", uiT(["كل الفئات", "All categories"])]].concat(categories), ""), q = h("input", {type:"search", maxlength:"60"});
-  [month, from, to, cat].forEach(function(el){ el.addEventListener("change", onChange); });
+  [from, to, cat].forEach(function(el){ el.addEventListener("change", onChange); });
   q.addEventListener("change", onChange);
   return {
     row: h("div", {class:"a-row"}, [uiField(uiT(["الشهر", "Month"]), month), uiField(uiT(["من", "From"]), from), uiField(uiT(["إلى", "To"]), to), uiField(uiT(["الفئة", "Category"]), cat), uiField(uiT(["بحث", "Search"]), q)]),
@@ -68,7 +68,7 @@ function mnExport(meta, kind, monthOf){
   if(!meta.rights.export) return "";
   var label = {income:["تنزيل الإيرادات PDF", "Download income as PDF"], expenses:["تنزيل المصروفات PDF", "Download expenses as PDF"], summary:["تقرير الشهر PDF", "Month report as PDF"]}[kind];
   var file = {income:"income", expenses:"expenses", summary:"report"}[kind];
-  return h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:uiT(label), onclick:function(){
+  return h("div", {class:"a-row mn-export"}, [h("button", {type:"button", class:"a-btn sun", text:uiT(label), onclick:function(){
     downloadFile("/api/admin/money/export/" + kind + ".pdf?month=" + monthOf(), file + "-" + monthOf() + ".pdf").catch(function(e){ uiToast(errText(e), "err"); });
   }}), h("span", {class:"hint", text:uiT(["موقّع إلكترونياً، بالدولار والليرة", "signed, in dollars and pounds"])})]);
 }
@@ -308,7 +308,7 @@ function tabExpense(){
       var desc = h("input", {type:"text", maxlength:"300", value:row ? row.description : salaryFor ? uiT(["راتب ", "Salary "]) + salaryFor.name : "", placeholder:uiT(["سبب المصروف", "Reason"])});
       var cat = uiSelect(cats, row ? row.category : salaryFor ? "salaries" : "food");
       var person = uiSelect([["", "—"]].concat(staff.map(function(p){ return [p.id, p.name]; })), row ? row.employee_id : salaryFor ? salaryFor.employee_id : "");
-      var month = h("input", {type:"month", value:row && row.salary_month ? row.salary_month : filters.month()});
+      var month = uiMonthPicker(row && row.salary_month ? row.salary_month : filters.month());
       var recipient = h("input", {type:"text", maxlength:"120", value:row ? row.recipient : salaryFor ? salaryFor.name : ""}), note = h("input", {type:"text", maxlength:"500", value:row ? row.note : ""});
       var m = mnMoneyFields(meta, row || (salaryFor && salaryFor.salary ? {amount:salaryFor.salary, currency:salaryFor.salary_currency, rate:meta.rate ? meta.rate.syp_per_usd : ""} : null));
       var salaryRow = h("div", {class:"a-row"}, [uiField(uiT(["الموظف", "Staff member"]), person), uiField(uiT(["شهر الراتب", "Salary for month"]), month)]);
@@ -375,8 +375,7 @@ function tabSummary(){
     page.innerHTML = "";
     Promise.all([mnMeta(), request("/api/admin/money/summary?month=" + month)]).then(function(res){
       var meta = res[0], d = res[1];
-      var picker = h("input", {type:"month", value:month});
-      picker.addEventListener("change", function(){ if(picker.value){ month = picker.value; draw3(); } });
+      var picker = uiMonthPicker(month, function(v){ month = v; draw3(); });
       function pct(c){ return c.percent === null ? "—" : (Number(c.percent) > 0 ? "+" : "") + c.percent + " %"; }
       function line(label, key, cls){
         return h("tr", {class:cls || ""}, [h("th", {text:label}), h("td", {class:"num", dir:"ltr", text:uiNum(d[key].usd)}), h("td", {class:"num", dir:"ltr", text:uiNum(d[key].syp)}),
@@ -406,8 +405,8 @@ function tabSummary(){
       }
       page.appendChild(mnRateBar(meta, draw3));
       page.appendChild(h("div", {class:"a-card"}, [h("h3", {text:uiT(["الملخص الشهري", "Month overview"])}),
-        h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"◀", "aria-label":uiT(["الشهر السابق", "Previous month"]), onclick:function(){ month = mnShift(month, -1); draw3(); }}), uiField(uiT(["الشهر", "Month"]), picker),
-          h("button", {type:"button", class:"a-btn ghost", text:"▶", "aria-label":uiT(["الشهر التالي", "Next month"]), onclick:function(){ month = mnShift(month, 1); draw3(); }}),
+        h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn ghost", text:"▶", "aria-label":uiT(["الشهر السابق", "Previous month"]), onclick:function(){ month = mnShift(month, -1); draw3(); }}), uiField(uiT(["الشهر", "Month"]), picker),
+          h("button", {type:"button", class:"a-btn ghost", text:"◀", "aria-label":uiT(["الشهر التالي", "Next month"]), onclick:function(){ month = mnShift(month, 1); draw3(); }}),
           uiBadge(d.closed ? uiT(["مغلق", "Closed"]) + (d.closing ? " · " + d.closing.by : "") : uiT(["مفتوح", "Open"]), d.closed ? "paid" : "open"), closeRow]),
         main,
         h("p", {class:"hint", text:uiT(["كل عمود يجمع المال المدفوع فعلاً بعملته. لا يُجمع الدولار والليرة معاً.", "Each column adds the money really paid in its currency. Dollars and pounds are never added together."])}),
