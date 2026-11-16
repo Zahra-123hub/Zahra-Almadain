@@ -212,11 +212,6 @@
       identity.appendChild(element("span", "p-account-label", t("welcomeUser")));
       identity.appendChild(element("strong", "", profile.username));
       actions.appendChild(identity);
-      if (!isLogin && otherPortals().length) {  // somebody with several areas always sees where they are
-        var area = element("span", "p-area", t("areaLabel") + ": " + portalLabel(currentPortalName()));
-        area.style.cssText = "background:#ffffff26;border-radius:999px;padding:4px 12px;font-size:.88rem;font-weight:700";
-        actions.appendChild(area);
-      }
     }
     var langGroup = element("div", "p-lang");
     langGroup.setAttribute("role", "group");
@@ -231,14 +226,27 @@
     });
     actions.appendChild(langGroup);
     if (token && !isLogin) {
-      otherPortals().forEach(function (name) {
-        var other = element("a", "p-button outline", portalLabel(name));
-        other.href = PORTAL_TARGETS[name].url;
-        other.title = t("switchPortal");
-        actions.appendChild(other);
-      });
+      // the same row as in the admin area: dashboard, accounting, management, teachers, parents; the open one is yellow
+      var mine = [];
+      try { mine = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); } catch (e) {}
+      var here = currentPortalName();
+      if (mine.length > 1) {
+        ["admin", "accountant", "manager", "teacher", "parent"].forEach(function (name) {
+          if (mine.indexOf(name) === -1 && name !== here) return;
+          var label = name === "admin" ? t("navAdmin") : name === "accountant" ? t("navMoney") : portalLabel(name);
+          var link = element("a", "p-button " + (name === here ? "sun" : "outline"), label);
+          link.href = name === "accountant" ? "../admin/#money" : PORTAL_TARGETS[name].url;
+          if (name === here) link.setAttribute("aria-current", "page"); else link.title = t("switchPortal");
+          actions.appendChild(link);
+        });
+      }
     }
     if (token && profile && !isLogin) actions.appendChild(button(t("changePassword"), "outline", toggleChangePassword));
+    if (token && !isLogin) {
+      var site = element("a", "p-button outline", t("viewSite"));
+      site.href = "../"; site.target = "_blank"; site.rel = "noopener";
+      actions.appendChild(site);
+    }
     if (token && isTeacherPortal && !isManagerPortal) {
       var publishLink = element("a", "p-button sun", t("publishSite"));
       publishLink.href = "../admin/";

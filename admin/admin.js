@@ -1417,7 +1417,7 @@ function draw(){
   document.body.classList.toggle("skin-portal", skin);
   document.body.classList.toggle("skin-solo", ACCOUNTANT_MODE && TABS.length <= 1);
   var out = h("button", {type:"button", class:"p-button outline", text:"تسجيل الخروج", onclick:function(){ clearSessions(); start(); }});
-  var view = h("a", {class:"p-button sun", href:"../", target:"_blank", rel:"noopener", text:"عرض الموقع"});
+  var view = h("a", {class:"p-button outline", href:"../", target:"_blank", rel:"noopener", text:"عرض الموقع"});
   var switches = [];  // links to the other portals this account may use
   [["manager", "../management/", "بوابة الإدارة"], ["teacher", "../teachers/", "بوابة المعلمات"], ["parent", "../parents/", "بوابة أولياء الأمور"]].forEach(function(p){
     if(PORTALS.indexOf(p[0]) !== -1) switches.push(h("a", {class:"p-button outline", href:p[1], text:p[2]}));
@@ -1534,6 +1534,7 @@ function start(){
     DATA = data;
     TABS = computeTabs();
     if(TABS.length && !TABS.some(function(t){ return t[0] === tab; })) tab = TABS[0][0];
+    if(location.hash === "#money" && MONEY_ALLOWED) tab = "money";  // "المحاسبة" in a portal opens the accounting directly
     draw();
   }, function(e){
     clearSessions(); window.location.replace("../login/");
