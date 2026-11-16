@@ -31,6 +31,8 @@ class ControlsBase(unittest.TestCase):
             },
         )
         self.env.start()
+        self.feed = patch("app.money.fetch_online_rate", return_value=None)  # the tests never touch the internet
+        self.feed.start()
         self.engine = create_engine(
             "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
@@ -70,6 +72,7 @@ class ControlsBase(unittest.TestCase):
         main.app.dependency_overrides.pop(get_session, None)
         main.app.dependency_overrides.pop(main.optional_session, None)
         self.engine.dispose()
+        self.feed.stop()
         self.env.stop()
 
     # ---- people are the work of the management ----

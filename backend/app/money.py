@@ -14,11 +14,13 @@ Rules that hold everywhere:
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
@@ -96,6 +98,64 @@ def rate_on(session: Session, day: date) -> CurrencyRate | None:
     return session.scalar(
         select(CurrencyRate).where(CurrencyRate.valid_from <= day).order_by(CurrencyRate.valid_from.desc(), CurrencyRate.created_at.desc()).limit(1)
     )
+
+
+# ---- the automatic rate -------------------------------------------------------------------------------------------------------------
+RATE_FEED_URL = "https://open.er-api.com/v6/latest/USD"  # a free public daily rates feed (no key)
+AUTO = "auto"  # `created_by` of a rate the system fetched itself
+FEED_RETRY = timedelta(minutes=10)  # after a failed ask the feed is left alone for a while (a slow feed must not slow every page)
+_feed_blocked_until: datetime | None = None
+
+
+def fetch_online_rate() -> Decimal | None:
+    """Pounds for one dollar from the public feed, or None when it cannot be reached.
+
+    The feed quotes the NEW Syrian pound (1 new = 100 old, about 120 per dollar). The kindergarten counts in the old pound
+    (amounts in the hundred thousands), so a quote below 1000 is multiplied by SYP_RATE_SCALE (default 100).
+    Set SYP_RATE_SCALE=1 on the server once the books are kept in the new pound."""
+    global _feed_blocked_until
+    if _feed_blocked_until is not None and datetime.now(timezone.utc) < _feed_blocked_until:
+        return None
+    try:
+        reply = httpx.get(RATE_FEED_URL, timeout=6.0)
+        reply.raise_for_status()
+        value = Decimal(str(reply.json()["rates"]["SYP"]))
+    except Exception:  # offline, rate limited, changed format: the last stored rate stays in use
+        _feed_blocked_until = datetime.now(timezone.utc) + FEED_RETRY
+        return None
+    if value <= 0:
+        _feed_blocked_until = datetime.now(timezone.utc) + FEED_RETRY
+        return None
+    _feed_blocked_until = None
+    try:
+        scale = Decimal(os.getenv("SYP_RATE_SCALE", "100"))
+    except Exception:
+        scale = Decimal(100)
+    if value < 1000 and scale > 0:
+        value *= scale
+    return value.quantize(Decimal("0.000001"))
+
+
+def refresh_today(session: Session) -> None:
+    """Once a day the rate is fetched by itself and stored, valid from today. A rate that is already stored for today
+    (fetched, or typed by the management) is left alone; a feed that is down leaves the last rate in use."""
+    today = local_today()
+    if session.scalar(select(CurrencyRate.id).where(CurrencyRate.valid_from == today).limit(1)) is not None:
+        return
+    value = fetch_online_rate()
+    if value is None:
+        return
+    session.add(CurrencyRate(valid_from=today, syp_per_usd=value, created_by=AUTO, created_at=datetime.now(timezone.utc).replace(tzinfo=None)))
+    activity.record(session, actor_id=None, actor_name=AUTO, domain="finance", action="rate.auto", entity_type="rate", entity_id=today.isoformat(),
+                    after={"valid_from": today.isoformat(), "syp_per_usd": rate_text(value)})
+    session.commit()
+
+
+def rate_info(row: CurrencyRate | None, today: date) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {"syp_per_usd": rate_text(row.syp_per_usd), "valid_from": row.valid_from.isoformat(), "by": row.created_by,
+            "source": "auto" if row.created_by == AUTO else "manual", "stale": row.valid_from < today}
 
 
 def parse_month(value: str | None, today: date) -> tuple[int, int]:
@@ -344,6 +404,8 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     # ---- small helpers ------------------------------------------------------------------------------------------------------------
     def chosen_rate(session: Session, actor: Actor, day: date, typed: Decimal | None) -> Decimal:
         """The rate of the day is taken; only the management may type another one."""
+        if day == local_today():
+            refresh_today(session)
         listed = rate_on(session, day)
         if typed is None:
             if listed is None:
@@ -470,10 +532,10 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     def meta(response: Response, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         today = local_today()
-        current = rate_on(session, today)
+        refresh_today(session)
         return {
             "role": actor.role, "name": actor.name, "rights": rights(session, actor), "today": today.isoformat(),
-            "rate": None if current is None else {"syp_per_usd": rate_text(current.syp_per_usd), "valid_from": current.valid_from.isoformat(), "by": current.created_by},
+            "rate": rate_info(rate_on(session, today), today),
             "income_categories": [
                 {"id": str(c.id), "key": c.key, "name": c.name, "is_active": c.is_active}
                 for c in sorted(categories(session).values(), key=lambda c: (c.position, c.name))
@@ -485,17 +547,19 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     @router.get("/rates")
     def rates(response: Response, day: date | None = None, _actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
+        refresh_today(session)
         listed = rate_on(session, day or local_today())
         rows = session.scalars(select(CurrencyRate).order_by(CurrencyRate.valid_from.desc(), CurrencyRate.created_at.desc()).limit(50)).all()
         return {
             "for_day": None if listed is None else rate_text(listed.syp_per_usd),
-            "rates": [{"valid_from": r.valid_from.isoformat(), "syp_per_usd": rate_text(r.syp_per_usd), "by": r.created_by,
+            "rates": [{"valid_from": r.valid_from.isoformat(), "syp_per_usd": rate_text(r.syp_per_usd), "by": r.created_by, "source": "auto" if r.created_by == AUTO else "manual",
                        "at": to_local(r.created_at).isoformat() if r.created_at else None} for r in rows],
         }
 
     @router.post("/rates", status_code=201)
     def set_rate(payload: RateIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
-        """A new rate from a day on. Rates are only added; entries that exist keep the rate they were made with."""
+        """A correction by hand: a new rate from a day on (it beats the fetched rate of that day). Rates are only added;
+        entries that exist keep the rate they were made with."""
         need(session, actor, "manage")
         old = rate_on(session, payload.valid_from)
         row = CurrencyRate(valid_from=payload.valid_from, syp_per_usd=payload.syp_per_usd, created_by=actor.name[:80],

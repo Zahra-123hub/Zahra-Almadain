@@ -27,18 +27,21 @@ function mnAsk(text){ var r = window.prompt(text); return r === null ? null : r.
 
 /* the rate strip: shown on every page; the management sets a new rate here (no own page) */
 function mnRateBar(meta, again){
-  var shown = meta.rate ? "1 USD = " + uiNum(meta.rate.syp_per_usd) + " SYP · " + uiT(["ساري من ", "valid from "]) + meta.rate.valid_from : uiT(["لا يوجد سعر صرف بعد", "No exchange rate yet"]);
-  var kids = [h("strong", {text:uiT(["سعر الصرف: ", "Exchange rate: "]) + shown})];
+  var r = meta.rate;
+  var shown = r ? "1 USD = " + uiNum(r.syp_per_usd) + " SYP" : uiT(["لا يوجد سعر صرف بعد", "No exchange rate yet"]);
+  var how = !r ? uiT(["يُجلب السعر تلقائياً من الإنترنت مرة في اليوم؛ تعذّر الوصول إليه الآن.", "The rate is fetched from the internet once a day; it could not be reached right now."])
+    : (r.source === "auto" ? uiT(["تلقائي من الإنترنت", "fetched automatically"]) : uiT(["أدخلته الإدارة", "set by the management"])) + " · " + uiT(["ساري من ", "valid from "]) + r.valid_from +
+      (r.stale ? " · " + uiT(["لم يُحدَّث اليوم (الإنترنت غير متاح)", "not updated today (internet not reachable)"]) : "");
+  var kids = [h("strong", {text:uiT(["سعر الصرف: ", "Exchange rate: "]) + shown}), h("p", {class:"hint", text:how})];
   if(meta.rights.manage){
     var day = h("input", {type:"date", value:meta.today}), rate = h("input", {type:"number", min:"0", step:"0.000001", inputMode:"decimal", placeholder:"12000", "aria-label":uiT(["ليرة لكل دولار", "Pounds per dollar"])});
     var msg = mnMsg();
-    kids.push(h("div", {class:"a-row"}, [uiField(uiT(["ساري من", "Valid from"]), day), uiField(uiT(["ليرة لكل دولار", "Pounds per dollar"]), rate),
-      h("button", {type:"button", class:"a-btn sun", text:uiT(["سعر جديد", "New rate"]), onclick:function(){
-        request("/api/admin/money/rates", {method:"POST", body:JSON.stringify({valid_from:day.value, syp_per_usd:rate.value})})
-          .then(function(){ uiToast(uiT(["حُفظ السعر. الحركات الموجودة لا تتغير.", "Rate saved. Existing entries do not change."]), "ok"); again(); }).catch(mnErr(msg));
-      }})]), msg);
-  } else if(!meta.rate){
-    kids.push(h("p", {class:"hint", text:uiT(["تحدّد الإدارة سعر الصرف قبل تسجيل أي حركة.", "The management sets the rate before anything can be entered."])}));
+    kids.push(h("details", {}, [h("summary", {text:uiT(["تصحيح السعر يدوياً (للإدارة)", "Correct the rate by hand (management)"])}),
+      h("div", {class:"a-row"}, [uiField(uiT(["ساري من", "Valid from"]), day), uiField(uiT(["ليرة لكل دولار", "Pounds per dollar"]), rate),
+        h("button", {type:"button", class:"a-btn sun", text:uiT(["حفظ التصحيح", "Save correction"]), onclick:function(){
+          request("/api/admin/money/rates", {method:"POST", body:JSON.stringify({valid_from:day.value, syp_per_usd:rate.value})})
+            .then(function(){ uiToast(uiT(["حُفظ السعر. الحركات الموجودة لا تتغير.", "Rate saved. Existing entries do not change."]), "ok"); again(); }).catch(mnErr(msg));
+        }})]), msg]));
   }
   return h("div", {class:"a-card a-hintcard"}, kids);
 }

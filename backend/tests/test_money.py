@@ -334,3 +334,51 @@ class RightsTests(MoneyBase):
         self.assertEqual(history[1]["reason"], "booked twice")
         mine = self.client.get("/api/admin/activity", headers=self.acc).json()
         self.assertEqual({r["actor"] for r in mine}, {"acc"})  # an accountant sees only their own lines
+
+
+class AutomaticRateTests(ControlsBase):
+    """No rate typed by anyone: the system fetches today's rate by itself, once a day."""
+
+    def test_the_rate_of_today_is_fetched_by_itself_once_and_stored(self):
+        from unittest.mock import patch
+
+        with patch("app.money.fetch_online_rate", return_value=Decimal("12500")) as feed:
+            meta = self.client.get(MONEY + "/meta", headers=self.acc).json()
+            self.assertEqual((meta["rate"]["syp_per_usd"], meta["rate"]["source"], meta["rate"]["stale"]), ("12500", "auto", False))
+            self.client.get(MONEY + "/meta", headers=self.acc)
+            self.assertEqual(feed.call_count, 1)  # stored for the day: the feed is not asked again
+            made = self.income("10", "USD").json()  # the accountant can book at once
+            self.assertEqual((made["syp"], made["rate"]), ("125000", "12500"))
+        self.assertIn("rate.auto", self.actions())
+
+    def test_a_correction_by_the_management_beats_the_fetched_rate(self):
+        from unittest.mock import patch
+
+        with patch("app.money.fetch_online_rate", return_value=Decimal("12500")):
+            self.client.get(MONEY + "/meta", headers=self.acc)
+        self.set_rate("13000", day=local_today())
+        meta = self.client.get(MONEY + "/meta", headers=self.acc).json()
+        self.assertEqual((meta["rate"]["syp_per_usd"], meta["rate"]["source"]), ("13000", "manual"))
+
+    def test_a_feed_that_is_down_keeps_the_last_rate_and_says_it_is_old(self):
+        self.set_rate("12000", day=local_today() - timedelta(days=3))
+        meta = self.client.get(MONEY + "/meta", headers=self.acc).json()  # the feed answers nothing (the test patch)
+        self.assertEqual((meta["rate"]["syp_per_usd"], meta["rate"]["stale"]), ("12000", True))
+
+    def test_the_feed_quote_in_new_pounds_is_turned_into_old_pounds(self):
+        from unittest.mock import MagicMock, patch
+
+        from app import money
+
+        real = self.feed.temp_original  # the real function (the test base replaces it so nothing reaches the internet)
+        money._feed_blocked_until = None
+        reply = MagicMock()
+        reply.json.return_value = {"rates": {"SYP": 121.66}}
+        with patch("app.money.httpx.get", return_value=reply):
+            self.assertEqual(real(), Decimal("12166.000000"))
+        reply.json.return_value = {"rates": {"SYP": 12950.5}}
+        with patch("app.money.httpx.get", return_value=reply):
+            self.assertEqual(real(), Decimal("12950.500000"))  # already old pounds: unchanged
+        with patch("app.money.httpx.get", side_effect=RuntimeError("offline")):
+            self.assertIsNone(real())
+        money._feed_blocked_until = None
