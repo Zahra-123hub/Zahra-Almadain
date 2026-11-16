@@ -339,11 +339,13 @@ function tabExpense(){
         var rows = d.rows.map(function(r){
           return h("tr", {}, [h("td", {class:"name", text:r.name + (r.is_active ? "" : " (" + uiT(["غادر", "left"]) + ")")}), h("td", {text:r.job_title || "—"}),
             h("td", {dir:"ltr", text:r.salary ? uiNum(r.salary) + " " + r.salary_currency : "—"}),
-            h("td", {}, [r.paid ? uiBadge(uiT(["صُرف ", "Paid "]) + r.paid_on + " · " + uiNum(r.paid_amount) + " " + r.paid_currency, "paid") : uiBadge(uiT(["لم يُصرف", "Not paid"]), "due")]),
+            h("td", {}, [r.paid ? uiBadge((r.automatic ? uiT(["سُجّل تلقائياً ", "Booked automatically "]) : uiT(["صُرف ", "Paid "])) + r.paid_on + " · " + uiNum(r.paid_amount) + " " + r.paid_currency, "paid") : uiBadge(uiT(["لم يُصرف", "Not paid"]), "due")]),
             h("td", {}, [r.paid || !r.is_active ? "" : h("button", {type:"button", class:"a-btn ghost", text:uiT(["صرف الراتب", "Pay salary"]), onclick:function(){ showForm(null, r); }})])]);
         });
         salaryBox.appendChild(h("h4", {text:uiT(["رواتب ", "Salaries of "]) + d.month + ": " + d.paid + " " + uiT(["صُرفت", "paid"]) + " · " + d.unpaid + " " + uiT(["لم تُصرف", "not paid"])}));
         salaryBox.appendChild(uiTable([uiT(["الموظف", "Staff member"]), uiT(["الوظيفة", "Job"]), uiT(["الراتب المعتاد", "Usual salary"]), uiT(["الحالة", "Status"]), ""], rows, uiT(["لا يوجد موظفون", "No staff"])));
+        salaryBox.appendChild(h("p", {class:"hint", text:uiT(["تُسجَّل رواتب الشهر تلقائياً كمصروف في أول الشهر التالي، بالراتب المحفوظ لكل موظف. ما صُرف يدوياً أو أُلغي لا يُسجَّل مرة ثانية؛ والراتب التلقائي يمكن تعديله أو إلغاؤه كأي مصروف.",
+          "The salaries of a month are booked automatically as an expense on the 1st of the next month, with the saved salary of each person. What was paid by hand or cancelled is not booked again; an automatic salary can be changed or cancelled like any expense."])}));
         salaryBox.appendChild(h("p", {class:"hint", text:uiT(["الموظفون تديرهم الإدارة في بوابة الإدارة. المحاسبة تقرأ القائمة فقط.", "Staff are managed by the management portal. The accounting only reads the list."])}));
       }).catch(function(e){ uiToast(errText(e), "err"); });
     }

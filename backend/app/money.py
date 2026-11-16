@@ -151,6 +151,67 @@ def refresh_today(session: Session) -> None:
     session.commit()
 
 
+# ---- salaries booked by themselves ------------------------------------------------------------------------------------------------
+SALARY_START = "salary.auto.start"  # a line in the activity log: from which salary month on the automatic booking works
+
+
+def previous_month_of(day: date) -> tuple[int, int]:
+    return (day.year - 1, 12) if day.month == 1 else (day.year, day.month - 1)
+
+
+def auto_salaries(session: Session) -> int:
+    """On the 1st of every month (or the first time the accounting is opened after it) the salary of the month before is booked
+    as an expense for every active person of the staff with a saved salary: in the currency of the salary, at the rate of that day.
+
+    A person who already has a salary entry for that month is left alone -- also when that entry was cancelled (somebody decided it)
+    or paid by hand. The first time this runs it only notes the current month as the start, so no older month is booked afterwards."""
+    today = local_today()
+    start = session.scalar(select(FeeAuditLog.entity_id).where(FeeAuditLog.action == SALARY_START).limit(1))
+    if start is None:
+        activity.record(session, actor_id=None, actor_name=AUTO, domain="finance", action=SALARY_START, entity_type="salary",
+                        entity_id=f"{today.year}-{today.month:02d}", details="automatic salaries start with this month")
+        session.commit()
+        return 0
+    year, month = previous_month_of(today)
+    key = f"{year}-{month:02d}"
+    if key < start:
+        return 0
+    booked_on = today.replace(day=1)
+    if is_closed(session, booked_on):
+        return 0
+    month_end = month_range(year, month)[1]
+    taken = set(session.scalars(select(ExpenseEntry.employee_id).where(ExpenseEntry.salary_month == key, ExpenseEntry.employee_id.is_not(None))).all())
+    people = [
+        p for p in session.scalars(select(Employee).where(Employee.is_active.is_(True), Employee.salary.is_not(None))).all()
+        if p.id not in taken and p.salary > 0 and (p.hired_on is None or p.hired_on <= month_end)
+    ]
+    if not people:
+        return 0
+    listed = rate_on(session, booked_on) or rate_on(session, today)
+    if listed is None:
+        return 0  # no rate yet: tried again on the next visit
+    rate = Decimal(listed.syp_per_usd)
+    for person in people:
+        amount = cents(person.salary)
+        entry = ExpenseEntry(
+            booked_on=booked_on, description=f"راتب شهر {key} — {person.name}", category="salaries", recipient=person.name, employee_id=person.id,
+            salary_month=key, amount=amount, currency=person.salary_currency, rate=rate, amount_other=to_other(amount, person.salary_currency, rate),
+            note="سُجّل تلقائياً", created_by=AUTO, created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        session.add(entry)
+        session.flush()
+        activity.record(session, actor_id=None, actor_name=AUTO, domain="finance", action="salary.auto", entity_type="expense", entity_id=entry.id,
+                        after={"employee": person.name, "salary_month": key, "amount": str(amount), "currency": person.salary_currency, "rate": rate_text(rate)})
+    session.commit()
+    return len(people)
+
+
+def automatic(session: Session) -> None:
+    """What the accounting does by itself whenever it is opened: today's rate, then the salaries of last month."""
+    refresh_today(session)
+    auto_salaries(session)
+
+
 def rate_info(row: CurrencyRate | None, today: date) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -532,7 +593,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     def meta(response: Response, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         today = local_today()
-        refresh_today(session)
+        automatic(session)
         return {
             "role": actor.role, "name": actor.name, "rights": rights(session, actor), "today": today.isoformat(),
             "rate": rate_info(rate_on(session, today), today),
@@ -901,6 +962,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     def salaries(response: Response, month: str | None = None, _actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         """The staff for one month: who was paid and who was not yet. The staff list itself belongs to the management."""
         response.headers["Cache-Control"] = "no-store"
+        automatic(session)
         year, mon = parse_month(month, local_today())
         key = f"{year}-{mon:02d}"
         paid_rows = session.scalars(select(ExpenseEntry).where(ExpenseEntry.salary_month == key, ExpenseEntry.voided_at.is_(None), ExpenseEntry.reverses_id.is_(None))).all()
@@ -916,7 +978,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
                 "employee_id": str(person.id), "name": person.name, "job_title": person.job_title, "is_active": person.is_active,
                 "salary": None if person.salary is None else text(person.salary_currency, person.salary), "salary_currency": person.salary_currency,
                 "paid": entry is not None, "entry_id": str(entry.id) if entry else "",
-                "paid_on": entry.booked_on.isoformat() if entry else "", "paid_amount": text(entry.currency, entry.amount) if entry else "", "paid_currency": entry.currency if entry else "",
+                "automatic": bool(entry and entry.created_by == AUTO), "paid_on": entry.booked_on.isoformat() if entry else "", "paid_amount": text(entry.currency, entry.amount) if entry else "", "paid_currency": entry.currency if entry else "",
             })
         return {"month": key, "rows": rows, "paid": sum(1 for r in rows if r["paid"]), "unpaid": sum(1 for r in rows if not r["paid"])}
 
@@ -970,6 +1032,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
     @router.get("/summary")
     def summary(response: Response, month: str | None = None, _actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
+        automatic(session)
         return summary_data(session, *parse_month(month, local_today()))
 
     @router.post("/closings", status_code=201)

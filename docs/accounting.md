@@ -28,6 +28,10 @@ Backend `backend/app/money.py` (prefix `/api/admin/money`), web `admin/money.js`
 * Form: date paid, reason, category, recipient (optional), staff member + salary month (only for salaries), amount, currency, rate, note.
 * Categories (fixed): salaries, rent, food, teaching material, toys and equipment, electricity and water, maintenance, transport, other.
 * Only money really paid is entered (there are no planned expenses).
+* **Salaries book themselves:** on the 1st of every month (first visit of the accounting that day or later) the saved salary of every active
+  person is booked as an expense for the month before (category salaries, in the salary's currency, at the rate of the 1st). People already
+  paid by hand, cancelled salaries, people without a salary or hired later are skipped. The automatic start is the month of the first run
+  (no older month is booked). An automatic salary can be changed or cancelled like any expense.
 * **Salaries:** the block "salaries of the month" lists the staff (read from the management's staff list) as paid / not paid and has
   "pay salary" (prefilled with the usual salary). A person is paid once per month while that payment stands (not cancelled, not reversed).
 * The management can export the staff list here (XLSX/CSV); the list itself is managed in the management portal.

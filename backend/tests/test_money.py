@@ -413,3 +413,78 @@ class PdfTests(MoneyBase):
         self.assertEqual(a, pdfs.verification(["invoice", "INV-2026-0001", "25.00"]))
         self.assertNotEqual(a, pdfs.verification(["invoice", "INV-2026-0001", "26.00"]))  # a changed number no longer matches
         self.assertRegex(a, r"^[0-9A-F]{4}(-[0-9A-F]{4}){3}$")
+
+
+class AutomaticSalaryTests(MoneyBase):
+    """On the 1st of a month the salaries of the month before are booked by themselves."""
+
+    def at(self, day):
+        from unittest.mock import patch
+
+        return patch("app.money.local_today", return_value=day)
+
+    def meta(self):
+        return self.client.get(MONEY + "/meta", headers=self.acc).json()
+
+    def salary_rows(self):
+        with Session(self.engine) as s:
+            return s.scalars(select(ExpenseEntry).where(ExpenseEntry.category == "salaries").order_by(ExpenseEntry.recipient)).all()
+
+    def test_nothing_older_is_booked_and_the_next_month_is_booked_on_the_first(self):
+        self.hire("Lina", salary="300000", salary_currency="SYP")
+        self.hire("Rana", salary="150", salary_currency="USD")
+        self.hire("NoSalary")
+        with self.at(date(2026, 11, 16)):
+            self.meta()  # the first visit only marks November as the start
+        self.assertEqual(self.salary_rows(), [])
+        with self.at(date(2026, 12, 1)):
+            self.meta()
+            self.meta()  # a second visit books nothing twice
+        rows = self.salary_rows()
+        self.assertEqual([(r.recipient, r.amount, r.currency, r.salary_month, r.booked_on, r.created_by) for r in rows], [
+            ("Lina", Decimal("300000.00"), "SYP", "2026-11", date(2026, 12, 1), "auto"),
+            ("Rana", Decimal("150.00"), "USD", "2026-11", date(2026, 12, 1), "auto"),
+        ])
+        self.assertEqual((rows[0].rate, rows[1].amount_other), (Decimal("12000"), Decimal("1800000.00")))
+        with self.at(date(2026, 12, 5)):
+            data = self.client.get(f"{MONEY}/summary?month=2026-12", headers=self.acc).json()
+            self.assertEqual((data["salaries"]["usd"], data["salaries"]["syp"]), ("150.00", "300000"))
+            listed = self.client.get(f"{MONEY}/salaries?month=2026-11", headers=self.acc).json()
+            self.assertEqual((listed["paid"], listed["unpaid"]), (2, 1))  # the person without a salary is not paid
+            self.assertTrue(all(r["automatic"] for r in listed["rows"] if r["paid"]))
+        self.assertIn("salary.auto", self.actions())
+
+    def test_a_salary_paid_by_hand_or_cancelled_is_not_booked_again(self):
+        lina = self.hire("Lina", salary="300000", salary_currency="SYP").json()
+        rana = self.hire("Rana", salary="150", salary_currency="USD").json()
+        with self.at(date(2026, 11, 16)):
+            self.meta()
+            self.expense("280000", "SYP", category="salaries", employee_id=lina["id"], salary_month="2026-11", description="salary with advance")
+        with self.at(date(2026, 12, 1)):
+            self.meta()
+        self.assertEqual(sorted((str(r.employee_id), r.amount, r.created_by) for r in self.salary_rows()), sorted([(lina["id"], Decimal("280000.00"), "acc"), (rana["id"], Decimal("150.00"), "auto")]))
+        auto = next(r for r in self.salary_rows() if r.recipient == "Rana")
+        with self.at(date(2026, 12, 2)):
+            self.assertEqual(self.client.post(f"{MONEY}/expenses/{auto.id}/void", headers=self.mgr, json={"reason": "left in October"}).status_code, 200)
+            self.meta()
+        self.assertEqual(len(self.salary_rows()), 2)  # the cancelled one is not made again
+        self.assertIsNotNone(rana)
+
+    def test_people_who_left_or_start_later_are_not_paid_and_no_rate_means_later(self):
+        self.hire("Lina", salary="300000", salary_currency="SYP")
+        gone = self.hire("Old", salary="100", salary_currency="USD").json()
+        self.client.delete(f"{PEOPLE}/employees/{gone['id']}", headers=self.mgr)
+        self.hire("New", salary="200", salary_currency="USD", hired_on="2026-12-10")
+        with self.at(date(2026, 11, 16)):
+            self.meta()
+        with Session(self.engine) as s:
+            for row in s.scalars(select(CurrencyRate)):
+                s.delete(row)
+            s.commit()
+        with self.at(date(2026, 12, 1)):
+            self.meta()
+        self.assertEqual(self.salary_rows(), [])  # no rate: nothing yet
+        self.set_rate("12500", day=date(2026, 12, 1))
+        with self.at(date(2026, 12, 3)):
+            self.meta()
+        self.assertEqual([(r.recipient, r.rate) for r in self.salary_rows()], [("Lina", Decimal("12500"))])
