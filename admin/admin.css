@@ -485,3 +485,7 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .a-table tr.voided{opacity:.55;text-decoration:line-through}
 .a-table tr.total th,.a-table tr.total td{font-weight:700;border-top:2px solid var(--line)}
 .a-table th[scope],.a-table tbody th{text-align:start;font-weight:600}
+
+/* the accounting: one menu entry, three pages in a small bar of its own */
+.a-pagetitle{margin:4px 0 10px;font-size:1.25rem}
+.a-subtabs{margin:0 0 14px}

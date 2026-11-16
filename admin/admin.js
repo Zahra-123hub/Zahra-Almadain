@@ -15,7 +15,7 @@ if(!ADMIN_TOKEN){
     if(managerSession && (!PORTALS.length || PORTALS.indexOf("manager") !== -1)){ ADMIN_TOKEN = managerSession; ACCOUNTANT_MODE = true; BOOKS_MODE = true; }
     else ADMIN_TOKEN = "";
   }
-  if(ACCOUNTANT_MODE && !TEACHER_MODE) tab = "income";
+  if(ACCOUNTANT_MODE && !TEACHER_MODE) tab = "money";
 }
 // the portals this account may enter (shown as links in the header, like in the portals)
 if(!PORTALS.length){ try{ PORTALS = JSON.parse(sessionStorage.getItem("zm-portals") || "[]"); }catch(e){} }
@@ -345,7 +345,7 @@ var EN_TEXT = {
   "تأكيد خطوة":"Step confirmed",
   "إلغاء تأكيد خطوة":"Step confirmation taken back",
   "بوابة المحاسبة":"Accounting portal",
-  "لوحة المتابعة":"Overview", "الفواتير":"Invoices", "سعر الصرف":"Exchange rate", "الإيرادات":"Income", "المصروفات":"Expenses", "الملخص الشهري":"Month overview",
+  "لوحة المتابعة":"Overview", "الفواتير":"Invoices", "سعر الصرف":"Exchange rate", "الإيرادات":"Income", "المصروفات":"Expenses", "الملخص الشهري":"Month overview", "المحاسبة":"Accounting",
   "أنجز خطوات الشهر بالترتيب، وتابع ما بقي دون أن تفوتك خطوة.":"Do the steps of the month in order and follow what is left, so no step is forgotten.",
   "الشهر مغلق":"Month closed",
   "الشهر مفتوح":"Month open",
@@ -1384,8 +1384,8 @@ function localToday(){ var d = new Date(); return d.getFullYear() + "-" + String
 function money(value){ if(value === null || value === undefined || value === "") return "—"; return Number(value).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2}); }
 function esc(value){ return String(value == null ? "" : value).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 
-var ALL_TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["income","الإيرادات"],["expense","المصروفات"],["summary","الملخص الشهري"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]];
-var BOOKS_TABS = ["income", "expense", "summary"];
+var ALL_TABS = [["gallery","الصور"],["video","الفيديو"],["news","الأخبار"],["children","الأطفال والتقارير"],["control","لوحة المتابعة"],["money","المحاسبة"],["accounts","حسابات المنصة"],["visitors","الزوّار"],["log","سجل النظام"],["files","الملفات"],["security","الأمان"],["settings","الإعدادات"]];
+var BOOKS_TABS = ["money"];  // one entry; inside it: income, expenses, month overview
 /* The accounting is three pages: income, expenses, month overview. An accountant and the management see only these three. */
 function computeTabs(){
   return ALL_TABS.filter(function(t){
@@ -1428,7 +1428,7 @@ function draw(){
     b.addEventListener("click", function(){ tab = t[0]; draw(); }); tabs.appendChild(b);
   });
   var main = h("div", {class:"a-main"}); fill = null;
-  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "income" ? tabIncome() : tab === "expense" ? tabExpense() : tab === "summary" ? tabSummary() : tab === "control" ? tabControl() : tabMedia("image"));
+  main.appendChild(tab === "video" ? tabMedia("video") : tab === "news" ? tabNews() : tab === "settings" ? tabSettings() : tab === "accounts" ? tabAccounts() : tab === "visitors" ? tabVisitors() : tab === "log" ? tabLog() : tab === "files" ? tabFiles() : tab === "security" ? tabSecurity() : tab === "children" ? tabChildren() : tab === "money" ? tabMoney() : tab === "control" ? tabControl() : tabMedia("image"));
   adminName().then(function(name){
     if(!name) return;
     document.getElementById("a-hello-name").textContent = name;

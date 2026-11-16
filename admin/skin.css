@@ -2,7 +2,7 @@
    the same pill navigation, the same cards, the welcome card and the tiles. Only active on `body.skin-portal`. */
 body.skin-portal{background:radial-gradient(900px 420px at 85% -10%,#fdb9131f,transparent 60%),radial-gradient(800px 480px at 0% 110%,#17408f1f,transparent 60%),var(--bg);background-attachment:fixed}
 body.skin-portal .a-bar{background:linear-gradient(120deg,#12327a,#1d4ea0);box-shadow:0 2px 14px #10295626;padding-block:14px;backdrop-filter:blur(6px)}
-body.skin-solo .a-tabs{display:none}
+body.skin-solo .a-tabswrap .a-tabs{display:none}
 .a-brand-text{display:grid;line-height:1.25}
 .a-brand-text h2{margin:0;font-size:1.2rem;color:#fff}
 .a-brand-text span{color:#dce8ff;font-size:.85rem}
@@ -40,12 +40,12 @@ body.skin-portal .a-nextbar,body.skin-portal .a-statusbar{border-radius:16px}
 /* the tabs of the admin area: the pill navigation of the portals, under the header */
 .a-tabswrap{width:min(100% - 32px,980px);margin:18px auto 0}
 body.skin-solo .a-tabswrap{display:none}
-body.skin-portal .a-tabswrap .a-tabs{display:flex;gap:6px;overflow-x:auto;padding:6px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 26px #1029560b;scrollbar-width:none}
-body.skin-portal .a-tabswrap .a-tabs::-webkit-scrollbar{display:none}
-body.skin-portal .a-tabswrap .a-tabs button{flex:1 0 auto;min-height:44px;padding:8px 16px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:inherit;font-weight:750;white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
-body.skin-portal .a-tabswrap .a-tabs button:hover{background:#17408f12;color:var(--ink)}
-body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true]{background:var(--navy);color:#fff}
-@media(prefers-color-scheme:dark){body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true]{background:var(--sun);color:#1b2a55}}
+body.skin-portal .a-tabswrap .a-tabs,body.skin-portal .a-subtabs{display:flex;gap:6px;overflow-x:auto;padding:6px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 8px 26px #1029560b;scrollbar-width:none}
+body.skin-portal .a-tabswrap .a-tabs::-webkit-scrollbar,body.skin-portal .a-subtabs::-webkit-scrollbar{display:none}
+body.skin-portal .a-tabswrap .a-tabs button,body.skin-portal .a-subtabs button{flex:1 0 auto;min-height:44px;padding:8px 16px;border:0;border-radius:11px;background:transparent;color:var(--muted);font:inherit;font-weight:750;white-space:nowrap;cursor:pointer;transition:background .15s,color .15s}
+body.skin-portal .a-tabswrap .a-tabs button:hover,body.skin-portal .a-subtabs button:hover{background:#17408f12;color:var(--ink)}
+body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true],body.skin-portal .a-subtabs button[aria-selected=true]{background:var(--navy);color:#fff}
+@media(prefers-color-scheme:dark){body.skin-portal .a-tabswrap .a-tabs button[aria-selected=true],body.skin-portal .a-subtabs button[aria-selected=true]{background:var(--sun);color:#1b2a55}}
 body.skin-portal .a-tabswrap + .a-main{padding-top:18px}
 
 /* the header: the same markup and the same rules as the header of the portals (parents, teachers, management) */

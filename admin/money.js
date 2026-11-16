@@ -417,3 +417,23 @@ function tabSummary(){
   draw3();
   return page;
 }
+
+/* ======================================================================================== the one menu entry "المحاسبة" */
+/* The accounting is one entry of the menu; inside it the three pages sit in their own small bar. */
+var MN_PAGE = "income";
+function tabMoney(){
+  fill = null;
+  var pages = [["income", ["الإيرادات", "Income"]], ["expense", ["المصروفات", "Expenses"]], ["summary", ["الملخص الشهري", "Month overview"]]];
+  var bar = h("div", {class:"a-tabs a-subtabs", role:"tablist", "aria-label":uiT(["المحاسبة", "Accounting"])});
+  var holder = h("div", {});
+  function show(){
+    bar.innerHTML = "";
+    pages.forEach(function(p){
+      bar.appendChild(h("button", {type:"button", role:"tab", "aria-selected":String(MN_PAGE === p[0]), text:uiT(p[1]), onclick:function(){ MN_PAGE = p[0]; show(); }}));
+    });
+    holder.innerHTML = "";
+    holder.appendChild(MN_PAGE === "expense" ? tabExpense() : MN_PAGE === "summary" ? tabSummary() : tabIncome());
+  }
+  show();
+  return h("section", {}, [h("h2", {class:"a-pagetitle", text:uiT(["المحاسبة", "Accounting"])}), bar, holder]);
+}
