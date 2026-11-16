@@ -3,7 +3,7 @@
 import os
 from unittest import mock
 
-from tests.test_accounting_controls import ControlsBase
+from tests.base import ControlsBase
 
 TOKEN_A = "a" * 40
 TOKEN_B = "b" * 40
@@ -11,7 +11,7 @@ TOKEN_B = "b" * 40
 
 class MobileTests(ControlsBase):
     def sign_in(self, username):
-        from tests.test_accounting_controls import PASSWORD
+        from tests.base import PASSWORD
 
         token = self.client.post("/api/platform/auth/login", json={"username": username, "password": PASSWORD}).json()["access_token"]
         return {"Authorization": "Bearer " + token}

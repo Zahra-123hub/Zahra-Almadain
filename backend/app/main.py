@@ -27,20 +27,16 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import accounting, activity, books, community, control, fees, finance, invoicing, mobile, security, visits, workflow
+from app import activity, community, control, mobile, money, people, security, visits
+from app.actors import Actor, has_grant
 from app.database import get_engine, get_session
 from app.models import (
     Account,
     Child,
     ChildGuardian,
     DailyReport,
-    AccountingEntry,
-    CashOpening,
     Employee,
     FeeAuditLog,
-    FeeCharge,
-    FeePayment,
-    SalaryLine,
     GuardianInvitation,
     LoginAttempt,
     PortalSession,
@@ -615,12 +611,12 @@ def require_publisher(
     return account.username
 
 
-def fees_actor(
+def staff_actor(
     authorization: str | None,
     session: Session | None,
     allowed: tuple[str, ...],
     refusal: str,
-) -> fees.FeesActor:
+) -> Actor:
     """Who is acting, when the sign-in must belong to one of the `allowed` roles (the server admin always counts as admin)."""
     secret = os.getenv("SESSION_SECRET", "")
     if not secret:
@@ -630,7 +626,7 @@ def fees_actor(
     token = authorization[7:]
     username = verify_session_token(token, secret)
     if username and hmac.compare_digest(username, os.getenv("ADMIN_USERNAME", "admin")):
-        return fees.FeesActor(None, username, "admin")
+        return Actor(None, username, "admin")
     verified = verify_portal_session_token(token, secret)
     if verified is None:
         raise HTTPException(401, "انتهت جلسة الدخول. سجّل الدخول مرة أخرى.")
@@ -660,71 +656,42 @@ def fees_actor(
     touch_portal_session(session, portal_session)
     for name in allowed:  # the order of `allowed` decides the role shown when someone holds several
         if name in roles:
-            return fees.FeesActor(account.id, account.username, name)
+            return Actor(account.id, account.username, name)
     raise HTTPException(403, refusal)
-
-
-def require_fees_user(
-    authorization: str | None = Header(default=None),
-    session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
-    """Fees and accounting are only for accountants and admins; everyone else gets 403."""
-    return fees_actor(authorization, session, ("accountant", "admin"), "ليس لديك صلاحية الوصول إلى الاشتراكات والرسوم.")
 
 
 def require_people_manager(
     authorization: str | None = Header(default=None),
     session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
+) -> Actor:
     """Adding, changing and removing children and employees is the work of the management (and the admin), not of the accountant."""
-    return fees_actor(authorization, session, ("manager", "admin"), "إضافة الأطفال والموظفين وتعديلهم من مهام الإدارة.")
-
-
-def require_invoice_user(
-    authorization: str | None = Header(default=None),
-    session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
-    """Invoices and their payments: the accountant, the management and the admin."""
-    return fees_actor(authorization, session, ("accountant", "manager", "admin"), "ليس لديك صلاحية الوصول إلى الفواتير.")
-
-
-def require_books_reader(
-    authorization: str | None = Header(default=None),
-    session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
-    """The three accounting pages: the management and the admin always; an accountant only with the grant `books.view`."""
-    actor = fees_actor(authorization, session, ("admin", "manager", "accountant"), "ليس لديك صلاحية الوصول إلى المحاسبة.")
-    if actor.role == "accountant" and not control.has_grant(session, actor, "books.view"):
-        raise HTTPException(403, "لم تُمنح صلاحية عرض المحاسبة. تمنحها الإدارة.")
-    return actor
-
-
-def require_books_writer(
-    authorization: str | None = Header(default=None),
-    session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
-    """Adding, changing and cancelling bookings: the management and the admin always; an accountant only with `books.write`."""
-    actor = fees_actor(authorization, session, ("admin", "manager", "accountant"), "ليس لديك صلاحية الوصول إلى المحاسبة.")
-    if actor.role == "accountant" and not (control.has_grant(session, actor, "books.view") and control.has_grant(session, actor, "books.write")):
-        raise HTTPException(403, "لم تُمنح صلاحية تسجيل الحركات. تمنحها الإدارة.")
-    return actor
+    return staff_actor(authorization, session, ("manager", "admin"), "إضافة الأطفال والموظفين وتعديلهم من مهام الإدارة.")
 
 
 def require_staff_reader(
     authorization: str | None = Header(default=None),
     session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
+) -> Actor:
     """The lists of children and employees may be read by the accountant, the management and the admin."""
-    return fees_actor(authorization, session, ("accountant", "manager", "admin"), "ليس لديك صلاحية الاطّلاع على هذه القوائم.")
+    return staff_actor(authorization, session, ("admin", "manager", "accountant"), "ليس لديك صلاحية الاطّلاع على هذه القوائم.")
+
+
+def require_money_user(
+    authorization: str | None = Header(default=None),
+    session: Session | None = Depends(optional_session),
+) -> Actor:
+    """The accounting (income, expenses, month overview): the management, the admin and the accountant. What each of them may
+    do inside is checked per action (app.money.rights)."""
+    return staff_actor(authorization, session, ("admin", "manager", "accountant"), "ليس لديك صلاحية الوصول إلى المحاسبة.")
 
 
 def require_control(
     authorization: str | None = Header(default=None),
     session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
+) -> Actor:
     """The control centre: the administrator, or a manager who was explicitly given it (grant `control.view`)."""
-    actor = fees_actor(authorization, session, ("admin", "manager"), "ليس لديك صلاحية لوحة المتابعة.")
-    if actor.role == "manager" and not control.has_grant(session, actor, "control.view"):
+    actor = staff_actor(authorization, session, ("admin", "manager"), "ليس لديك صلاحية لوحة المتابعة.")
+    if actor.role == "manager" and not has_grant(session, actor, "control.view"):
         raise HTTPException(403, "ليس لديك صلاحية لوحة المتابعة.")
     return actor
 
@@ -732,8 +699,8 @@ def require_control(
 def require_admin_actor(
     authorization: str | None = Header(default=None),
     session: Session | None = Depends(optional_session),
-) -> fees.FeesActor:
-    return fees_actor(authorization, session, ("admin",), "هذه الصلاحية للمدير فقط.")
+) -> Actor:
+    return staff_actor(authorization, session, ("admin",), "هذه الصلاحية للمدير فقط.")
 
 
 def get_platform_principal(
@@ -893,12 +860,9 @@ async def github_error_handler(_request: Any, exc: GitHubError) -> Response:
     )
 
 
-app.include_router(fees.build_router(require_fees_user, require_people_manager))
-app.include_router(accounting.build_router(require_fees_user, require_people_manager, require_staff_reader))
-app.include_router(books.build_router(require_books_reader, require_books_writer, require_people_manager))
-app.include_router(invoicing.build_router(require_invoice_user, require_fees_user, require_admin_actor))
-app.include_router(workflow.build_router(require_fees_user))
-app.include_router(finance.build_router(require_fees_user))
+app.include_router(people.build_router(require_staff_reader, require_people_manager))
+app.include_router(money.build_router(require_money_user))
+app.include_router(activity.build_router(require_money_user))
 app.include_router(control.build_router(require_control, require_admin_actor))
 
 
@@ -1480,39 +1444,6 @@ def platform_login(
                     after={"active_role": result["active_role"]}, details=activity.describe_device(request.headers.get("user-agent", "")) if request is not None else "")
     session.commit()
     return result
-
-
-class FinanceResetRequest(BaseModel):
-    confirm: str = Field(max_length=20)
-
-
-@app.post("/api/admin/accounting/reset")
-def reset_financial_data(
-    payload: FinanceResetRequest,
-    response: Response,
-    _username: str = Depends(require_admin),
-    session: Session = Depends(get_session),
-) -> dict[str, int]:
-    """Admin only: wipes every fee, payment, payroll line and sheet row so all totals start at 0.
-    Children, staff names and accounts stay. Needs the confirmation word."""
-    response.headers["Cache-Control"] = "no-store"
-    if payload.confirm.strip() != "RESET":
-        raise HTTPException(422, "اكتب كلمة RESET للتأكيد.")
-    from app import ledger as cash_book
-
-    cash_book.guard_reset(session)
-    counts = {
-        "payments": session.execute(delete(FeePayment)).rowcount or 0,
-        "fees": session.execute(delete(FeeCharge)).rowcount or 0,
-        "salaries": session.execute(delete(SalaryLine)).rowcount or 0,
-        "sheet_rows": session.execute(delete(AccountingEntry)).rowcount or 0,
-        "cash": session.execute(delete(CashOpening)).rowcount or 0,
-    }
-    session.add(
-        FeeAuditLog(actor_name="admin", action="finance.reset", entity_id="all", details=str(counts)[:1000])
-    )
-    session.commit()
-    return counts
 
 
 @app.post("/api/auth/entry")

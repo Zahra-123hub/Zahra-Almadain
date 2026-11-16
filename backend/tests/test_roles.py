@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import activity, main
 from app.models import Account, FeeAuditLog, PortalSession, Role
-from tests.test_accounting_controls import PASSWORD, ControlsBase
+from tests.base import PASSWORD, ControlsBase
 
 P = "/api/platform"
 CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -135,13 +135,13 @@ class RoleTests(ControlsBase):
     def test_the_accounting_follows_the_active_role_too(self):
         old = self.bearer(self.login("money-teacher").json())
         money = self.bearer(self.switch(old, "accountant").json())
-        self.assertEqual(self.client.get("/api/admin/fees/me", headers=money).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/money/meta", headers=money).status_code, 200)
         teacher = self.bearer(self.switch(money, "teacher").json())
-        self.assertEqual(self.client.get("/api/admin/fees/me", headers=teacher).status_code, 403)
-        self.assertEqual(self.client.get("/api/admin/accounting/cash", headers=teacher).status_code, 403)
+        self.assertEqual(self.client.get("/api/admin/money/meta", headers=teacher).status_code, 403)
+        self.assertEqual(self.client.get("/api/admin/money/summary", headers=teacher).status_code, 403)
 
     def test_the_server_admin_login_is_not_affected(self):
-        self.assertEqual(self.client.get("/api/admin/fees/me", headers=self.admin).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/money/meta", headers=self.admin).status_code, 200)
 
     # ---- sessions and the log ----
     def test_a_session_remembers_the_kind_of_device_but_never_the_address_or_the_browser_text(self):
@@ -180,15 +180,15 @@ class RoleTests(ControlsBase):
 
     def test_the_money_log_stays_a_money_log_and_the_administrator_can_ask_for_the_rest(self):
         self.login("teacher1")
-        self.client.post("/api/admin/accounting/cash/counts", headers=self.acc, json={})  # (a refused call; the log only shows real changes)
-        money_log = self.client.get("/api/admin/fees/audit", headers=self.admin).json()
+        self.client.post("/api/admin/money/rates", headers=self.acc, json={})  # (a refused call; the log only shows real changes)
+        money_log = self.client.get("/api/admin/activity", headers=self.admin).json()
         self.assertNotIn("auth.login", {row["action"] for row in money_log})
-        everything = self.client.get("/api/admin/fees/audit?domain=all", headers=self.admin).json()
+        everything = self.client.get("/api/admin/activity?domain=all", headers=self.admin).json()
         self.assertIn("auth.login", {row["action"] for row in everything})
-        security = self.client.get("/api/admin/fees/audit?domain=security", headers=self.admin).json()
+        security = self.client.get("/api/admin/activity?domain=security", headers=self.admin).json()
         self.assertTrue(security and all(row["entity_type"] == "session" for row in security))
         # an accountant never gets past the money area, whatever they ask for
-        mine = self.client.get("/api/admin/fees/audit?domain=all", headers=self.acc).json()
+        mine = self.client.get("/api/admin/activity?domain=all", headers=self.acc).json()
         self.assertNotIn("auth.login", {row["action"] for row in mine})
 
     def test_helpers(self):

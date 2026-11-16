@@ -315,7 +315,7 @@
       }
 
       // ---- children: add, change, remove (the work of the management, not of the accounting)
-      var ACCOUNTING = "/api/admin/accounting";
+      var ACCOUNTING = "/api/admin/people";  // children and staff (the management's own lists)
       var kidsCard = el("section", "p-card");
       kidsCard.appendChild(el("h2", "", m("kidsTitle")));
       kidsCard.appendChild(el("p", "p-muted", m("kidsHelp")));

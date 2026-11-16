@@ -9,10 +9,10 @@ Four sign-in areas share one account system (`/login`). After sign-in the server
 | Parents | `/parents/` | parent | `portal.js` |
 | Teachers | `/teachers/` | teacher (admin sees posts and material of everybody) | `portal.js` |
 | Management | `/management/` | manager, admin | `management.js` (+ helpers from `portal.js`) |
-| Admin and accounting | `/admin/` | admin, accountant (teacher for the website content) | `admin/admin.js`, `admin/accounting.js` |
+| Admin and accounting | `/admin/` | admin, accountant, manager (only the three accounting pages; teacher for the website content) | `admin/admin.js`, `admin/money.js`, `admin/ui.js` |
 
 Every portal is a set of sections behind one navigation bar (`viewShell` in `portal.js`). The browser never decides who may see what:
-each call is authorised again by the server (`require_platform_role`, `require_manage`, the fees guard).
+each call is authorised again by the server (`require_platform_role`, `require_manage`, the accounting guard).
 
 ## What each role sees
 
@@ -44,12 +44,12 @@ concerned) and a notice is published (all parents and teachers). A notification 
 - `backend/app/community.py`: notifications, notices, groups, statistics, guardians view, storage use, list of teacher/parent accounts.
 - `backend/app/main.py`: `require_manage` (admin or manager) is used for children, assignments and registration requests.
 - Migration `0020_community`: tables `notifications`, `announcements`, columns `activities` and `meals` of `daily_reports`.
-- Groups are the class names of the children (`children.class_name`), so the accounting lists and the groups always agree.
+- Groups are the class names of the children (`children.class_name`), so the lists and the groups always agree.
 
 ## Tests
 
 `backend/tests/test_community.py` (notifications, notices, management rights, guardians, storage, manager sign-in). Run all with
-`python -m unittest tests.test_api tests.test_accounting tests.test_accounting_controls tests.test_children_admin tests.test_community tests.test_fees tests.test_security tests.test_database`
+`python -m unittest discover -s tests`
 inside `backend/`.
 
 ## Cache versions
@@ -62,4 +62,4 @@ After a change to `portal.js`, `management.js`, `portal.css` or the admin files 
 - `portal-text.js`: every word of the portals in Arabic and English (change texts here only).
 - `portal.js`: session, navigation, parent and teacher screens, shared parts (notifications, profile, notices).
 - `management.js`: the management screens.
-- `admin/admin.js`, `admin/accounting.js`: the admin dashboard and the accounting area (CSV export, system log, files, security).
+- `admin/admin.js`: the admin dashboard (accounts, content, system log, files, security); `admin/money.js`: the accounting (see `docs/accounting.md`); `admin/ui.js`: shared parts.

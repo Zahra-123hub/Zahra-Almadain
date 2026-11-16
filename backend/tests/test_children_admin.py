@@ -1,4 +1,4 @@
-"""Adding children with one or both parents (accountant / admin area)."""
+"""Adding children with one or both parents (management / admin area)."""
 
 import uuid
 
@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, Child, ChildGuardian, FeeAuditLog, Role, parent_child_links
-from tests.test_accounting_controls import A, ControlsBase
+from tests.base import MONEY, PEOPLE as A, ControlsBase
 
 
 def father(**extra):
@@ -65,7 +65,7 @@ class ChildrenTests(ControlsBase):
     def test_the_same_name_cannot_be_added_twice(self):
         self.make()
         self.assertEqual(self.make(name="  سلمى ").status_code, 409)
-        self.assertEqual(self.make(name="Amal").status_code, 409)  # the child that already exists in the fees list
+        self.assertEqual(self.make(name="Amal").status_code, 409)  # the child that already exists
 
     def test_only_management_and_admin_add_children_the_accountant_may_only_read(self):
         for headers in (self.teacher, self.parent, self.acc):
@@ -145,13 +145,15 @@ class ChildrenTests(ControlsBase):
         self.assertEqual(self.client.patch(f"{A}/children/{uuid.uuid4()}", headers=self.mgr, json=base).status_code, 404)
         self.assertEqual(self.client.patch(f"{A}/children/{child['id']}", headers=self.acc, json=base).status_code, 403)
 
-    def test_removing_a_child_keeps_the_fees(self):
+    def test_removing_a_child_keeps_its_bookings(self):
         child = self.make(name="Amal2").json()
-        charge = self.charge(month=2)  # the fee list of the existing child Amal
+        self.set_rate()
+        paid = self.income("20", "USD", child_id=child["id"]).json()  # an income of this child
         self.assertEqual(self.client.delete(f"{A}/children/{child['id']}", headers=self.mgr).status_code, 204)
         self.assertNotIn("Amal2", [c["name"] for c in self.client.get(A + "/children", headers=self.acc).json()])
         self.assertEqual(self.client.delete(f"{A}/children/{child['id']}", headers=self.mgr).status_code, 404)
-        self.assertEqual(self.client.get("/api/admin/fees?year=2026&month=2", headers=self.acc).json()["rows"][0]["id"], charge["id"])
+        rows = self.client.get(MONEY + "/income", headers=self.acc).json()["rows"]
+        self.assertEqual([(r["id"], r["child"]) for r in rows], [(paid["id"], "Amal2")])  # the booking stays, with the name
         self.assertEqual(self.make(name="Amal2").status_code, 201)  # the name is free again
 
     # ---- the teachers see every saved child ----

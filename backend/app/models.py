@@ -268,105 +268,6 @@ class RegistrationRequest(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
-class FeeCharge(Base):
-    """Amount a child owes for one month, in one currency (USD or SYP)."""
-
-    __tablename__ = "fee_charges"
-    __table_args__ = (
-        UniqueConstraint("child_id", "year", "month", "currency", name="uq_fee_charge_period"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    child_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True
-    )
-    year: Mapped[int] = mapped_column(Integer, index=True)
-    month: Mapped[int] = mapped_column(Integer, index=True)
-    currency: Mapped[str] = mapped_column(String(3))
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    raw_text: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    source: Mapped[str] = mapped_column(String(120), default="", server_default="")
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
-    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)  # cancelled (storno): stays visible, counts no more
-    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    # The invoice side: a fee line IS the invoice of one child for one month. The rate used to show the other currency is
-    # frozen here when the invoice is made; a later rate never changes it. source: manual | auto | reconstructed | none.
-    invoice_no: Mapped[str | None] = mapped_column(String(20), nullable=True, unique=True)
-    rate_syp_per_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
-    rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    rate_source: Mapped[str] = mapped_column(String(14), default="none", server_default="none")
-    lines: Mapped[list[FeeChargeLine]] = relationship(
-        back_populates="charge", cascade="all, delete-orphan", lazy="selectin", order_by="FeeChargeLine.position"
-    )
-    payments: Mapped[list[FeePayment]] = relationship(
-        back_populates="charge", cascade="all, delete-orphan", lazy="selectin",
-        order_by="FeePayment.paid_on",
-    )
-
-
-class FeeChargeLine(Base):
-    """One position of an invoice, in the currency of the invoice. The amount in the other currency is frozen with it."""
-
-    __tablename__ = "fee_charge_lines"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    charge_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("fee_charges.id", ondelete="CASCADE"), index=True
-    )
-    position: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
-    description: Mapped[str] = mapped_column(String(200), default="", server_default="")
-    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    amount_other: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    charge: Mapped[FeeCharge] = relationship(back_populates="lines")
-
-
-class FeePayment(Base):
-    __tablename__ = "fee_payments"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    charge_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("fee_charges.id", ondelete="CASCADE"), index=True
-    )
-    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
-    receipt_no: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
-    )
-    created_by_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    payer_name: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the money over
-    # What was really handed over. `amount` stays the value credited to the invoice (in the invoice currency); these three
-    # stay empty for a payment made in the currency of the invoice. The cash book counts paid_amount in paid_currency.
-    paid_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
-    paid_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    pay_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)  # the time it was cancelled (storno)
-    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    charge: Mapped[FeeCharge] = relationship(back_populates="payments")
-    __table_args__ = (
-        Index(
-            "uq_fee_payment_receipt_active",
-            "receipt_no",
-            unique=True,
-            postgresql_where=text("deleted_at IS NULL AND receipt_no IS NOT NULL"),
-            sqlite_where=text("deleted_at IS NULL AND receipt_no IS NOT NULL"),
-        ),
-    )
-
-
 class Employee(Base):
     """Staff master data (teachers and other employees on the payroll)."""
 
@@ -390,159 +291,6 @@ class Employee(Base):
     hired_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     left_on: Mapped[date | None] = mapped_column(Date, nullable=True)  # set when deactivated; the person stays in old payroll
     notes: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-
-class SalaryLine(Base):
-    """One employee's pay for one month. Net pay is calculated, never stored."""
-
-    __tablename__ = "salary_lines"
-    __table_args__ = (
-        UniqueConstraint("employee_id", "year", "month", "currency", name="uq_salary_period"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    employee_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), index=True
-    )
-    year: Mapped[int] = mapped_column(Integer, index=True)
-    month: Mapped[int] = mapped_column(Integer, index=True)
-    currency: Mapped[str] = mapped_column(String(3))
-    base: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    bonus: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    advance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    deduction: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
-    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    raw_text: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    source: Mapped[str] = mapped_column(String(120), default="", server_default="")
-    paid_by: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who handed the salary out
-    recorded_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
-    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)  # cancelled (storno): stays visible, counts no more
-    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    employee: Mapped[Employee] = relationship(lazy="joined")
-
-
-class AccountingEntry(Base):
-    """A row of the monthly or weekly accounting sheet.
-
-    Standard items (item_key) may be filled automatically; a stored row with
-    manual=True overrides the automatic value."""
-
-    __tablename__ = "accounting_entries"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    period_type: Mapped[str] = mapped_column(String(5), index=True)  # "month" | "week"
-    year: Mapped[int] = mapped_column(Integer, index=True)
-    month: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    week_start: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
-    currency: Mapped[str] = mapped_column(String(3))
-    item_key: Mapped[str] = mapped_column(String(20))  # standard key or "custom"
-    item_label: Mapped[str] = mapped_column(String(120), default="", server_default="")
-    details: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    income: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
-    expense: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
-    manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    person: Mapped[str] = mapped_column(String(120), default="", server_default="")  # who spent / received the money
-    entered_by: Mapped[str] = mapped_column(String(80), default="", server_default="")  # who typed the row in
-    receipt_no: Mapped[str] = mapped_column(String(60), default="", server_default="")  # number written on the paper receipt
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # grows with every change: two people on one row are noticed
-    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-
-
-class EntryReceipt(Base):
-    """A scanned or photographed receipt (pdf, jpg, png, webp) kept with the row of the sheet it proves."""
-
-    __tablename__ = "entry_receipts"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    entry_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="CASCADE"), index=True, nullable=True
-    )
-    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("cash_transactions.id", ondelete="RESTRICT"), index=True, nullable=True
-    )
-    removed_at: Mapped[datetime | None] = mapped_column(nullable=True)  # taken out of view; the file is kept
-    removed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    remove_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    original_name: Mapped[str] = mapped_column(String(180))
-    media_type: Mapped[str] = mapped_column(String(100))
-    byte_size: Mapped[int]
-    contents: Mapped[bytes] = mapped_column(LargeBinary)
-    uploaded_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-
-class ExchangeRate(Base):
-    """How many Syrian pounds one US dollar was worth from a given day on (set by the accountant)."""
-
-    __tablename__ = "exchange_rates"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    effective_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
-    syp_per_usd: Mapped[Decimal] = mapped_column(Numeric(18, 6))
-    reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
-    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-
-class CashOpening(Base):
-    """The money the kindergarten had when the books start (one row per currency).
-    From that month on, the cash balance = opening + every income - every expense."""
-
-    __tablename__ = "cash_openings"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    currency: Mapped[str] = mapped_column(String(3), unique=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
-    start_year: Mapped[int] = mapped_column(Integer)
-    start_month: Mapped[int] = mapped_column(Integer)
-    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
-
-
-class PeriodLock(Base):
-    """A closed accounting month: nothing dated in it can be added, changed or removed any more
-    (only the admin can reopen it, with a reason). Corrections go into an open period as their own rows."""
-
-    __tablename__ = "period_locks"
-    __table_args__ = (UniqueConstraint("year", "month", name="uq_period_lock"),)
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    year: Mapped[int] = mapped_column(Integer, index=True)
-    month: Mapped[int] = mapped_column(Integer)
-    closed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    closed_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    # what the books said when the month was closed ({"SYP": {"income": ..., "expense": ...}, ...}) as JSON text
-    snapshot: Mapped[str] = mapped_column(String(1000), default="", server_default="")
-
-
-class CashCount(Base):
-    """A counted cash box compared with what the books say (the reconciliation). Never edited afterwards."""
-
-    __tablename__ = "cash_counts"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    currency: Mapped[str] = mapped_column(String(3), index=True)
-    counted_on: Mapped[date] = mapped_column(Date, index=True)
-    counted_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    book_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    difference: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # counted - book
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    counted_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -668,22 +416,6 @@ class SiteVisit(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
-class StepConfirmation(Base):
-    """A person says on purpose: this step of this month is complete (for example: no expenses this month, the open fees are known).
-    It marks the step as done in the workflow; it never hides problems and never lets a month with flagged lines be closed."""
-
-    __tablename__ = "step_confirmations"
-    __table_args__ = (UniqueConstraint("year", "month", "step", name="uq_step_confirmation"),)
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    year: Mapped[int] = mapped_column(Integer, index=True)
-    month: Mapped[int] = mapped_column(Integer)
-    step: Mapped[str] = mapped_column(String(20))
-    confirmed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    confirmed_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-
 class DeviceToken(Base):
     """A phone that signed in to the app and may get push messages (one row per device, bound to one account)."""
 
@@ -699,80 +431,6 @@ class DeviceToken(Base):
     language: Mapped[str] = mapped_column(String(5), default="ar", server_default="ar")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-
-class CashTransaction(Base):
-    """One booking in the cash book: money that came in or went out on a day, in one currency.
-
-    origin "manual": typed in the cash book. "legacy": taken over from a row of the old day / week / month sheets.
-    "legacy_adjustment": a historical adjustment that keeps old figures explainable (never a real payment).
-    A booking is never deleted: it is cancelled (voided_*) with a reason and stays visible."""
-
-    __tablename__ = "cash_transactions"
-    __table_args__ = (
-        UniqueConstraint("legacy_entry_id", "kind", name="uq_cash_tx_legacy_entry"),
-        Index("ix_cash_tx_currency_day", "currency", "booked_on"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    currency: Mapped[str] = mapped_column(String(3))
-    kind: Mapped[str] = mapped_column(String(7))  # income | expense
-    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    booked_on: Mapped[date] = mapped_column(Date, index=True)
-    date_basis: Mapped[str] = mapped_column(String(24), default="actual", server_default="actual")
-    category: Mapped[str] = mapped_column(String(30))
-    description: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    counterparty: Mapped[str] = mapped_column(String(120), default="", server_default="")
-    receipt_no: Mapped[str] = mapped_column(String(60), default="", server_default="")
-    origin: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
-    adjustment_kind: Mapped[str] = mapped_column(String(20), default="", server_default="")  # salary_unpaid | manual_override | salary_counter
-    counts_in_cash: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    legacy_entry_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("accounting_entries.id", ondelete="RESTRICT"), nullable=True, index=True
-    )
-    legacy_note: Mapped[str] = mapped_column(String(200), default="", server_default="")
-    # The three accounting pages: `currency`/`amount` stay what was really handed over; the value in the other currency is
-    # frozen with the rate of the booking, which a later rate never changes.
-    amount_other: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    rate_syp_per_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
-    rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    rate_source: Mapped[str] = mapped_column(String(14), default="none", server_default="none")
-    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
-    employee_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
-    child_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="SET NULL"), nullable=True)
-    adjusts_salary_line_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("salary_lines.id", ondelete="RESTRICT"), nullable=True, index=True
-    )
-    adjusts_period: Mapped[str] = mapped_column(String(40), default="", server_default="")  # e.g. "2025-03 registration"
-    reverses_adjustment_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("cash_transactions.id", ondelete="RESTRICT"), nullable=True
-    )
-    created_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
-    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
-    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    voided_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
-    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
-
-
-class LedgerCutover(Base):
-    """The switch from the old sheets to the cash book. One row. state "shadow": the old books are still the truth and the
-    new calculation only runs alongside. "live": the cash book is the truth and the old sheets are read-only."""
-
-    __tablename__ = "ledger_cutover"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    state: Mapped[str] = mapped_column(String(10), default="shadow", server_default="shadow")
-    applied_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    applied_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
-    went_live_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    live_writes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # new bookings and cancellations since going live
-    report_json: Mapped[str] = mapped_column(Text, default="", server_default="")
-    fingerprint_json: Mapped[str] = mapped_column(Text, default="", server_default="")
 
 
 class SystemCheck(Base):
@@ -800,3 +458,138 @@ class AccountGrant(Base):
     grant_name: Mapped[str] = mapped_column(String(40))
     granted_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     granted_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+# ---- the accounting: income, expenses, invoices, rates, closed months -------------------------------------------------------
+# Money is Decimal. Every entry keeps what was really paid (amount + currency), the rate it was entered with and the value in
+# the other currency; a later rate never changes it. Nothing is deleted: an entry is cancelled (voided_*) or reversed.
+
+
+class CurrencyRate(Base):
+    """1 USD = syp_per_usd SYP, from `valid_from` on. Set by the management; rows are only ever added."""
+
+    __tablename__ = "currency_rates"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    valid_from: Mapped[date] = mapped_column(Date, index=True)
+    syp_per_usd: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class IncomeCategory(Base):
+    """What an income is for. The four built-in ones carry a `key`; the management may add, rename or switch off others."""
+
+    __tablename__ = "income_categories"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True)
+    name: Mapped[str] = mapped_column(String(80))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    position: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
+
+
+class Invoice(Base):
+    """A claim, not an income. What is paid and what is open is always calculated from the income entries tied to it."""
+
+    __tablename__ = "invoices"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    number: Mapped[str] = mapped_column(String(20), unique=True)
+    issued_on: Mapped[date] = mapped_column(Date, index=True)
+    child_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="RESTRICT"), nullable=True, index=True)
+    payer_name: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    description: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))  # SYP for one USD, as it was when the invoice was made
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    items: Mapped[list[InvoiceItem]] = relationship(back_populates="invoice", cascade="all, delete-orphan", lazy="selectin", order_by="InvoiceItem.position")
+    payments: Mapped[list[IncomeEntry]] = relationship(back_populates="invoice", lazy="selectin", order_by="IncomeEntry.booked_on")
+
+
+class InvoiceItem(Base):
+    __tablename__ = "invoice_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    description: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # in the currency of the invoice
+    amount_other: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # the same value in the other currency, at the rate of the invoice
+    invoice: Mapped[Invoice] = relationship(back_populates="items")
+
+
+class IncomeEntry(Base):
+    """Money that really came in. A payment of an invoice is an income entry tied to that invoice (never entered twice)."""
+
+    __tablename__ = "income_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booked_on: Mapped[date] = mapped_column(Date, index=True)
+    description: Mapped[str] = mapped_column(String(300))
+    category_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("income_categories.id", ondelete="RESTRICT"), index=True)
+    child_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="RESTRICT"), nullable=True, index=True)
+    payer_name: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # what was really paid (negative only for a reversal)
+    currency: Mapped[str] = mapped_column(String(3))  # the currency it was really paid in
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))  # SYP for one USD, as used for this entry
+    amount_other: Mapped[Decimal] = mapped_column(Numeric(14, 2))  # the value in the other currency
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT"), nullable=True, index=True)
+    reverses_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("income_entries.id", ondelete="RESTRICT"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    invoice: Mapped[Invoice | None] = relationship(back_populates="payments")
+
+
+class ExpenseEntry(Base):
+    """Money that was really paid out. A salary is an expense of the category "salaries" tied to a person of the staff and a month."""
+
+    __tablename__ = "expense_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booked_on: Mapped[date] = mapped_column(Date, index=True)
+    description: Mapped[str] = mapped_column(String(300))
+    category: Mapped[str] = mapped_column(String(30), index=True)
+    recipient: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True, index=True)
+    salary_month: Mapped[str | None] = mapped_column(String(7), nullable=True)  # "2026-11": the month the salary is for
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    amount_other: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    reverses_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("expense_entries.id", ondelete="RESTRICT"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    updated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+
+
+class MonthClosing(Base):
+    """A month is closed while it has a row here that was not reopened. Who closed and who reopened it is kept."""
+
+    __tablename__ = "month_closings"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    year: Mapped[int] = mapped_column(Integer, index=True)
+    month: Mapped[int] = mapped_column(Integer)
+    closed_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    closed_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    reopened_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    reopened_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    reopen_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")

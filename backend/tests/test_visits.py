@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import visits
 from app.models import SiteVisit
-from tests.test_accounting_controls import ControlsBase
+from tests.base import ControlsBase
 
 PHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148"
 DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"

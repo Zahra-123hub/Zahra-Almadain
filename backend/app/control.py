@@ -1,7 +1,6 @@
 """The control centre: one place to see what happens in the kindergarten (read only, built on the data that already exists).
 
-Nothing here is a second bookkeeping: money comes from the cash book (or, before the switch, from the old sheets), people and
-reports from their own tables. What the system cannot know is reported as "not available", never as "fine".
+Nothing here is a second bookkeeping: money comes from the accounting (app.money), people and reports from their own tables. What the system cannot know is reported as "not available", never as "fine".
 """
 
 from __future__ import annotations
@@ -14,31 +13,22 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.orm import Session
 
-from app import activity
-from app import ledger as book
-from app.accounting import legacy_cash_report
+from app import activity, money
+from app.actors import Actor, has_grant
 from app.community import accounts_with_role
 from app.database import get_session
-from app.fees import CURRENCIES, ZERO, FeesActor, money, remaining_amount
 from app.models import (
-    Account, AccountGrant, Child, ChildGuardian, DailyReport, Employee, FeeAuditLog, FeeCharge, FeePayment, LoginAttempt, PortalSession,
-    RegistrationRequest, SalaryLine, SystemCheck, TeacherContent, TeacherPost,
+    Account, AccountGrant, Child, ChildGuardian, DailyReport, Employee, FeeAuditLog, LoginAttempt, PortalSession,
+    RegistrationRequest, SystemCheck, TeacherContent, TeacherPost,
 )
 from app.timeutil import local_day_bounds, local_now, local_today, to_local
 
-GRANTS = ("control.view", "finance.view", "books.view", "books.write")
-
-
-def has_grant(session: Session, actor: FeesActor, name: str) -> bool:
-    """The administrator may do everything; anybody else needs the explicit grant on their own account."""
-    if actor.role == "admin":
-        return True
-    if actor.account_id is None:
-        return False
-    return session.scalar(select(AccountGrant.id).where(AccountGrant.account_id == actor.account_id, AccountGrant.grant_name == name)) is not None
+# control.view / finance.view: the control centre for a manager. books.correct / books.export: an accountant may change and cancel
+# entries / export the accounting.
+GRANTS = ("control.view", "finance.view", "books.correct", "books.export")
 
 
 def naive_utc(moment: datetime) -> datetime:
@@ -74,45 +64,23 @@ def failed_sign_ins(session: Session, hours: int = 24) -> int:
     return max(logged, (marks + 1) // 2)
 
 
-def open_fees(session: Session) -> dict[str, dict[str, Any]]:
-    result = {code: {"amount": ZERO, "children": set()} for code in CURRENCIES}
-    charges = session.scalars(select(FeeCharge).where(FeeCharge.voided_at.is_(None)).options(selectinload(FeeCharge.payments))).all()
-    for charge in charges:
-        left = remaining_amount(charge)
-        if left is not None and left > 0:
-            result[charge.currency]["amount"] += left
-            result[charge.currency]["children"].add(charge.child_id)
-    return {code: {"amount": str(money(v["amount"])), "children": len(v["children"])} for code, v in result.items()}
-
-
 def finance_block(session: Session, today: date) -> dict[str, Any]:
-    """Per currency, never added together. Before the cash book is live the old sheets answer."""
-    mode = book.ledger_mode(session)
-    fees = open_fees(session)
-    first, last = date(today.year, today.month, 1), today
-    result: dict[str, Any] = {"mode": mode, "source": "cash_book" if mode == "live" else "legacy_sheets", "currencies": {}}
+    """This month per currency (money really paid in it, never added together) and the invoices that are still open."""
+    figures = money.month_figures(session, today.year, today.month)
+    invoices = money.open_invoices(session)
     since = naive_utc(datetime.now(timezone.utc) - timedelta(days=30))
-    voided = session.scalar(select(func.count()).select_from(FeeAuditLog).where(FeeAuditLog.domain == "finance", FeeAuditLog.action.like("%void%"), FeeAuditLog.at >= since)) or 0
-    for code in CURRENCIES:
-        if mode == "live":
-            report = book.cash_report(session, code, today)
-        else:
-            report = legacy_cash_report(session, code, today)
-        now = next((m for m in report["months"] if (m["year"], m["month"]) == (today.year, today.month)), None)
-        paid_month = session.scalar(
-            select(func.coalesce(func.sum(func.coalesce(FeePayment.paid_amount, FeePayment.amount)), 0)).join(FeeCharge, FeeCharge.id == FeePayment.charge_id)
-            .where(func.coalesce(FeePayment.paid_currency, FeeCharge.currency) == code, FeePayment.deleted_at.is_(None), FeePayment.paid_on >= first, FeePayment.paid_on <= last)
-        )
-        salaries_month = session.scalar(
-            select(func.coalesce(func.sum(SalaryLine.base), 0)).where(SalaryLine.currency == code, SalaryLine.voided_at.is_(None), SalaryLine.paid_on >= first, SalaryLine.paid_on <= last)
-        )
-        result["currencies"][code] = {
-            "balance": report["balance"], "total_income": report["income"], "total_expense": report["expense"],
-            "this_month": None if now is None else {"income": now["income"], "expense": now["expense"]},
-            "open_fees": fees[code], "payments_this_month": str(money(paid_month)), "salary_base_paid_this_month": str(money(salaries_month)),
-        }
-    result["cancelled_last_30_days"] = voided
-    return result
+    voided = session.scalar(select(func.count()).select_from(FeeAuditLog).where(
+        FeeAuditLog.domain == "finance", or_(FeeAuditLog.action.like("%.void"), FeeAuditLog.action.like("%.reverse")), FeeAuditLog.at >= since)) or 0
+    return {
+        "month": f"{today.year}-{today.month:02d}",
+        "currencies": {
+            code: {
+                "income": money.text(code, figures["income"][code]), "expense": money.text(code, figures["expense"][code]),
+                "surplus": money.text(code, figures["surplus"][code]), "open_invoices": money.text(code, invoices["amount"][code]),
+            } for code in money.CURRENCIES
+        },
+        "invoices_open": invoices["open"], "invoices_partial": invoices["partial"], "cancelled_last_30_days": voided,
+    }
 
 
 def system_check(session: Session) -> dict[str, Any]:
@@ -175,9 +143,9 @@ def task_list(session: Session, today: date, finance_allowed: bool) -> list[dict
     add("failed_sign_ins", failed if failed >= 3 else 0, "high", hours=24)
     missing = _children_missing_info(session)
     add("children_missing_info", len(missing), "low")
-    if finance_allowed and book.is_live(session):
-        flags = sum(1 for code in CURRENCIES for m in book.movements(session, code) if m.needs_receipt and m.source == "booking")
-        add("expenses_without_receipt", flags, "low")
+    if finance_allowed:
+        invoices = money.open_invoices(session)
+        add("invoices_unpaid", invoices["open"] + invoices["partial"], "low")
     return tasks
 
 
@@ -191,14 +159,14 @@ def _children_missing_info(session: Session) -> list[dict[str, Any]]:
     return found
 
 
-def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., FeesActor]) -> APIRouter:
+def build_router(guard: Callable[..., Actor], admin_guard: Callable[..., Actor]) -> APIRouter:
     router = APIRouter(prefix="/api/admin/control", tags=["control-centre"])
 
-    def finance_allowed(session: Session, actor: FeesActor) -> bool:
+    def finance_allowed(session: Session, actor: Actor) -> bool:
         return has_grant(session, actor, "finance.view")
 
     @router.get("/overview")
-    def overview(response: Response, actor: FeesActor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+    def overview(response: Response, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         today = local_today()
         allowed = finance_allowed(session, actor)
@@ -214,7 +182,7 @@ def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., Fee
 
     @router.get("/teachers/activity")
     def teachers_activity(
-        response: Response, day: date | None = None, actor: FeesActor = Depends(guard), session: Session = Depends(get_session),
+        response: Response, day: date | None = None, actor: Actor = Depends(guard), session: Session = Depends(get_session),
     ) -> dict[str, Any]:
         """Per teacher for one local day: when last seen, reports made or changed, drafts and returned reports still open, files, posts."""
         response.headers["Cache-Control"] = "no-store"
@@ -244,7 +212,7 @@ def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., Fee
         return {"day": wanted.isoformat(), "teachers": rows, "active": sum(1 for r in rows if r["active_that_day"])}
 
     @router.get("/children")
-    def children_overview(response: Response, actor: FeesActor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+    def children_overview(response: Response, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         today = local_today()
         since = today - timedelta(days=30)
@@ -267,7 +235,7 @@ def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., Fee
         }
 
     @router.get("/tasks")
-    def tasks(response: Response, actor: FeesActor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+    def tasks(response: Response, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         today = local_today()
         review = session.execute(
@@ -287,7 +255,7 @@ def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., Fee
 
     @router.get("/activity")
     def activity_feed(
-        response: Response, limit: int = 100, domain: str = "all", actor: FeesActor = Depends(guard), session: Session = Depends(get_session),
+        response: Response, limit: int = 100, domain: str = "all", actor: Actor = Depends(guard), session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         """The latest lines of the activity log of every area. Finance lines only for those who may see finance."""
         response.headers["Cache-Control"] = "no-store"
@@ -303,19 +271,19 @@ def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., Fee
         } for r in rows]
 
     @router.get("/system")
-    def system(response: Response, actor: FeesActor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+    def system(response: Response, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
         return system_check(session)
 
     # ---- explicit permissions of single accounts (administrator only) ---------------------------------------------------------------
     @router.get("/grants")
-    def grants(response: Response, actor: FeesActor = Depends(admin_guard), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    def grants(response: Response, actor: Actor = Depends(admin_guard), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
         rows = session.execute(select(AccountGrant, Account.username).join(Account, Account.id == AccountGrant.account_id).order_by(Account.username, AccountGrant.grant_name)).all()
         return [{"id": str(g.id), "username": name, "grant": g.grant_name, "granted_by": g.granted_by, "granted_at": g.granted_at.isoformat() if g.granted_at else None} for g, name in rows]
 
     @router.post("/grants", status_code=201)
-    def add_grant(payload: GrantIn, actor: FeesActor = Depends(admin_guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+    def add_grant(payload: GrantIn, actor: Actor = Depends(admin_guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         if payload.grant not in GRANTS:
             raise HTTPException(422, "Unknown permission.")
         account = session.scalar(select(Account).where(Account.username == payload.username.strip().lower()))
@@ -332,7 +300,7 @@ def build_router(guard: Callable[..., FeesActor], admin_guard: Callable[..., Fee
         return {"id": str(row.id), "username": account.username, "grant": payload.grant}
 
     @router.delete("/grants/{grant_id}", status_code=204)
-    def remove_grant(grant_id: uuid.UUID, actor: FeesActor = Depends(admin_guard), session: Session = Depends(get_session)) -> Response:
+    def remove_grant(grant_id: uuid.UUID, actor: Actor = Depends(admin_guard), session: Session = Depends(get_session)) -> Response:
         row = session.get(AccountGrant, grant_id)
         if row is None:
             raise HTTPException(404, "Permission not found.")

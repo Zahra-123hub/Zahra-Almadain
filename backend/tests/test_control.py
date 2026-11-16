@@ -6,18 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import control
-from app.fees import FeesActor
 from app.models import Account, AccountGrant, Child, FeeAuditLog, RegistrationRequest, SystemCheck
-from tests.test_accounting_controls import ControlsBase
-from tests.test_ledger import ADMIN, LedgerBase
-from app import legacy_migration as migration
 from app.timeutil import local_today
+from tests.base import MONEY, PEOPLE, ControlsBase
 
 C = "/api/admin/control"
 P = "/api/platform"
 
 
-class ControlTests(LedgerBase):
+class ControlTests(ControlsBase):
     def grant(self, username, name):
         return self.client.post(C + "/grants", headers=self.admin, json={"username": username, "grant": name})
 
@@ -113,7 +110,7 @@ class ControlTests(LedgerBase):
         missing = {c["name"]: c["missing"] for c in children["missing_information"]}
         self.assertIn("birth_date", missing["Noor"])
         self.assertEqual(children["teacher_assignment"], "not_used")
-        self.assertEqual(self.client.delete(f"/api/admin/accounting/children/{made['id']}", headers=self.mgr).status_code, 204)
+        self.assertEqual(self.client.delete(f"{PEOPLE}/children/{made['id']}", headers=self.mgr).status_code, 204)
         after = self.client.get(C + "/children", headers=self.admin).json()
         self.assertEqual(after["active"], 1)
         self.assertEqual([(c["name"], c["left_on"]) for c in after["left_last_30_days"]], [("Noor", local_today().isoformat())])
@@ -121,23 +118,20 @@ class ControlTests(LedgerBase):
             self.assertEqual(s.scalar(select(Child.left_on).where(Child.display_name == "Noor")), local_today())
 
     # ---- finance ----
-    def test_the_finance_block_shows_each_currency_apart_and_follows_the_switch(self):
-        self.opening("SYP", "1000", local_today().year, 1)
-        self.opening("USD", "50", local_today().year, 1)
-        self.payment("300", local_today(), month=local_today().month, year=local_today().year)
+    def test_the_finance_block_shows_each_currency_apart(self):
+        self.set_rate()
+        self.income("20", "USD")
+        self.income("300000", "SYP")
+        self.expense("5", "USD")
+        invoice = self.client.post(MONEY + "/invoices", headers=self.acc, json={
+            "issued_on": local_today().isoformat(), "child_id": str(self.child_id()), "currency": "USD", "items": [{"description": "fee", "amount": "25"}]}).json()
+        self.client.post(f"{MONEY}/invoices/{invoice['id']}/payments", headers=self.acc, json={"booked_on": local_today().isoformat(), "amount": "10", "currency": "USD"})
         block = self.client.get(C + "/overview", headers=self.admin).json()["finance"]
-        self.assertEqual((block["mode"], block["source"]), ("legacy", "legacy_sheets"))
         self.assertEqual(set(block["currencies"]), {"SYP", "USD"})
-        self.assertEqual(block["currencies"]["SYP"]["balance"], "1300.00")
-        self.assertEqual(block["currencies"]["USD"]["balance"], "50.00")
-        self.assertEqual(block["currencies"]["SYP"]["open_fees"]["amount"], "99700.00")  # 100000 due, 300 paid
+        self.assertEqual(block["currencies"]["USD"], {"income": "30.00", "expense": "5.00", "surplus": "25.00", "open_invoices": "15.00"})
+        self.assertEqual((block["currencies"]["SYP"]["income"], block["currencies"]["SYP"]["surplus"]), ("300000", "300000"))
+        self.assertEqual((block["invoices_open"], block["invoices_partial"]), (0, 1))
         self.assertNotIn("total", block)
-        with Session(self.engine) as s:
-            migration.apply(s, ADMIN, local_today(), go_live=True)
-        live = self.client.get(C + "/overview", headers=self.admin).json()["finance"]
-        self.assertEqual((live["mode"], live["source"]), ("live", "cash_book"))
-        self.assertEqual(live["currencies"]["SYP"]["balance"], "1300.00")
-        self.assertEqual(live["currencies"]["SYP"]["payments_this_month"], "300.00")
 
     # ---- system ----
     def test_the_system_check_says_what_it_really_found_and_stores_it(self):
@@ -176,8 +170,8 @@ class ControlTests(LedgerBase):
     # ---- the log of every area ----
     def test_the_activity_feed_covers_every_area_and_hides_money_from_those_without_the_finance_view(self):
         self.client.post(P + "/auth/login", json={"username": "teacher1", "password": "Qx5a6ba62b7e4b-9"})
-        self.make_live()
-        self.new_booking()
+        self.set_rate()
+        self.expense("5", "USD")
         self.grant("mgr0", "control.view")
         full = self.client.get(C + "/activity", headers=self.admin).json()
         self.assertTrue({"security", "finance"} <= {row["domain"] for row in full})
@@ -189,4 +183,4 @@ class ControlTests(LedgerBase):
         self.assertEqual({row["domain"] for row in only}, {"security"})
 
 
-A_EMP = "/api/admin/accounting/employees"
+A_EMP = PEOPLE + "/employees"

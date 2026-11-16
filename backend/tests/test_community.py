@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import main
 from app.models import Account, Child, ChildGuardian, Role, TeacherContent, parent_child_links, teacher_child_links
-from tests.test_accounting_controls import PASSWORD, ControlsBase
+from tests.base import MONEY, PASSWORD, ControlsBase
 
 M = "/api/admin/platform"
 P = "/api/platform"
@@ -168,9 +168,11 @@ class CommunityTests(ControlsBase):
                 self.assertIn(self.client.get(M + path, headers=headers).status_code, (401, 403), path)
             self.assertIn(self.client.patch(f"{M}/children/{self.omar}/group", headers=headers, json={"class_name": "x"}).status_code, (401, 403))
         self.assertEqual(self.client.get(M + "/stats").status_code, 401)
-        # a manager still cannot open the accounts or the fees
+        # a manager still cannot open the accounts; the accounting is now open to the management (rights matrix)
         self.assertIn(self.client.get(M + "/accounts", headers=self.manager).status_code, (401, 403))
-        self.assertEqual(self.client.get("/api/admin/fees/children", headers=self.manager).status_code, 403)
+        self.assertEqual(self.client.get(MONEY + "/meta", headers=self.manager).status_code, 200)
+        for headers in (self.teacher, self.parent):
+            self.assertEqual(self.client.get(MONEY + "/meta", headers=headers).status_code, 403)
 
     # ---- the parent's view of the other guardians ----
     def test_parent_sees_guardians_of_their_own_child_without_contact_data(self):
@@ -207,31 +209,32 @@ class CommunityTests(ControlsBase):
         self.assertIn("attachment", response.headers["content-disposition"])
         return load_workbook(io.BytesIO(response.content)).active
 
-    def test_fee_export_is_a_real_excel_file(self):
-        self.charge(month=2)
-        with Session(self.engine) as session:
-            child = session.scalar(select(Child).where(Child.display_name == "Amal"))
-            child.display_name = "=SUM(A1)"
-            session.commit()
-        sheet = self.workbook(self.client.get("/api/admin/fees/export.xlsx?year=2026&month=2", headers=self.acc))
-        self.assertEqual([c.value for c in sheet[1]][:3], ["#", "Child", "Class"])  # one column per field, not everything in column A
+    def test_income_export_is_a_real_excel_file(self):
+        self.set_rate()
+        self.income("20", "USD", description="=SUM(A1)")
+        sheet = self.workbook(self.client.get(MONEY + "/export/income.xlsx", headers=self.manager))
+        header = [c.value for c in sheet[1]]
+        self.assertEqual(header[:5], ["التاريخ", "الوصف", "الفئة", "USD", "SYP"])  # one column per field, both currencies
         row = [c.value for c in sheet[2]]
         self.assertEqual(row[1], "=SUM(A1)")  # stored as text, so it can never run as a formula
         self.assertEqual(sheet["B2"].data_type, "s")
-        self.assertEqual(row[6], 1000)  # the amount is a number
+        self.assertEqual((row[3], row[4]), (20, 240000))  # the amounts are numbers
+        self.assertEqual(row[header.index("سعر الصرف (ليرة لكل دولار)")], 12000)  # the rate is in the file
         self.assertEqual(sheet.freeze_panes, "A2")
-        for headers in (self.teacher, self.parent, self.manager):
-            self.assertEqual(self.client.get("/api/admin/fees/export.xlsx", headers=headers).status_code, 403)
-        self.assertEqual(self.client.get("/api/admin/fees/export.xlsx").status_code, 401)
+        for headers in (self.teacher, self.parent):
+            self.assertEqual(self.client.get(MONEY + "/export/income.xlsx", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get(MONEY + "/export/income.xlsx").status_code, 401)
 
-    def test_salary_and_log_exports(self):
-        salaries = self.workbook(self.client.get("/api/admin/accounting/salaries/export.xlsx?year=2026&month=2", headers=self.acc))
-        self.assertEqual([c.value for c in salaries[1]][:2], ["#", "Employee"])
-        self.charge(month=3)
-        log = self.workbook(self.client.get("/api/admin/fees/audit.xlsx", headers=self.acc))
-        self.assertEqual([c.value for c in log[1]], ["Time", "User", "Action", "Entity", "Details"])
-        self.assertIn("charge.create", [c.value for c in log[2]])
-        self.assertEqual(self.client.get("/api/admin/fees/audit.xlsx", headers=self.teacher).status_code, 403)
+    def test_expense_and_log_exports(self):
+        self.set_rate()
+        self.expense("5", "USD")
+        expenses = self.workbook(self.client.get(MONEY + "/export/expenses.xlsx", headers=self.manager))
+        self.assertEqual([c.value for c in expenses[1]][:5], ["التاريخ", "الوصف", "الفئة", "USD", "SYP"])
+        self.assertEqual([c.value for c in expenses[2]][3:5], [5, 60000])
+        log = self.workbook(self.client.get("/api/admin/activity/export.xlsx", headers=self.acc))
+        self.assertEqual([c.value for c in log[1]], ["Time", "User", "Area", "Action", "Entity", "Reason", "Details"])
+        self.assertIn("expense.create", [c.value for row in log.iter_rows(min_row=2) for c in row])
+        self.assertEqual(self.client.get("/api/admin/activity/export.xlsx", headers=self.teacher).status_code, 403)
 
     # ---- files and security (admin only) ----
     def test_admin_manages_the_private_files(self):

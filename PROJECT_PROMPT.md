@@ -50,20 +50,20 @@ Gesundheitscheck: `GET /healthz`. Der Free-Server schläft ein, der erste Aufruf
 ```
 /                        öffentliche Webseite: index.html, style.css, script.js, content.json, appdl.js, app-version.json,
                          management.js, portal.js, portal-text.js, portal.css, render.yaml, CNAME, README.txt/.md
-admin/                   Admin- und Buchhaltungsoberfläche: index.html, admin.js (1.8k Zeilen), accounting.js, workflow.js, finance.js,
+admin/                   Admin- und Buchhaltungsoberfläche: index.html, admin.js (1.5k Zeilen), money.js (Buchhaltung), ui.js, control.js,
                          admin.css, skin.css
 login/ parents/ teachers/ management/   Portale (index.html je Portal; die Logik steckt in portal.js / management.js)
 images/                  Logo, Plakat, Icons, app-qr.svg
-docs/                    accounting-workflow.md, mobile-app.md, portals.md, visitors.md, hosting.txt, vorlagen/
+docs/                    accounting.md, mobile-app.md, portals.md, visitors.md, hosting.txt
 backend/
   app/ main.py (3,4k Zeilen), models.py, database.py, security.py, community.py, mobile.py, visits.py,
-       fees.py, accounting.py, workflow.py, ledger.py, legacy_migration.py, finance.py, timeutil.py,
-       manage.py (CLI), import_vorlagen.py, numbers_ar.py
-  migrations/versions/ 0001 … 0037   (neueste: 0037_books_both; 0036_invoices_both; 0030–0034 Sitzungs-Metadaten, Aktivitätsprotokoll-Domäne, system_checks, children.left_on, account_grants; 0035 Mitarbeiterdaten; 0036 Rechnungen)
-  tests/ test_api, test_accounting, test_accounting_controls, test_fees, test_workflow, test_ledger, test_community,
-         test_children_admin, test_security, test_visits, test_mobile, test_database (+ __init__.py setzt APP_TIMEZONE=LOCAL)
+       money.py (Buchhaltung), people.py (Kinder und Personal), activity.py (Protokoll), actors.py, tables.py (XLSX/CSV),
+       staff_export.py, control.py, finance_backup.py (Sicherung der alten Finanztabellen), timeutil.py, manage.py (CLI)
+  migrations/versions/ 0001 … 0039   (neueste: 0039_drop_old_finance; 0038_money = neue Buchhaltung; 0030–0035 Sitzungen, Protokoll, Rechte, Personal)
+  tests/ base.py (Testbasis ControlsBase), test_money, test_people, test_api, test_community, test_children_admin, test_control,
+         test_roles, test_security, test_visits, test_mobile, test_database (+ __init__.py setzt APP_TIMEZONE=LOCAL)
   dev_server.py        lokaler Testserver mit SQLite (Port 8765, dev.db)
-  LEDGER_MIGRATION.md  Runbook der Buchhaltungsumstellung
+  FINANCE_SWITCH.md    Runbook: Sicherung und Entfernen der alten Finanztabellen auf der echten Datenbank
 mobile_app/            Flutter-App (siehe Abschnitt 9)
 PROJECT_PROMPT.md      dieses Dokument
 ```
@@ -75,10 +75,10 @@ PROJECT_PROMPT.md      dieses Dokument
 **Konten und Rechte:** `accounts`, `roles`, `permissions`, `portal_sessions` (Bearer-Sitzungen), `login_attempts` (Drosselung), `registration_requests`, `guardian_invitations`.
 **Kinder:** `children` (u. a. `display_name`, `class_name`, `is_active`), `child_guardians` (Vater/Mutter, Telefon, E-Mail, verknüpftes Konto), Verknüpfungstabellen Eltern↔Kind (`parent_child_links`, mit `confirmed_at`) und Lehrkraft↔Kind (`teacher_child_links`).
 **Inhalte:** `daily_reports` (Titel, Text, `activities`, `meals`, `status` ∈ draft/submitted/published/rejected/archived, `review_note`, `language`, `published_at`), `teacher_posts` (`scope` general|child, `kind` post|material, `child_id`, `hidden`, `position`), `teacher_content` (Dateien, Binärdaten in der DB; `owner_id`, `report_id`, `post_id`, `category`, `media_type`, `byte_size`), `notifications`, `announcements`, `site_visits`, `device_tokens` (Push-Token, noch ungenutzt).
-**Buchhaltung (alt):** `fee_charges` (Kind×Monat×Währung, `amount`, `needs_review`, Storno-Spalten), `fee_payments` (negativ = Rückerstattung, `deleted_at` = Storno), `employees`, `salary_lines`, `accounting_entries` (Blattzeilen Tag/Woche/Monat), `entry_receipts` (Belege), `exchange_rates`, `cash_openings`, `period_locks` (Monatsabschluss mit Schnappschuss), `cash_counts`, `step_confirmations`, `fee_audit_log` (Protokoll, inkl. `before_json`, `after_json`, `reason`).
-**Buchhaltung (neu):** `cash_transactions` (Kassenbuch), `ledger_cutover` (Umschalter `shadow`/`live`).
-**Rechnungen (Migration 0036):** Eine Gebührenzeile (`fee_charges`) IST die Rechnung eines Kindes für einen Monat. Zusätzlich: `invoice_no` (INV-JJJJ-NNNN, vergibt ein `before_flush`-Hook in `fees.py` für jede neue Zeile), eingefrorener Kurs (`rate_syp_per_usd`, `rate_date`, `rate_source` manual|auto|reconstructed|none), Positionen `fee_charge_lines` (Betrag in Rechnungswährung + eingefrorene Gegenseite `amount_other`), Zahlungen mit echter Währung (`paid_currency`, `paid_amount`, `pay_rate`; `amount` = der Rechnung gutgeschriebener Wert). `exchange_rates.reason`. Das Kassenbuch zählt `paid_amount` in `paid_currency`.
-**Sonstiges (0030–0035):** `account_grants` (Einzelrechte wie `control.view`, `finance.view`), `system_checks`, `portal_sessions.active_role` (+ Meta), `fee_audit_log` mit `domain/entity_type/before_json/after_json/reason` (Aktivitätsprotokoll aller Bereiche), `children.left_on`, `employees` mit `employee_no`, `phone`, `hired_on`, `left_on`, `notes`.
+**Buchhaltung (Migration 0038, `money.py`):** `currency_rates` (1 USD = X SYP ab `valid_from`, nur hinzufügen), `income_categories` (vier eingebaute mit `key`: tuition, registration, extra_fees, other_income; weitere durch die Leitung), `invoices` + `invoice_items` (Forderung mit eingefrorenem Kurs, Positionen mit Betrag und Gegenwert), `income_entries` (Einnahme: Betrag, tatsächliche Währung, Kurs, Gegenwert, optional Kind/Zahler/Rechnung, Storno-Spalten, `reverses_id` für Gegenbuchungen), `expense_entries` (Ausgabe mit Kategorie, Empfänger, optional Mitarbeiter + `salary_month`), `month_closings` (abgeschlossen/wiedereröffnet mit Benutzer, Zeit, Grund).
+**Personal:** `employees` (Leitung): `employee_no`, Name, Position, Telefon, Eintritt, Austritt, Gehalt + Währung, Notizen, `is_active`.
+**Sonstiges:** `account_grants` (Einzelrechte `control.view`, `finance.view`, `books.correct`, `books.export`), `system_checks`, `portal_sessions.active_role` (+ Meta), `fee_audit_log` = Aktivitätsprotokoll aller Bereiche (`domain`, `entity_type`, `before_json`, `after_json`, `reason`), `children.left_on`.
+**Alte Finanztabellen** (`fee_charges`, `fee_payments`, `salary_lines`, `accounting_entries`, `entry_receipts`, `exchange_rates`, `cash_openings`, `period_locks`, `cash_counts`, `cash_transactions`, `ledger_cutover`, `step_confirmations`, `fee_charge_lines`): kein Code mehr; Migration 0039 entfernt sie nur, wenn sie leer sind oder eine geprüfte Sicherung vorliegt (siehe `backend/FINANCE_SWITCH.md`).
 
 Geldspalten sind `Numeric(14,2)`, Kurse `Numeric(18,6)`. Geld wird in Python **immer als `Decimal`** gerechnet, Rundung „half up".
 
@@ -104,8 +104,8 @@ Geldspalten sind `Numeric(14,2)`, Kurse `Numeric(18,6)`. Geld wird in Python **i
 |---|---|---|
 | parent | Eltern-Bereich | Elternportal (läuft weiter, bis die App verifiziert ist) |
 | teacher | Lehrkraft-Bereich | Lehrkräfteportal, Webseiteninhalte (Bilder, Video, Nachrichten) |
-| manager | Leitungsbereich (Berichtsprüfung, Kurs-Editor) | Verwaltungsportal |
-| accountant | – (Hinweis „nur Webseite") | Buchhaltung inkl. Kassenbuch |
+| manager | Leitungsbereich (Berichtsprüfung, Kurs-Editor) | Verwaltungsportal; Buchhaltung über `../admin/` (Link auf der Startseite) |
+| accountant | – (Hinweis „nur Webseite") | Buchhaltung (drei Seiten) |
 | admin | – | alles, Konten, Einstellungen, Systemprotokoll |
 
 `GET /api/platform/auth/me` liefert die Rollen; die App leitet daraus `Session.areas` ab (Reihenfolge Leitung, Lehrkraft, Eltern). Mit mehreren Rollen wechselt man im Profil, unter „Mehr" und in der Seitenleiste den Bereich (zuletzt benutzter Bereich in `shared_preferences`, Schlüssel `area`).
@@ -125,21 +125,11 @@ Geldspalten sind `Numeric(14,2)`, Kurse `Numeric(18,6)`. Geld wird in Python **i
 - **Verwaltung/Admin** (`/api/admin/platform/...`, `community.py`): Konten, Status, Passwort zurücksetzen, Kinder, Gruppen, Personen, Statistiken, Dateien aller Lehrkräfte, Sicherheitsübersicht, Mitteilungen, Besucher (`visits.py`).
 - **Webseiteninhalte** (`/api/admin/gallery|news|settings|content`): lesen/schreiben `content.json` und Mediendateien über die GitHub-API (Token nur auf dem Server).
 
-### 7.2 Buchhaltung (nur Web, Rollen accountant/admin)
-Präfix `/api/admin/accounting` (`accounting.py`), `/api/admin/fees` (`fees.py`), Workflow (`workflow.py`), Kassenbuch (`finance.py`).
-- **Gebühren:** Zeilen je Kind, Monat, Währung (`USD`/`SYP`), Zahlungen (Pflichtdatum, Doppelklick-Schutz, nie über den offenen Betrag), Rückerstattung als eigene negative Zahlung, Prüfmarke `needs_review`, Excel-Export, Protokoll `/audit`.
-- **Gehälter:** `Employee`, Monatszeilen (Netto = Basis + Bonus − Vorschuss − Abzug, nie gespeichert), `paid_on`, Erzeugen für alle, Excel-Export.
-- **Kassenblätter (alt):** Tages-, Wochen-, Monatsblätter `PUT /entries` (Standardposten + freie Zeilen), Belege (PDF/JPG/PNG/WEBP, bis 3 MB, bis 5 je Zeile), Versionsprüfung (`expected_version`).
-- **Kasse:** `GET/PUT /cash` (Anfangsbestand je Währung ab Startmonat), Kassenzählung `/cash/counts`.
-- **Monatsabschluss:** `POST /periods/close` (nur beendete Monate, Blocker: Zeilen mit „Prüfung nötig"; speichert Schnappschuss der Summen), `POST /periods/reopen` (nur Admin, Grund ≥ 5 Zeichen). Geschlossene Monate sind für alles gesperrt (`ensure_open` → HTTP 423).
-- **Kurs:** automatischer Abruf aus `open.er-api.com` (neues syrisches Pfund × `SYP_RATE_SCALE` 100, wenn Wert < 1000), manuell überschreibbar, `/convert` rechnet exakt.
-- **Workflow:** 11 Schritte pro Monat (`workflow.py`), Bestätigungen, Wochenprüfung, Monatsarchiv als Excel.
-- **Reset:** `POST /accounting/reset` und `POST /accounting/reset-part` sind auf PostgreSQL (echte Datenbank) immer gesperrt (423); nur auf SQLite-Testdatenbanken möglich. Die Oberfläche bietet sie nicht mehr an. Finanzdaten werden storniert, nie gelöscht.
-- **Die Buchhaltung besteht aus genau drei Seiten** (`books.py`, Präfix `/api/admin/books`, Oberfläche `admin/books.js`): Einnahmen (الإيرادات), Ausgaben (المصروفات) und Monatsübersicht (الملخص الشهري). Alle Buchungen liegen in `cash_transactions`; `currency`/`amount` = tatsächlich Gezahltes, dazu `amount_other` + `rate_syp_per_usd` + `rate_date` + `rate_source` (Kurs des Buchungstags, eingefroren), `note`, optional `employee_id` (nur Kategorie Gehälter) und `child_id` (nur Einnahmen). Jede Zeile und jede Summe zeigt USD und SYP nebeneinander; die Spalten werden einzeln addiert (nie zu einer Zahl), darunter die Zeile „tatsächlich bezahlt je Währung". Bearbeiten (mit Grund, Vorher/Nachher, eingefrorener Kurs bleibt; `refresh_rate` nur auf Wunsch) nur im laufenden und vorigen Monat (423 sonst), Storno mit Grund jederzeit; nichts wird gelöscht. Alte Gebühren-/Gehaltszahlungen und Alt-Buchungen erscheinen lesbar in denselben Seiten (Kurs „reconstructed"). Schreiben nur, wenn das Kassenbuch `live` ist (vorher 409, Seiten nur lesend mit Hinweis). Rechte: Leitung und Admin immer; Buchhaltung nur mit den Einzelrechten `books.view` / `books.write` (Migration 0037 gibt sie den vorhandenen Buchhaltungs-Konten einmalig). **Wechselkurs setzt die Leitung/Admin** (`PUT /accounting/rates`, Buchhaltung nur lesend). Leitung öffnet die Seiten über `../admin/` mit ihrer Sitzung (`BOOKS_MODE` in `admin.js`). Sobald `live`, zeigt der Admin-Bereich die alten Buchhaltungs-Tabs (Gebühren, Rechnungen, Kurs, Kassenbuch) nicht mehr an; die Daten bleiben unverändert in der Datenbank.
-- **Rechnungen** (`invoicing.py`, Präfix `/api/admin/invoices`; seit den drei Seiten nur noch ein Übergang, keine eigene Seite): jede Rechnung zeigt USD und SYP nebeneinander (Positionen, Summe, bezahlt, offen). Rechnungswährung = Währung der Zeile; die Gegenseite wird mit dem beim Erstellen eingefrorenen Kurs berechnet und pro Position einmal gerundet (SYP ganze Lira, USD Cent, kaufmännisch). Zahlung in USD oder SYP: tatsächlicher Betrag/Währung bleibt gespeichert, Gutschrift mit dem Kurs des Zahltags (abweichender Kurs nur mit Grund). Überzahlung wird abgelehnt, nie gekürzt. Rechte: Buchhaltung, Leitung, Admin dürfen ansehen/erstellen/zahlen; Storno über `/finance/payments/{id}/void`. `POST /invoices/backfill?apply=` (nur Admin) und `python -m app.manage invoices-backfill [--apply]` frieren alte Zeilen ein (Kurs vom Monatsende, `reconstructed`) und nummerieren sie; Beträge und Zahlungen bleiben unberührt. Alte, nie eingefrorene Zeilen werden trotzdem in beiden Währungen angezeigt (Kurs „reconstructed", nicht gespeichert).
-- **Kurs:** `PUT /accounting/rates` verlangt einen Grund (≥ 5 Zeichen), wenn ein manuell gespeicherter Kurs ersetzt wird; Vorher/Nachher im Aktivitätsprotokoll. Leitung darf den Kurs ansehen, nicht setzen.
-- **Mitarbeiter** (`/accounting/employees`, Anlegen/Ändern/Deaktivieren nur Leitung+Admin): Nr. M-0001…, Telefon, Eintritt, Austritt (beim Deaktivieren), Notizen (für Buchhaltung ausgeblendet). Export `GET /accounting/employees/export.xlsx|csv?scope=all|active` (nur Leitung+Admin, protokolliert; Telefon/Nr. bleiben Text).
-- **Kassenbuch** (Abschnitt 11): `/finance/categories|status|overview|book|history/{id}|voided`, `/bookings…`, `/booking-receipts…`, `/finance/payments|charges|salaries/{id}/void`.
+### 7.2 Buchhaltung und Personal (nur Web)
+- **Buchhaltung** (`money.py`, Präfix `/api/admin/money`, Oberfläche `admin/money.js`): genau drei Seiten – Einnahmen (mit Rechnungen und deren Zahlungen), Ausgaben (mit Gehältern), Monatsübersicht (mit Abschluss). Endpunkte: `/meta`, `/rates` (GET, POST nur Leitung), `/categories`, `/income` (+ `PATCH`, `/void`), `/invoices` (+ `/payments`, `/void`), `/expenses` (+ `PATCH`, `/void`), `/salaries`, `/history/{id}`, `/summary`, `/closings` (+ `/reopen`), `/export/income|expenses|summary.xlsx|csv`. Details: `docs/accounting.md`.
+- **Personal und Kinder** (`people.py`, Präfix `/api/admin/people`): `/employees` (lesen: Leitung, Admin, Buchhaltung; ändern: Leitung, Admin), `/employees/export.xlsx|csv?scope=all|active` (nur Leitung/Admin, Telefon/Nr. bleiben Text), `/staff-accounts`, `/children`, `/parent-accounts`. Deaktivieren statt Löschen.
+- **Protokoll** (`activity.py`, Präfix `/api/admin/activity`): lesen, Personen, Excel-Export. Admin: alle Bereiche; Leitung: Geldbereich; Buchhaltung: nur eigene Zeilen.
+- **Rechte (`money.rights`):** Leitung/Admin alles; Buchhaltung erfasst und liest; Ändern/Stornieren nur mit `books.correct`, Export nur mit `books.export` (vergibt der Admin in der Kontrollzentrale); Kurs, eigener Kurs im Formular, Monatsabschluss, Kategorien und Personal-Export nur Leitung/Admin.
 
 ---
 
@@ -201,30 +191,20 @@ Portale teilen ein Kontosystem (`/login/`). Nach der Anmeldung liefert `/api/aut
 
 ## 11. Buchhaltung im Detail
 
-### 11.1 Altes System (bis zur Umschaltung maßgeblich)
-Kassenblätter pro Zeitraum. Eine Zeile je Posten, Zeitraum und Währung. Standardposten: Anmeldegebühren (automatisch aus Zahlungen), laufender Betrieb, Gehälter (automatisch aus Auszahlungen), Aktivitäten, Einkäufe, Buffet, Transport, Werbung, Sonstiges, dazu freie Zeilen. **Vorrangregel:** Monat schlägt Woche schlägt Tag; Wochen zählen für den Monat ihres mittleren Tages (`Wochenbeginn + 3`, bei Montagsbeginn der Donnerstag); Tageszeilen zählen nicht, wenn eine Wochenzeile desselben Postens sie abdeckt; freie Zeilen addieren sich ohne Überdeckungsregel; von Hand überschriebene Automatikposten ersetzen den Automatikwert; ein Gehalt ohne Auszahlungsdatum zählte im Monatsblatt im eigenen Monat.
-
-### 11.2 Kassenbuch (neu, `ledger.py`, `finance.py`, `legacy_migration.py`)
-**Zustände:** (kein Eintrag) = alt; `shadow` = Altdaten übernommen und geprüft, alt ist maßgeblich; `live` = Kassenbuch ist maßgeblich, alte Blätter nur lesbar.
-**Bestand = Anfangsbestand + Σ Einnahmen − Σ Ausgaben, je Währung getrennt** (USD/SYP werden nie addiert oder umgerechnet).
-**Quellen (jede Bewegung hat genau eine):** `fee_payment`, `salary_payment`, `booking` (manuell), `legacy` (Sammelbuchung aus Altzeile), `legacy_adjustment` (historische Ausgleichsbuchung, keine echte Zahlung).
-**Zwei Bestände:** *Kassenbestand* (nur echtes Geld, `counts_in_cash`) und *historischer Buchhaltungsbestand* (zusätzlich Ausgleichsbuchungen, entspricht dem alten System). Kassenzählung vergleicht mit dem Kassenbestand.
-**Datumsart (`date_basis`, genau fünf Werte):** `actual`, `estimated_fee_month` (undatierte Altzahlung, letzter Tag des Gebührenmonats), `legacy_month_end`, `legacy_week_mid`, `derived_payment_date`.
-**Gehälter:** zählen erst bei `paid_on`. Alte Gehälter ohne Auszahlung in abgeschlossenen Monaten → Ausgleich `salary_unpaid` (zählt **nicht** im Kassenbestand). Handgeschriebene Monatswerte → Ausgleich `manual_override` (zählt im Kassenbestand). Wird die Auszahlung später eingetragen: Ausgleich im offenen Monat wird automatisch storniert; im geschlossenen Monat bleibt er, und eine Gegenbuchung `salary_counter` im offenen Zahlungsmonat hebt ihn historisch auf. **Enge Ausnahme:** Auf einer Gehaltszeile eines geschlossenen Monats ist ausschließlich das Setzen von `paid_on` erlaubt (Zahlungsmonat muss offen sein), alles andere bleibt gesperrt (423). Doppelzählung ist zusätzlich in `ledger.py` ausgeschlossen.
-**Kategorien:** Einnahmen: Gebühren (nur automatisch), Spenden, Sonstige Einnahmen. Ausgaben: Gehälter (nur automatisch), Miete, Lebensmittel, Laufender Betrieb, Aktivitäten, Material, Transport, Werbung, Sonstiges. Handbuchungen in „Gebühren"/„Gehälter" werden abgelehnt; Kategorie muss zur Art passen.
-**Storno statt Löschen:** `POST …/void` mit Grund (≥ 5 Zeichen); Zeile bleibt sichtbar (durchgestrichen), zählt nicht mehr; nur in offenen Monaten. Gilt für Buchungen, Gebührenzahlungen, Gebührenzeilen (nur ohne aktive Zahlungen) und Gehaltszeilen. Belege werden nie gelöscht, nur mit Grund aus der Ansicht entfernt (`removed_*`). Nach der Umschaltung liefern die alten `DELETE`-Wege HTTP 409.
-**Protokoll:** `audit()` schreibt Benutzer, Zeit (Mikrosekunden), Aktion, Vorher, Nachher (JSON), Grund. Anzeige in Damaskus-Zeit.
-**Zeitzone:** `app/timeutil.py` (`local_today()`, `local_now()`, `to_local()`), Standard `Asia/Damascus`; Geschäftsdaten (Buchungstag, Monatsgrenzen, Abschluss, Zählung) darüber, Zeitstempel in UTC.
-**Reset-Sperre:** Nach der Umschaltung nur mit `ALLOW_FINANCE_RESET=1` **und** SQLite; bei PostgreSQL nie.
-**Umschalt-CLI (`python -m app.manage …`):** `ledger-migrate` (Trockenlauf; `--apply`, `--refresh`, `--go-live`, `--report-file`, `--by`), `ledger-live`, `ledger-rollback` (nur solange nichts Neues entstand), `ledger-discard` (nur in `shadow`), `ledger-status`. Abbruch (Exit 2) bei jeder ungeklärten Differenz; ein Fingerabdruck (Zeilenzahl und SHA-256, Belegdateien inklusive) beweist, dass die Altdaten unverändert bleiben. **Ablauf und Sicherheitsregeln: `backend/LEDGER_MIGRATION.md`.**
-**Web:** Tab „دفتر الصندوق" (`admin/finance.js`): Finanzübersicht, Kassenbuch (Filter, Abzeichen, Storno, Belege, Verlauf), Aktivitätsprotokoll.
-**Stand:** Der Code ist gepusht. Die Umstellung auf der echten Datenbank ist **nicht** erfolgt.
+Siehe `docs/accounting.md`. Kurz:
+- Jeder Vorgang speichert Betrag, tatsächliche Währung, Kurs und Gegenwert; spätere Kurse ändern nichts. Rundung half up: Dollar → ganze Lira, Lira → Cent.
+- **Summen je Währung aus dem tatsächlich in dieser Währung gezahlten Geld** (Einnahmen USD − Ausgaben USD usw.). Der Gegenwert wird angezeigt, aber nie zusätzlich gezählt; die umgerechnete Gesamtsicht erscheint nur „zum Vergleich".
+- Rechnung = Forderung; nur eine Zahlung (Einnahme mit `invoice_id`) ist Einnahme. Bezahlt/offen/Status werden berechnet; Überzahlung wird abgelehnt.
+- Gehalt = Ausgabe der Kategorie `salaries` mit Mitarbeiter und `salary_month`; pro Person und Monat nur einmal, solange die Zahlung steht.
+- Nie löschen: offener Monat → Storno mit Grund; abgeschlossener Monat → Gegenbuchung im offenen Monat. Abschluss/Wiedereröffnung nur Leitung, protokolliert.
+- Doppelklick-Schutz (gleiche Buchung innerhalb 30 s), Versionsprüfung beim Ändern (`expected_version`).
+- Zeitzone: `app/timeutil.py`, Standard `Asia/Damascus` für Buchungstage und Monate.
 
 ---
 
 ## 12. Tests und Qualitätstore
 
-- Backend: `cd backend && python -m unittest discover -s tests -t . -q` (zuletzt **260 Tests grün**). Tests laufen gegen SQLite im Speicher (`Base.metadata.create_all`), Basis `ControlsBase` mit Konten `acc`, `acc2`, `teacher1`, `parent1`, `mgr0`, Legacy-Admin und einem Kind „Amal".
+- Backend: `cd backend && python -m unittest discover -s tests -t . -q` (zuletzt **157 Tests grün**, nach Entfernen der alten Buchhaltungstests). Tests laufen gegen SQLite im Speicher (`Base.metadata.create_all`), Basis `ControlsBase` mit Konten `acc`, `acc2`, `teacher1`, `parent1`, `mgr0`, Legacy-Admin und einem Kind „Amal".
 - App: `flutter analyze` (muss „No issues found!" melden) und `flutter test` (zuletzt **32 Tests grün**).
 - Neue Funktion → neuer Test, der den echten Ablauf prüft (nicht nur „Widget vorhanden").
 - Migrationen: additiv, Alembic-Revisions-ID höchstens 32 Zeichen, `downgrade()` vorhanden, auf SQLite hoch und runter geprüft (`alembic upgrade head`, `downgrade`, erneut `upgrade`).
@@ -275,7 +255,7 @@ Kassenblätter pro Zeitraum. Eine Zeile je Posten, Zeitraum und Währung. Standa
 13. Alle sichtbaren Texte der App nur über `strings.dart`, jeder Schlüssel in `ar`, `de`, `en`.
 14. Keine erfundenen API-Endpunkte oder Datenfelder; fehlt etwas, die nötige Backend-Erweiterung dokumentieren und vorschlagen.
 15. Die App muss alte Android- und iOS-Versionen unterstützen; eine Codebasis für Android, iOS und Windows.
-16. Die Admin-Oberfläche nutzt den Helfer `h()` (Texte laufen durch `uiText`/`EN_TEXT`), `request()`, `setMsg()`, `errText()`, `money()`, `accSelect()`, `accField()`, `accToast()`, `accWhen()`.
+16. Die Admin-Oberfläche nutzt den Helfer `h()` (Texte laufen durch `uiText`/`EN_TEXT`), `request()`, `setMsg()`, `errText()`, `money()` sowie aus `admin/ui.js`: `uiT()`, `uiField()`, `uiSelect()`, `uiTable()`, `uiBadge()`, `uiNum()`, `uiToast()`, `uiWhen()`, `uiLogCard()`.
 
 ---
 
@@ -284,18 +264,17 @@ Kassenblätter pro Zeitraum. Eine Zeile je Posten, Zeitraum und Währung. Standa
 - **Gepusht (`origin/main` = `4bc621f`):** Leitungsbereich und Kurs-Editor, Berichts-Erweiterungen (Rückgabegrund, Kindernamen, Anhänge für Leitung und Eltern), Redesign der App, Kassenbuch (Backend, Migration `0029`, Übernahme-Logik, Web-Tab), Zeitzone, Upload-Fortschritt, Beitragsvorschau, Freigabeleiste.
 - **Lokal unversioniert:** `mobile_app/windows/`, `.vscode/`, einzelne Metadaten (`.metadata`, `analysis_options.yaml`, `pubspec.lock`).
 - **Render:** Der Deploy mit den Migrationen `0027`–`0029` muss vom Besitzer ausgelöst werden. Danach kennt der echte Server den Leitungsbereich. Ohne Deploy zeigt das Windows-Fenster gegen den echten Server nur den alten Stand.
-- **Kassenbuch:** Nach dem Deploy sichtbar, aber **nicht eingeschaltet**. Die alte Buchhaltung arbeitet unverändert.
+- **Buchhaltung:** Die alte Buchhaltung ist entfernt (Branch `accounting-rewrite`, nicht gepusht). Neue Buchhaltung mit drei Seiten; Sauberer Neustart (alte Daten nur als geprüfte Sicherung).
 
 ## 16. Offene Punkte
 
 1. Render-Deploy auslösen und danach den Leitungsbereich mit echten Konten testen (die Rolle `manager` muss auf der Webseite im Verwaltungsbereich angelegt sein).
-2. Buchhaltungsumstellung: Neon-Backup → `ledger-migrate` (Trockenlauf) → Bericht gemeinsam lesen → `--apply` → Vorschau → `ledger-live`. Nur mit ausdrücklicher Freigabe.
+2. Echte Datenbank: Neon-Snapshot → `python -m app.manage finance-backup --out …` (prüft sich selbst) → Deploy → später `drop-old-finance --backup …`. Nur mit ausdrücklicher Freigabe (siehe `backend/FINANCE_SWITCH.md`).
 3. Restliche Redesign-Punkte, die noch nicht im echten Fenster abgenommen sind (Layout im breiten Fenster, Bedienung der neuen Bildschirme).
-4. Web: Das neue Kassenbuch wurde nur auf Syntax geprüft, nicht im Browser bedient.
+4. Web: Die drei Buchhaltungsseiten wurden lokal im Browser (Edge headless, Testdaten) angesehen; Klick-Abläufe (Formulare absenden) nur über die API-Tests geprüft.
 5. Push-Benachrichtigungen (Firebase), iOS-Build (Mac + Apple-Entwicklerkonto), Google Play.
 6. Android-APK 1.0.3 mit neuem Design erst nach „final" (danach `app-version.json` nach Veröffentlichung der Release `app-v1.0.3` aktualisieren).
 7. Kleinere offene Entscheidungen: Eltern sehen Berichtsanhänge (umgesetzt), Datum beim Bericht wählen (setzt `created_at` serverseitig, nicht änderbar), alte GitHub-Releases aufräumen, Sicherung der Signierschlüssel.
-8. Eine stornierte Gebührenzeile blockiert für dasselbe Kind, denselben Monat und dieselbe Währung eine neue Zeile (Korrektur über Betragsänderung).
 
 ## 17. Fertigkeits-Checkliste für jede Aufgabe (Definition of Done)
 

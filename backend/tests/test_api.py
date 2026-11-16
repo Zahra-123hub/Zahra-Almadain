@@ -847,15 +847,15 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(entry["portals"], ["teacher", "accountant"])
         headers = {"Authorization": "Bearer " + entry["access_token"]}
         # one token works for what both roles allow
-        self.assertEqual(self.client.get("/api/admin/fees", headers=headers).status_code, 200)
-        self.assertEqual(self.client.get("/api/admin/accounting/salaries", headers=headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/money/meta", headers=headers).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/money/salaries", headers=headers).status_code, 200)
         self.assertEqual(self.client.get("/api/admin/content", headers=headers).status_code, 503)  # passed the guard (no GitHub here)
         # roles can be reduced again, but never to nothing or to unknown roles
         self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": []}).status_code, 422)
         self.assertEqual(self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["janitor"]}).status_code, 422)
         only = self.client.patch(base, headers=self.legacy_admin_headers, json={"roles": ["teacher"]})
         self.assertEqual(only.json()["roles"], ["teacher"])
-        self.assertEqual(self.client.get("/api/admin/fees", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get("/api/admin/money/meta", headers=headers).status_code, 403)
 
     def test_rejected_registration_request_gets_no_code(self):
         self.client.post(
