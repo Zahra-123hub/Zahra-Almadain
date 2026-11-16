@@ -306,7 +306,7 @@ class ExportTests(MoneyBase):
         summary = load_workbook(io.BytesIO(self.client.get(MONEY + "/export/summary.xlsx", headers=self.mgr).content)).active
         first = [c.value for c in summary[2]]
         self.assertEqual(first[:3], ["إجمالي الإيرادات", 20, 0])
-        self.assertEqual(self.client.get(MONEY + "/export/summary.pdf", headers=self.mgr).status_code, 422)
+        self.assertEqual(self.client.get(MONEY + "/export/summary.doc", headers=self.mgr).status_code, 422)  # only xlsx, csv and (for the report) pdf
         self.assertIn("export.income", self.actions())
 
 
@@ -382,3 +382,34 @@ class AutomaticRateTests(ControlsBase):
         with patch("app.money.httpx.get", side_effect=RuntimeError("offline")):
             self.assertIsNone(real())
         money._feed_blocked_until = None
+
+
+class PdfTests(MoneyBase):
+    def test_an_invoice_is_a_signed_pdf_with_the_logo(self):
+        made = self.invoice(items=(("fee", "20"), ("bus", "5"))).json()
+        self.pay(made["id"], "10")
+        response = self.client.get(f"{MONEY}/invoices/{made['id']}.pdf", headers=self.acc)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertIn(made["number"] + ".pdf", response.headers["content-disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+        self.assertIn(b"/Subtype /Image", response.content)  # the logo is in the file
+        self.assertIn("export.invoice_pdf", self.actions())
+        for headers in (self.teacher, self.parent):
+            self.assertEqual(self.client.get(f"{MONEY}/invoices/{made['id']}.pdf", headers=headers).status_code, 403)
+
+    def test_the_month_report_is_a_signed_pdf_for_those_who_may_export(self):
+        self.income("20", "USD")
+        self.expense("60000", "SYP")
+        self.assertEqual(self.client.get(MONEY + "/export/summary.pdf", headers=self.acc).status_code, 403)  # needs books.export
+        response = self.client.get(MONEY + "/export/summary.pdf", headers=self.mgr)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_the_verification_code_follows_the_figures(self):
+        from app import pdfs
+
+        a = pdfs.verification(["invoice", "INV-2026-0001", "25.00"])
+        self.assertEqual(a, pdfs.verification(["invoice", "INV-2026-0001", "25.00"]))
+        self.assertNotEqual(a, pdfs.verification(["invoice", "INV-2026-0001", "26.00"]))  # a changed number no longer matches
+        self.assertRegex(a, r"^[0-9A-F]{4}(-[0-9A-F]{4}){3}$")

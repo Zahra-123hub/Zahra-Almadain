@@ -66,9 +66,11 @@ function mnFilters(categories, onChange){
 }
 function mnExport(meta, kind, monthOf){
   if(!meta.rights.export) return "";
-  function go(fmt){ downloadFile("/api/admin/money/export/" + kind + "." + fmt + "?month=" + monthOf(), kind + "-" + monthOf() + "." + fmt).catch(function(e){ uiToast(errText(e), "err"); }); }
-  return h("div", {class:"a-row"}, [h("span", {class:"hint", text:uiT(["تصدير الشهر:", "Export the month:"])}),
-    h("button", {type:"button", class:"a-btn ghost", text:"XLSX", onclick:function(){ go("xlsx"); }}), h("button", {type:"button", class:"a-btn ghost", text:"CSV", onclick:function(){ go("csv"); }})]);
+  function go(fmt){ downloadFile("/api/admin/money/export/" + kind + "." + fmt + "?month=" + monthOf(), (kind === "summary" && fmt === "pdf" ? "report" : kind) + "-" + monthOf() + "." + fmt).catch(function(e){ uiToast(errText(e), "err"); }); }
+  var buttons = [h("span", {class:"hint", text:uiT(["تصدير الشهر:", "Export the month:"])})];
+  if(kind === "summary") buttons.push(h("button", {type:"button", class:"a-btn sun", text:uiT(["تقرير PDF موقّع", "Signed PDF report"]), onclick:function(){ go("pdf"); }}));
+  buttons.push(h("button", {type:"button", class:"a-btn ghost", text:"XLSX", onclick:function(){ go("xlsx"); }}), h("button", {type:"button", class:"a-btn ghost", text:"CSV", onclick:function(){ go("csv"); }}));
+  return h("div", {class:"a-row"}, buttons);
 }
 /* amount + currency + rate (the rate of the day is proposed; only the management may type another one) */
 function mnMoneyFields(meta, row){
@@ -182,6 +184,9 @@ function tabIncome(){
         }), uiT(["لا دفعات بعد", "No payments yet"]));
         var kids = [h("h3", {text:uiT(["فاتورة ", "Invoice "]) + v.number + " — " + (v.child || v.payer_name)}),
           h("p", {}, [uiBadge(uiT(st), st[2]), h("span", {class:"hint", text:" " + v.issued_on + " · " + uiT(["العملة ", "currency "]) + v.currency + " · 1 USD = " + uiNum(v.rate) + " SYP" + (v.description ? " · " + v.description : "")})]),
+          h("div", {class:"a-row"}, [h("button", {type:"button", class:"a-btn sun", text:uiT(["تنزيل الفاتورة PDF (موقّعة)", "Download the invoice as PDF (signed)"]), onclick:function(){
+            downloadFile("/api/admin/money/invoices/" + v.id + ".pdf", v.number + ".pdf").catch(function(e){ uiToast(errText(e), "err"); });
+          }})]),
           table, h("h4", {text:uiT(["الدفعات", "Payments"])}), pays];
         if(v.status === "open" || v.status === "partial"){
           var day = h("input", {type:"date", max:meta.today, value:meta.today}), payer = h("input", {type:"text", maxlength:"120", value:v.payer_name});

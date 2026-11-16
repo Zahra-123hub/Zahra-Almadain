@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app import activity
+from app import activity, pdfs
 from app.actors import Actor, has_grant
 from app.database import get_session
 from app.models import Child, CurrencyRate, Employee, ExpenseEntry, FeeAuditLog, IncomeCategory, IncomeEntry, Invoice, InvoiceItem, MonthClosing
@@ -717,6 +717,21 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
             data = [d for d in data if needle in (d["number"] + " " + d["child"] + " " + d["payer_name"] + " " + d["description"]).lower()]
         return {"rows": data}
 
+    def pdf_response(name: str, content: bytes) -> Response:
+        return Response(content=content, media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.get("/invoices/{invoice_id}.pdf")
+    def invoice_pdf(invoice_id: uuid.UUID, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> Response:
+        """The invoice as a PDF with the logo, signed automatically by the person who issues it."""
+        invoice = session.get(Invoice, invoice_id)
+        if invoice is None:
+            raise HTTPException(404, "الفاتورة غير موجودة.")
+        data = invoice_dict(invoice, child_names(session, {invoice.child_id}), with_payments=True)
+        audit(session, actor, "export.invoice_pdf", "invoice", invoice.id, None, {"number": invoice.number})
+        session.commit()
+        return pdf_response(f"{invoice.number}.pdf", pdfs.invoice_pdf(data, pdfs.signer_of(actor.name, actor.role)))
+
     @router.get("/invoices/{invoice_id}")
     def one_invoice(invoice_id: uuid.UUID, response: Response, _actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
         response.headers["Cache-Control"] = "no-store"
@@ -1026,6 +1041,12 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         audit(session, actor, "export.summary", "export", data["month"], None, {"format": fmt})
         session.commit()
         current = rate_on(session, month_range(year, mon)[1])
+        if fmt == "pdf":  # the signed report of the month
+            span = month_range(year, mon)
+            incomes = income_list(session, income_rows(session, *span, None, ""))
+            expenses = expense_list(session, expense_rows(session, *span, "", ""))
+            shown = "—" if current is None else f"{pdfs.num(rate_text(current.syp_per_usd))} ليرة للدولار"
+            return pdf_response(f"report-{data['month']}.pdf", pdfs.month_report_pdf(data, incomes, expenses, pdfs.signer_of(actor.name, actor.role), shown))
         header = ["البند", "USD (المدفوع بالدولار)", "SYP (المدفوع بالليرة)", "العدد"]
         body: list[list[Any]] = [
             ["إجمالي الإيرادات", money_cell(data["income"]["usd"]), money_cell(data["income"]["syp"]), data["income_count"]],
