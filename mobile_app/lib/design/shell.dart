@@ -287,7 +287,14 @@ class _MorePage extends StatelessWidget {
   }
 }
 
-String areaLabel(S s, Area a) => s.get(a == Area.management ? 'managementArea' : (a == Area.teacher ? 'teacherArea' : 'parentArea'));
+String areaLabel(S s, Area a) => s.get(switch (a) { Area.management => 'managementArea', Area.accounting => 'accountingArea', Area.teacher => 'teacherArea', Area.parent => 'parentArea' });
+
+IconData areaIcon(Area a) => switch (a) {
+      Area.management => Icons.shield_outlined,
+      Area.accounting => Icons.account_balance_wallet_outlined,
+      Area.teacher => Icons.edit_note_rounded,
+      Area.parent => Icons.family_restroom_rounded,
+    };
 
 /// The tiles for changing between the areas of one account (management, teacher, parent).
 class AreaSwitcher extends StatelessWidget {
@@ -312,7 +319,7 @@ class AreaSwitcher extends StatelessWidget {
                 border: Border.all(color: a == session.area ? brandBlue : (light ? const Color(0xFFE3E9F0) : Colors.transparent), width: a == session.area ? 2 : 1),
               ),
               child: Row(children: [
-                Icon(a == Area.management ? Icons.shield_outlined : (a == Area.teacher ? Icons.edit_note_rounded : Icons.family_restroom_rounded), size: 20, color: a == session.area || light ? brandBlue : Colors.white70),
+                Icon(areaIcon(a), size: 20, color: a == session.area || light ? brandBlue : Colors.white70),
                 const SizedBox(width: 10),
                 Expanded(child: Text(areaLabel(s, a), style: TextStyle(fontWeight: a == session.area ? FontWeight.w700 : FontWeight.w500, color: a == session.area || light ? brandBlue : Colors.white))),
                 if (a == session.area) const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF1E7A45)),

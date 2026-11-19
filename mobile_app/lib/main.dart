@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'design/shell.dart';
+import 'features/accounting/accounting_pages.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/role_chooser_page.dart';
 import 'features/common/common_pages.dart';
@@ -55,6 +56,8 @@ class _Root extends StatelessWidget {
     switch (session.area) {
       case Area.management:
         return const ManagementShell();
+      case Area.accounting:
+        return const AccountingShell();
       case Area.teacher:
         return const TeacherShell();
       default:
@@ -141,6 +144,28 @@ class ManagementShell extends StatelessWidget {
         ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => ManagementHome(goTo: go)),
         ShellItem(id: 'review', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check, label: s.get('reviewReports'), page: (_) => const ReviewReports()),
         ShellItem(id: 'course', icon: Icons.school_outlined, activeIcon: Icons.school, label: s.get('manageLearning'), page: (_) => const CourseEditor()),
+        ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
+      ],
+      more: [
+        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
+        ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
+      ],
+    );
+  }
+}
+
+/// The accounting: the month overview first, then income and expenses (the same pages as on the website).
+class AccountingShell extends StatelessWidget {
+  const AccountingShell({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return AdaptiveShell(
+      roleLabel: s.get('accountingArea'),
+      items: [
+        ShellItem(id: 'summary', icon: Icons.insights_outlined, activeIcon: Icons.insights, label: s.get('mnSummary'), page: (_) => const MoneySummaryPage()),
+        ShellItem(id: 'income', icon: Icons.south_west_rounded, activeIcon: Icons.south_west_rounded, label: s.get('mnIncome'), page: (_) => const MoneyEntriesPage(kind: 'income')),
+        ShellItem(id: 'expenses', icon: Icons.north_east_rounded, activeIcon: Icons.north_east_rounded, label: s.get('mnExpenses'), page: (_) => const MoneyEntriesPage(kind: 'expenses')),
       ],
       more: [
         ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),

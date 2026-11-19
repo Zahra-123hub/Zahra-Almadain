@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zahra_app/design/shell.dart';
+import 'package:zahra_app/features/accounting/accounting_pages.dart';
 import 'package:zahra_app/features/auth/login_page.dart';
 import 'package:zahra_app/features/auth/role_chooser_page.dart';
 import 'package:zahra_app/features/management/management_pages.dart';
@@ -115,7 +116,7 @@ void main() {
     });
 
     test('an account with one app area and other roles on the website works in that area at once and tells the server', () async {
-      final (session, calls) = serverSession(['parent', 'accountant']);
+      final (session, calls) = serverSession(['parent', 'admin']); // the administration is on the website only
       await session.start();
       expect((session.area, session.needsAreaChoice), (Area.parent, false));
       expect(calls, ['parent']);
@@ -155,11 +156,16 @@ void main() {
       expect(session.area, Area.teacher);
     });
 
-    test('admin and accounting accounts have no area in the app', () async {
-      final session = Session(ApiClient(client: MockClient((_) async => json({'id': 'a1', 'username': 'x', 'roles': ['admin', 'accountant']}))))..api.token = 'abc';
-      await session.start();
-      expect(session.areas, isEmpty);
-      expect(session.hasMobileArea, isFalse);
+    test('an admin account has no area in the app; an accounting account has the accounting', () async {
+      final admin = Session(ApiClient(client: MockClient((_) async => json({'id': 'a1', 'username': 'x', 'roles': ['admin']}))))..api.token = 'abc';
+      await admin.start();
+      expect(admin.areas, isEmpty);
+      expect(admin.hasMobileArea, isFalse);
+      final money = Session(ApiClient(client: MockClient((r) async => r.url.path.endsWith('/switch-role')
+          ? json({'access_token': 't2', 'active_role': 'accountant'})
+          : json({'id': 'a2', 'username': 'y', 'roles': ['admin', 'accountant']}))))..api.token = 'abc';
+      await money.start();
+      expect(money.areas, [Area.accounting]);
     });
   });
 
@@ -678,6 +684,118 @@ void main() {
       await tester.tap(find.byType(FilledButton));
       await tester.pumpAndSettle();
       expect(find.text('Benutzername oder Passwort falsch.'), findsOneWidget);
+    });
+  });
+
+  group('accounting', () {
+    test('an accountant has the accounting area in the app; several roles choose first', () async {
+      final only = Session(ApiClient(client: MockClient((r) async => r.url.path.endsWith('/auth/me')
+          ? json({'id': 'a1', 'username': 'acc', 'roles': ['accountant'], 'active_role': 'accountant'})
+          : json({'access_token': 't', 'active_role': 'accountant', 'roles': ['accountant']}))));
+      await only.login('acc', 'x');
+      expect((only.hasMobileArea, only.area), (true, Area.accounting));
+      expect(only.areas, [Area.accounting]);
+      expect(Session.roleOf[Area.accounting], 'accountant');
+      final both = Session(ApiClient(client: MockClient((r) async => r.url.path.endsWith('/auth/me')
+          ? json({'id': 'a2', 'username': 'm', 'roles': ['manager', 'accountant'], 'active_role': null})
+          : json({'access_token': 't'}))));
+      await both.login('m', 'x');
+      expect(both.areas, [Area.management, Area.accounting]);
+      expect(both.needsAreaChoice, true);
+    });
+
+    test('amounts are only formatted, never computed; months turn over the year', () {
+      expect(moneyText('1234567.5'), '1,234,567.5');
+      expect(moneyText('-300000'), '-300,000');
+      expect(moneyText(null), '—');
+      expect((shiftMonth('2026-01', -1), shiftMonth('2026-12', 1)), ('2025-12', '2027-01'));
+      expect(monthTitle('ar', '2026-11'), 'تشرين الثاني 2026');
+      expect(monthTitle('de', '2026-03'), 'März 2026');
+    });
+
+    Map<String, dynamic> meta({bool export = false}) => {
+          'role': 'accountant', 'name': 'acc', 'today': '2026-11-16',
+          'rights': {'record': true, 'correct': false, 'export': export, 'manage': false},
+          'rate': {'syp_per_usd': '12000', 'valid_from': '2026-11-16', 'by': 'auto', 'source': 'auto', 'stale': false},
+          'income_categories': [{'id': 'c1', 'key': 'tuition', 'name': 'Fees', 'is_active': true}],
+          'expense_categories': [{'key': 'food', 'ar': 'الطعام', 'en': 'Food'}, {'key': 'salaries', 'ar': 'الرواتب', 'en': 'Salaries'}],
+        };
+
+    Widget page(Widget child, http.Response Function(http.Request) answer) {
+      final session = Session(ApiClient(client: MockClient((r) async => answer(r))))..api.token = 't';
+      return MaterialApp(
+        locale: const Locale('en'),
+        supportedLocales: S.supported,
+        localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate],
+        builder: (context, c) => SessionScope(session: session, child: c!),
+        home: Scaffold(body: child),
+      );
+    }
+
+    testWidgets('the month overview shows profit or loss and the cash in dollars and pounds', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final pair = {'usd': '0.00', 'syp': '0'};
+      await tester.pumpWidget(page(const MoneySummaryPage(), (r) {
+        if (r.url.path.endsWith('/meta')) return json(meta());
+        return json({
+          'month': '2026-11', 'previous_month': '2026-10', 'closed': false, 'closing': null,
+          'income': {'usd': '40.00', 'syp': '500000'}, 'expense': {'usd': '0.00', 'syp': '360000'}, 'surplus': {'usd': '40.00', 'syp': '140000'},
+          'salaries': {'usd': '0.00', 'syp': '300000'}, 'other_expenses': pair, 'income_count': 3, 'expense_count': 2,
+          'income_by_category': [{'category_id': 'c1', 'key': 'tuition', 'name': 'Fees', 'usd': '40.00', 'syp': '0', 'count': 2}],
+          'expense_by_category': [{'category': 'food', 'ar': 'الطعام', 'en': 'Food', 'usd': '0.00', 'syp': '60000', 'count': 1}],
+          'previous': {'income': pair, 'expense': pair, 'surplus': pair}, 'change': {}, 'converted': {'income': pair, 'expense': pair, 'surplus': pair},
+          'invoices': {'open': 0, 'partial': 1, 'open_amount': {'usd': '15.00', 'syp': '0'}},
+          'balance': {'start': {'usd': '1000.00', 'syp': '5000000'}, 'end': {'usd': '1040.00', 'syp': '5140000'}, 'profit': {'usd': '40.00', 'syp': '140000'}, 'opening': {}},
+        });
+      }));
+      await tester.pumpAndSettle();
+      expect(find.text(monthTitle('en', monthKey(DateTime.now()))), findsOneWidget);
+      expect(find.text('Profit / loss'), findsOneWidget);
+      expect(find.text('SYP 140,000'), findsOneWidget);
+      expect(find.text('USD 1,040.00'), findsOneWidget); // the cash at the end of the month
+      expect(find.text('Fees'), findsOneWidget);
+      expect(find.text('Month report as PDF'), findsNothing); // no export right
+    });
+
+    testWidgets('income: the entries with both currencies, the open invoices, and a new entry through the form', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final posted = <Map<String, dynamic>>[];
+      await tester.pumpWidget(page(const MoneyEntriesPage(kind: 'income'), (r) {
+        if (r.url.path.endsWith('/meta')) return json(meta());
+        if (r.url.path.endsWith('/invoices')) {
+          return json({'rows': [{'id': 'i1', 'number': 'INV-2026-0001', 'child': 'Amal', 'payer_name': '', 'status': 'partial', 'open': {'usd': '15.00', 'syp': '180000'}}]});
+        }
+        if (r.url.path.endsWith('/children')) return json([{'id': 'k1', 'name': 'Amal'}]);
+        if (r.method == 'POST') {
+          posted.add(jsonDecode(r.body) as Map<String, dynamic>);
+          return json({'id': 'e2'}, 201);
+        }
+        return json({
+          'rows': [{'id': 'e1', 'booked_on': '2026-11-16', 'description': 'Donation', 'category_id': 'c1', 'category': 'Other', 'child': '', 'payer_name': 'Club',
+            'amount': '500000', 'currency': 'SYP', 'rate': '12000', 'usd': '41.67', 'syp': '500000', 'note': '', 'voided': false, 'is_reversal': false, 'reversed': false}],
+          'totals': {'USD': '0', 'SYP': '500000', 'value': {'USD': '41.67', 'SYP': '500000'}}, 'count': 1,
+        });
+      }));
+      await tester.pumpAndSettle();
+      expect(find.text('Donation'), findsOneWidget);
+      expect(find.text('USD 41.67'), findsWidgets);
+      expect(find.text('INV-2026-0001 · Amal'), findsOneWidget);
+      await tester.tap(find.text('New income'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Reason'), 'November fee');
+      await tester.enterText(find.widgetWithText(TextField, 'Amount'), '25');
+      await tester.pump();
+      expect(find.text('≈ SYP 300,000'), findsOneWidget); // only a hint; the server calculates the real value
+      await tester.tap(find.text('Record'));
+      await tester.pumpAndSettle();
+      expect(posted.single['amount'], '25');
+      expect(posted.single['currency'], 'USD');
+      expect(posted.single['category_id'], 'c1');
+      expect(posted.single.containsKey('rate'), isFalse); // only the management sends a rate of its own
     });
   });
 }

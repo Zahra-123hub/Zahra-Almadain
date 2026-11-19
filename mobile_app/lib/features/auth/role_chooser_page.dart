@@ -33,8 +33,7 @@ class _RoleChooserPageState extends State<RoleChooserPage> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final session = SessionScope.of(context);
-    final hints = {Area.management: 'roleManagementHint', Area.teacher: 'roleTeacherHint', Area.parent: 'roleParentHint'};
-    final icons = {Area.management: Icons.shield_outlined, Area.teacher: Icons.edit_note_rounded, Area.parent: Icons.family_restroom_rounded};
+    final hints = {Area.management: 'roleManagementHint', Area.accounting: 'roleAccountingHint', Area.teacher: 'roleTeacherHint', Area.parent: 'roleParentHint'};
     return Scaffold(
       body: Column(children: [
         AppHeader(title: s.fill('welcome', session.username ?? ''), subtitle: s.get('chooseRole')),
@@ -61,7 +60,7 @@ class _RoleChooserPageState extends State<RoleChooserPage> {
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(color: session.lastArea == area.name ? brandBlue : brandSoft, borderRadius: BorderRadius.circular(12)),
-                              child: Icon(icons[area], color: session.lastArea == area.name ? Colors.white : brandBlue),
+                              child: Icon(areaIcon(area), color: session.lastArea == area.name ? Colors.white : brandBlue),
                             ),
                             const SizedBox(width: 14),
                             Expanded(

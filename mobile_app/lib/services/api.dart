@@ -135,8 +135,8 @@ class ApiClient {
   }
 
   /// Private files are fetched with the token; there are no public links.
-  Future<List<int>> bytes(String path) async {
-    final response = await _send(() => _http.get(_uri(path), headers: _headers(json: false)));
+  Future<List<int>> bytes(String path, {Map<String, String>? query}) async {
+    final response = await _send(() => _http.get(_uri(path, query), headers: _headers(json: false)));
     if (response.statusCode >= 200 && response.statusCode < 300) return response.bodyBytes;
     _decode(response);
     throw ApiException(ApiProblem.server);

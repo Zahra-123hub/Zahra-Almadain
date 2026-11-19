@@ -565,9 +565,9 @@ class SectionTitle extends StatelessWidget {
 }
 
 /// Downloads a private file with the token into a temporary folder and opens it. Nothing public, nothing kept long.
-Future<void> openPrivateFile(BuildContext context, ApiClient api, String path, String filename) async {
+Future<void> openPrivateFile(BuildContext context, ApiClient api, String path, String filename, {Map<String, String>? query}) async {
   try {
-    final data = await api.bytes(path);
+    final data = await api.bytes(path, query: query);
     final dir = await getTemporaryDirectory();
     final safe = filename.replaceAll(RegExp(r'[^\w.\- ]', unicode: true), '_');
     final file = File('${dir.path}/$safe');
