@@ -21,12 +21,14 @@ from fpdf.enums import XPos, YPos
 from app.timeutil import to_local
 
 ASSETS = Path(__file__).with_name("assets")
-NAVY = (22, 64, 111)
-SUN = (232, 163, 61)
-INK = (30, 41, 59)
-MUTED = (100, 116, 139)
-LINE = (214, 222, 233)
-SOFT = (242, 246, 251)
+# black and white only (the kindergarten prints everything in black and white): no colours in any document
+NAVY = (0, 0, 0)
+SUN = (0, 0, 0)
+INK = (0, 0, 0)
+MUTED = (90, 90, 90)
+LINE = (150, 150, 150)
+SOFT = (240, 240, 240)
+HEAD = (215, 215, 215)
 ROLE_NAMES = {"accountant": "المحاسب", "manager": "الإدارة", "admin": "المدير"}
 KG_NAME = "روضة زهرة المدائن"
 MONTHS = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
@@ -77,7 +79,7 @@ class Doc(FPDF):
 
     # ---- frame of every page ----
     def header(self) -> None:
-        self.image(str(ASSETS / "logo.png"), x=self.w - self.r_margin - 30, y=10, h=22)
+        self.image(str(ASSETS / "logo_bw.png"), x=self.w - self.r_margin - 30, y=10, h=22)
         self.set_xy(self.l_margin, 12)
         self.set_font("Tajawal", "B", 16)
         self.set_text_color(*NAVY)
@@ -134,7 +136,7 @@ class Doc(FPDF):
             self.set_font("Tajawal", "B" if bold else "", 9.5)
             self.set_xy(self.l_margin, y + 8)
 
-        row(header, NAVY, True, (255, 255, 255))
+        row(header, HEAD, True, INK)
         for i, values in enumerate(rows):
             last = bold_last and i == len(rows) - 1
             row(values, SOFT if (i % 2 or last) else None, last, INK)
@@ -211,7 +213,7 @@ def invoice_pdf(invoice: dict[str, Any], signer: dict[str, str]) -> bytes:
                  [[p["booked_on"], f"{num(p['amount'])} {p['currency']}", num(p["rate"]), f"{num(p['credited'])} {invoice['currency']}"] for p in payments],
                  [35, 50, 40, 55], numeric={1, 2, 3})
     if invoice["voided"]:
-        doc.line_text(f"هذه الفاتورة ملغاة: {invoice['void_reason']}", 11, (180, 40, 40), True)
+        doc.line_text(f"هذه الفاتورة ملغاة: {invoice['void_reason']}", 11, INK, True)
     code = verification(["invoice", invoice["number"], invoice["total"]["usd"] or "", invoice["total"]["syp"] or "", invoice["paid"]["usd"] or "", invoice["status"]])
     doc.signature(signer, code)
     return bytes(doc.output())
