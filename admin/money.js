@@ -11,7 +11,8 @@ var MN_STATUS = {open:["مفتوحة", "Open", "due"], partial:["مدفوعة ج
 var MN_ACTIONS = {
   "income.create":["سُجّل", "recorded"], "income.update":["عُدّل", "changed"], "income.void":["أُلغي", "cancelled"], "income.reverse":["صُحّح بقيد عكسي", "reversed"],
   "expense.create":["سُجّل", "recorded"], "expense.update":["عُدّل", "changed"], "expense.void":["أُلغي", "cancelled"], "expense.reverse":["صُحّح بقيد عكسي", "reversed"],
-  "salary.auto":["سُجّل الراتب تلقائياً", "salary booked automatically"]
+  "salary.auto":["سُجّل الراتب تلقائياً", "salary booked automatically"],
+  "invoice.create":["أُنشئت", "created"], "invoice.update":["عُدّلت", "changed"], "invoice.void":["أُلغيت", "cancelled"]
 };
 
 function mnMeta(){ return request("/api/admin/money/meta").then(function(m){ MN.meta = m; return m; }); }
@@ -37,6 +38,14 @@ function mnBtn(text, kind, onclick, title){ return h("button", {type:"button", c
 function mnTile(label, value, sub, kind){
   return h("div", {class:"mn-tile" + (kind ? " " + kind : "")}, [h("small", {text:label}), h("strong", {dir:"ltr", text:value}), sub ? h("span", {class:"mn-tile-sub", dir:"auto", text:sub}) : ""]);
 }
+/* profit or loss of one currency, said in words: "ربح" / "خسارة" / "لا ربح ولا خسارة", the amount without a sign */
+function mnProfitTile(code, value, income, expense){
+  var n = Number(value), word = n > 0 ? ["ربح", "Profit"] : n < 0 ? ["خسارة", "Loss"] : ["لا ربح ولا خسارة", "No profit, no loss"];
+  var cur = code === "USD" ? [" بالدولار", " in dollars"] : [" بالليرة", " in pounds"];
+  return mnTile(uiT(word) + uiT(cur), (n > 0 ? "▲ " : n < 0 ? "▼ " : "") + code + " " + uiNum(String(value).replace("-", "")),
+    uiT(["إيرادات ", "income "]) + uiNum(income) + uiT([" − مصروفات ", " − expenses "]) + uiNum(expense), n < 0 ? "bad" : n > 0 ? "good" : "");
+}
+
 /* the card of a form: a title, a close button, the fields in a grid that wraps on small screens */
 function mnFormCard(title, fields, footer, onClose){
   return h("div", {class:"a-card mn-form"}, [
@@ -122,6 +131,19 @@ function mnMoneyFields(meta, row){
     }
   };
 }
+/* the history of an invoice, shown in its details */
+function mnInvoiceLog(id, box){
+  if(box.firstChild){ box.innerHTML = ""; return; }
+  box.appendChild(h("span", {class:"hint", text:uiT(["جارٍ التحميل…", "Loading…"])}));
+  request("/api/admin/money/history/" + id).then(function(rows){
+    box.innerHTML = "";
+    box.appendChild(h("ol", {class:"mn-timeline"}, rows.map(function(r){
+      return h("li", {}, [h("span", {dir:"ltr", class:"hint", text:String(r.at || "").replace("T", " ").slice(0, 16)}), h("strong", {text:" " + uiT(MN_ACTIONS[r.action] || [r.action, r.action]) + " "}),
+        h("span", {text:uiT(["بواسطة ", "by "]) + r.actor}), r.reason ? h("span", {class:"hint", text:" — " + r.reason}) : ""]);
+    })));
+  }).catch(function(e){ box.textContent = errText(e); });
+}
+
 /* the history of one entry, shown in the table under its row */
 function mnHistoryRow(id, columns, after){
   var next = after.nextSibling;
@@ -249,6 +271,12 @@ function tabIncome(){
                 .then(function(){ uiToast(uiT(["سُجّلت الدفعة.", "Payment recorded."]), "ok"); openInvoice(v.id); loadInvoices(); load(); }).catch(mnErr(msg));
             })]), msg]));
         }
+        var logBox = h("div", {});
+        if(meta.rights.correct && !v.voided){
+          kids.push(h("div", {class:"a-row"}, [mnBtn(uiT(["تعديل الفاتورة", "Edit the invoice"]), "ghost", function(){ showInvoiceForm(v); }),
+            mnBtn(uiT(["السجل", "Log"]), "ghost", function(){ mnInvoiceLog(v.id, logBox); })]));
+        }
+        kids.push(logBox);
         if(meta.rights.correct && v.status === "open" && !v.voided){
           kids.push(h("div", {class:"a-row"}, [mnBtn(uiT(["إلغاء الفاتورة", "Cancel the invoice"]), "ghost", function(){
             var reason = mnAsk(uiT(["سبب إلغاء الفاتورة (5 أحرف على الأقل):", "Reason (at least 5 characters):"]));
@@ -260,27 +288,27 @@ function tabIncome(){
         invDetail.scrollIntoView({behavior:"smooth", block:"start"});
       }).catch(function(e){ uiToast(errText(e), "err"); });
     }
-    function showInvoiceForm(){
+    function showInvoiceForm(old){
       invForm.innerHTML = "";
       var items = h("div", {class:"mn-items"});
-      var day = h("input", {type:"date", max:meta.today, value:meta.today});
-      var child = uiSelect([["", "—"]].concat(children.map(function(c){ return [c.id, c.name]; })), "");
-      var payer = h("input", {type:"text", maxlength:"120"}), desc = h("input", {type:"text", maxlength:"300"});
-      var cur = uiSelect([["USD", uiT(["دولار (USD)", "Dollar (USD)"])], ["SYP", uiT(["ليرة (SYP)", "Pound (SYP)"])]], "USD");
+      var day = h("input", {type:"date", max:meta.today, value:old ? old.issued_on : meta.today});
+      var child = uiSelect([["", "—"]].concat(children.map(function(c){ return [c.id, c.name]; })), old ? old.child_id : "");
+      var payer = h("input", {type:"text", maxlength:"120", value:old ? old.payer_name : ""}), desc = h("input", {type:"text", maxlength:"300", value:old ? old.description : ""});
+      var cur = uiSelect([["USD", uiT(["دولار (USD)", "Dollar (USD)"])], ["SYP", uiT(["ليرة (SYP)", "Pound (SYP)"])]], old ? old.currency : "USD");
       var msg = mnMsg();
-      function item(){
-        var d = h("input", {type:"text", maxlength:"200", placeholder:uiT(["مثال: رسوم شهرية", "e.g. monthly fee"])}), a = h("input", {type:"number", min:"0.01", step:"0.01", inputMode:"decimal"});
+      function item(text, amount){
+        var d = h("input", {type:"text", maxlength:"200", value:text || "", placeholder:uiT(["مثال: رسوم شهرية", "e.g. monthly fee"])}), a = h("input", {type:"number", min:"0.01", step:"0.01", inputMode:"decimal", value:amount || ""});
         var row = h("div", {class:"mn-item"}, [uiField(uiT(["البند", "Item"]), d), uiField(uiT(["المبلغ", "Amount"]), a), mnBtn("✕", "ghost mn-mini", function(){ if(items.children.length > 1) row.remove(); }, uiT(["إزالة البند", "Remove item"]))]);
         row._d = d; row._a = a; items.appendChild(row);
       }
-      item();
-      invForm.appendChild(mnFormCard(uiT(["فاتورة جديدة لولي أمر", "New invoice to a parent"]),
+      if(old) old.items.forEach(function(i){ item(i.description, old.currency === "USD" ? i.usd : i.syp); }); else item();
+      invForm.appendChild(mnFormCard(old ? uiT(["تعديل الفاتورة ", "Edit invoice "]) + old.number : uiT(["فاتورة جديدة لولي أمر", "New invoice to a parent"]),
         [uiField(uiT(["التاريخ", "Date"]), day), uiField(uiT(["الطفل", "Child"]), child), uiField(uiT(["أو الجهة الدافعة", "or the payer"]), payer), uiField(uiT(["عملة الفاتورة", "Invoice currency"]), cur), uiField(uiT(["الوصف", "Description"]), desc)],
         [h("h4", {text:uiT(["البنود", "Items"])}), items,
-         h("div", {class:"a-row"}, [mnBtn(uiT(["+ بند", "+ Item"]), "ghost", item), mnBtn(uiT(["إنشاء الفاتورة", "Create invoice"]), "sun", function(){
+         h("div", {class:"a-row"}, [mnBtn(uiT(["+ بند", "+ Item"]), "ghost", function(){ item(); }), mnBtn(old ? uiT(["حفظ التعديل", "Save change"]) : uiT(["إنشاء الفاتورة", "Create invoice"]), "sun", function(){
            var list = Array.prototype.map.call(items.children, function(r){ return {description:r._d.value.trim(), amount:r._a.value}; }).filter(function(i){ return i.amount !== ""; });
-           request("/api/admin/money/invoices", {method:"POST", body:JSON.stringify({issued_on:day.value, child_id:child.value || null, payer_name:payer.value.trim(), description:desc.value.trim(), currency:cur.value, items:list})})
-             .then(function(v){ uiToast(uiT(["أُنشئت الفاتورة ", "Invoice made: "]) + v.number, "ok"); invForm.innerHTML = ""; loadInvoices(); openInvoice(v.id); }).catch(mnErr(msg));
+           request("/api/admin/money/invoices" + (old ? "/" + old.id : ""), {method:old ? "PATCH" : "POST", body:JSON.stringify({issued_on:day.value, child_id:child.value || null, payer_name:payer.value.trim(), description:desc.value.trim(), currency:cur.value, items:list})})
+             .then(function(v){ uiToast(old ? uiT(["حُفظت الفاتورة.", "Invoice saved."]) : uiT(["أُنشئت الفاتورة ", "Invoice made: "]) + v.number, "ok"); invForm.innerHTML = ""; loadInvoices(); load(); openInvoice(v.id); }).catch(mnErr(msg));
          })]),
          h("p", {class:"hint", text:uiT(["الفاتورة مطالبة وليست إيراداً. يدخل المال في الإيرادات عند تسجيل الدفعة فقط.", "An invoice is a claim, not income. Money counts as income only when a payment is recorded."])}), msg],
         function(){ invForm.innerHTML = ""; }));
@@ -291,12 +319,16 @@ function tabIncome(){
       var name = h("input", {type:"text", maxlength:"80"}), msg = mnMsg();
       var rows = meta.income_categories.map(function(c){
         return h("tr", {}, [h("td", {text:c.name}), h("td", {}, [c.is_active ? uiBadge(uiT(["مفعّلة", "on"]), "paid") : uiBadge(uiT(["معطّلة", "off"]), "neutral")]),
-          h("td", {}, [c.key === "tuition" ? h("span", {class:"hint", text:uiT(["أساسية", "built in"])}) :
+          h("td", {}, [mnBtn(uiT(["إعادة تسمية", "Rename"]), "ghost mn-mini", function(){
+              var name = mnAsk(uiT(["الاسم الجديد للفئة:", "New name of the category:"]));
+              if(!name) return;
+              request("/api/admin/money/categories/" + c.id, {method:"PATCH", body:JSON.stringify({name:name})}).then(function(){ draw(); }).catch(mnErr(msg));
+            }), c.key === "tuition" ? h("span", {class:"hint", text:uiT([" أساسية", " built in"])}) :
             mnBtn(c.is_active ? uiT(["تعطيل", "Switch off"]) : uiT(["تفعيل", "Switch on"]), "ghost mn-mini", function(){
               request("/api/admin/money/categories/" + c.id, {method:"PATCH", body:JSON.stringify({is_active:!c.is_active})}).then(function(){ draw(); }).catch(mnErr(msg));
             })])]);
       });
-      return h("details", {class:"a-card mn-fold"}, [h("summary", {text:uiT(["فئات الإيرادات (للإدارة)", "Income categories (management)"])}),
+      return h("details", {class:"a-card mn-fold"}, [h("summary", {text:uiT(["فئات الإيرادات", "Income categories"])}),
         uiTable([uiT(["الفئة", "Category"]), uiT(["الحالة", "Status"]), uiT(["إجراء", "Action"])], rows, ""),
         h("div", {class:"mn-grid"}, [uiField(uiT(["فئة جديدة", "New category"]), name), mnBtn(uiT(["إضافة", "Add"]), "ghost", function(){
           request("/api/admin/money/categories", {method:"POST", body:JSON.stringify({name:name.value.trim()})}).then(function(){ draw(); }).catch(mnErr(msg));
@@ -307,7 +339,7 @@ function tabIncome(){
     page.appendChild(tiles);
     page.appendChild(h("div", {class:"a-card"}, [h("h3", {text:uiT(["الإيرادات", "Income"])}), bar.node, listBox]));
     page.appendChild(formBox);
-    page.appendChild(h("div", {class:"a-card"}, [h("div", {class:"mn-head"}, [h("h3", {text:uiT(["فواتير الأهالي", "Invoices to parents"])}), mnBtn(uiT(["+ فاتورة جديدة", "+ New invoice"]), "sun", showInvoiceForm)]),
+    page.appendChild(h("div", {class:"a-card"}, [h("div", {class:"mn-head"}, [h("h3", {text:uiT(["فواتير الأهالي", "Invoices to parents"])}), mnBtn(uiT(["+ فاتورة جديدة", "+ New invoice"]), "sun", function(){ showInvoiceForm(null); })]),
       h("div", {class:"mn-grid mn-filters"}, [uiField(uiT(["الحالة", "Status"]), invStatus)]), invList]));
     page.appendChild(invForm);
     page.appendChild(invDetail);
@@ -453,8 +485,8 @@ function tabSummary(){
           uiBadge(d.closed ? uiT(["مغلق", "Closed"]) + (d.closing ? " · " + d.closing.by : "") : uiT(["مفتوح", "Open"]), d.closed ? "paid" : "neutral"),
           h("div", {class:"mn-toolbar-end"}, [closeBtn, pdf])]),
         h("div", {class:"mn-tiles"}, [
-          mnTile(uiT(["الربح / الخسارة بالدولار", "Profit / loss in dollars"]), "USD " + uiNum(d.surplus.usd), uiT(["إيرادات ", "income "]) + uiNum(d.income.usd) + uiT([" − مصروفات ", " − expenses "]) + uiNum(d.expense.usd), Number(d.surplus.usd) < 0 ? "bad" : "good"),
-          mnTile(uiT(["الربح / الخسارة بالليرة", "Profit / loss in pounds"]), "SYP " + uiNum(d.surplus.syp), uiT(["إيرادات ", "income "]) + uiNum(d.income.syp) + uiT([" − مصروفات ", " − expenses "]) + uiNum(d.expense.syp), Number(d.surplus.syp) < 0 ? "bad" : "good"),
+          mnProfitTile("USD", d.surplus.usd, d.income.usd, d.expense.usd),
+          mnProfitTile("SYP", d.surplus.syp, d.income.syp, d.expense.syp),
           mnTile(uiT(["الرواتب", "Salaries"]), "SYP " + uiNum(d.salaries.syp), "USD " + uiNum(d.salaries.usd)),
           mnTile(uiT(["فواتير غير مسددة", "Unpaid invoices"]), String(d.invoices.open + d.invoices.partial), "USD " + uiNum(d.invoices.open_amount.usd) + " · SYP " + uiNum(d.invoices.open_amount.syp), d.invoices.open + d.invoices.partial ? "warn" : "")
         ]),

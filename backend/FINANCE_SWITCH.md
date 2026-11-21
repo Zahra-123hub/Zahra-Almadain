@@ -37,6 +37,5 @@ So a normal deploy can never lose old financial data.
 * Totals are per currency of the money really paid; the converted value is shown for comparison only and never added on top.
 * An invoice is a claim; only a payment (an income tied to it) is income. Paid/open/status are always calculated.
 * Nothing is deleted: open month = cancel with a reason; closed month = reversal entry in the open month.
-* Rights: management and admin everything; accountant records and reads; changing/cancelling needs `books.correct`, exporting
-  needs `books.export` (granted by the admin in the control centre). Rate, month closing, income categories and the staff export
-  are for the management.
+* Rights (since 2026-11-21): management, admin and the accountant may do everything in the accounting; every change is logged.
+  The staff list itself is managed by the management.

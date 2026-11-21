@@ -102,10 +102,10 @@ class IncomeExpenseTests(MoneyBase):
         self.assertEqual(refused.status_code, 409)
         self.assertIn("سعر", refused.json()["detail"])
 
-    def test_only_the_management_types_a_rate_of_its_own(self):
-        self.assertEqual(self.income("10", "USD", rate="11000").status_code, 403)
-        self.assertEqual(self.income("10", "USD", rate="12000", description="same").status_code, 201)  # the rate of the day may be sent
-        self.assertEqual(self.income("10", "USD", rate="11000", headers=self.mgr).json()["syp"], "110000")
+    def test_the_accounting_may_type_a_rate_of_its_own(self):
+        self.assertEqual(self.income("10", "USD", rate="11000").json()["syp"], "110000")
+        self.assertEqual(self.income("10", "USD", rate="12000", description="same").json()["syp"], "120000")  # the rate of the day may be sent
+        self.assertEqual(self.income("10", "USD", rate="11500", headers=self.mgr, description="mgr").json()["syp"], "115000")
 
     def test_a_double_click_books_once(self):
         self.assertEqual(self.income("20").status_code, 201)
@@ -134,11 +134,9 @@ class IncomeExpenseTests(MoneyBase):
 
 
 class CorrectionTests(MoneyBase):
-    def test_changing_an_entry_needs_the_right_and_keeps_the_rate(self):
+    def test_the_accountant_changes_an_entry_and_it_keeps_the_rate(self):
         made = self.income("20", "USD").json()
         body = {"booked_on": made["booked_on"], "description": "fee corrected", "category_id": made["category_id"], "amount": "30", "currency": "USD", "expected_version": 1}
-        self.assertEqual(self.client.patch(f"{MONEY}/income/{made['id']}", headers=self.acc, json=body).status_code, 403)  # needs books.correct
-        self.grant("books.correct")
         self.set_rate("15000", day=local_today())
         changed = self.client.patch(f"{MONEY}/income/{made['id']}", headers=self.acc, json=body)
         self.assertEqual(changed.status_code, 200, changed.text)
@@ -153,7 +151,6 @@ class CorrectionTests(MoneyBase):
     def test_cancelling_keeps_the_entry_visible_and_out_of_the_totals(self):
         keep, drop = self.income("20").json(), self.income("5", description="second").json()
         self.assertEqual(self.client.post(f"{MONEY}/income/{drop['id']}/void", headers=self.mgr, json={"reason": "x"}).status_code, 422)
-        self.assertEqual(self.client.post(f"{MONEY}/income/{drop['id']}/void", headers=self.acc, json={"reason": "booked twice"}).status_code, 403)
         self.assertEqual(self.client.post(f"{MONEY}/income/{drop['id']}/void", headers=self.mgr, json={"reason": "booked twice"}).status_code, 200)
         data = self.client.get(MONEY + "/income", headers=self.acc).json()
         self.assertEqual((data["count"], data["totals"]["USD"]), (1, "20.00"))
@@ -166,7 +163,6 @@ class CorrectionTests(MoneyBase):
     def test_a_closed_month_is_locked_and_corrected_by_a_reversal_in_the_open_month(self):
         old = last_month(local_today())
         made = self.expense("5", "USD", day=old).json()
-        self.assertEqual(self.close(old, headers=self.acc).status_code, 403)  # only the management closes
         self.assertEqual(self.close(local_today()).status_code, 422)  # the running month cannot be closed
         self.assertEqual(self.close(old).status_code, 201)
         self.assertEqual(self.close(old).status_code, 409)
@@ -180,14 +176,32 @@ class CorrectionTests(MoneyBase):
         self.assertEqual(self.summary()["expense"]["usd"], "-5.00")  # the reversal sits in the open month
         self.assertEqual(self.client.post(f"{MONEY}/expenses/{made['id']}/void", headers=self.mgr, json={"reason": "wrong amount"}).status_code, 409)
         self.assertTrue(self.summary(month_of(old))["closed"])
-        # reopening only by the management, with a reason, and logged
-        self.assertEqual(self.client.post(f"{MONEY}/closings/{old.year}/{old.month}/reopen", headers=self.acc, json={"reason": "audit found"}).status_code, 403)
-        self.assertEqual(self.client.post(f"{MONEY}/closings/{old.year}/{old.month}/reopen", headers=self.mgr, json={"reason": "audit found"}).status_code, 200)
+        # reopening with a reason, and logged; the accountant may do it too
+        self.assertEqual(self.client.post(f"{MONEY}/closings/{old.year}/{old.month}/reopen", headers=self.acc, json={"reason": "x"}).status_code, 422)
+        self.assertEqual(self.client.post(f"{MONEY}/closings/{old.year}/{old.month}/reopen", headers=self.acc, json={"reason": "audit found"}).status_code, 200)
         self.assertEqual(self.expense("1", "USD", day=old, description="late").status_code, 201)
         self.assertIn("month.reopen", self.actions())
 
 
 class InvoiceTests(MoneyBase):
+    def test_an_invoice_is_changed_and_its_old_version_stays_in_the_history(self):
+        made = self.invoice(items=(("fee", "20"),)).json()
+        body = {"issued_on": made["issued_on"], "child_id": made["child_id"], "payer_name": "", "description": "November", "currency": "USD",
+                "items": [{"description": "fee", "amount": "20"}, {"description": "bus", "amount": "6"}]}
+        changed = self.client.patch(f"{MONEY}/invoices/{made['id']}", headers=self.acc, json=body)
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual((changed.json()["total"]["usd"], changed.json()["description"], changed.json()["number"]), ("26.00", "November", made["number"]))
+        self.pay(made["id"], "20")
+        self.assertEqual(self.client.patch(f"{MONEY}/invoices/{made['id']}", headers=self.acc, json={**body, "currency": "SYP"}).status_code, 409)  # paid in dollars
+        lower = {**body, "items": [{"description": "fee", "amount": "15"}]}
+        self.assertEqual(self.client.patch(f"{MONEY}/invoices/{made['id']}", headers=self.acc, json=lower).status_code, 422)  # below what was paid
+        self.assertEqual(self.client.get(f"{MONEY}/invoices/{made['id']}", headers=self.acc).json()["total"]["usd"], "26.00")
+        history = self.client.get(f"{MONEY}/history/{made['id']}", headers=self.acc).json()
+        self.assertEqual([h["action"] for h in history], ["invoice.create", "invoice.update"])
+        self.assertIn('"amount": "20.00"', str(history[1]["before"]))
+        for headers in (self.teacher, self.parent):
+            self.assertEqual(self.client.patch(f"{MONEY}/invoices/{made['id']}", headers=headers, json=body).status_code, 403)
+
     def test_an_invoice_is_a_claim_not_an_income(self):
         made = self.invoice(items=(("fee", "20"), ("bus", "5"))).json()
         self.assertEqual((made["status"], made["total"]["usd"], made["total"]["syp"], made["open"]["syp"]), ("open", "25.00", "300000", "300000"))
@@ -265,7 +279,7 @@ class SalaryTests(MoneyBase):
     def test_the_staff_list_is_read_only_for_the_accounting(self):
         self.assertEqual(self.client.post(PEOPLE + "/employees", headers=self.acc, json={"name": "New"}).status_code, 403)
         self.assertEqual(self.client.get(PEOPLE + "/employees", headers=self.acc).status_code, 200)
-        self.assertEqual(self.client.get(PEOPLE + "/employees/export.xlsx", headers=self.acc).status_code, 403)
+        self.assertEqual(self.client.get(PEOPLE + "/employees/export.pdf", headers=self.acc).status_code, 200)  # the staff list as PDF for the accounting
 
 
 class SummaryTests(MoneyBase):
@@ -298,9 +312,6 @@ class ExportTests(MoneyBase):
     def test_income_expenses_and_the_month_are_separate_signed_pdfs(self):
         self.income("20", "USD")
         self.expense("60000", "SYP")
-        for kind in ("income", "expenses", "summary"):
-            self.assertEqual(self.client.get(f"{MONEY}/export/{kind}.pdf", headers=self.acc).status_code, 403)  # needs books.export
-        self.grant("books.export")
         for kind, name in (("income", "income-"), ("expenses", "expenses-"), ("summary", "report-")):
             response = self.client.get(f"{MONEY}/export/{kind}.pdf", headers=self.acc)
             self.assertEqual(response.status_code, 200, kind)
@@ -332,12 +343,13 @@ class RightsTests(MoneyBase):
             self.assertEqual(self.income("5", headers=headers).status_code, 403)
         self.assertEqual(self.client.get(MONEY + "/meta").status_code, 401)
         meta = self.client.get(MONEY + "/meta", headers=self.acc).json()
-        self.assertEqual(meta["rights"], {"record": True, "correct": False, "export": False, "manage": False})
+        self.assertEqual(meta["rights"], {"record": True, "correct": True, "export": True, "manage": True})  # the accountant may do everything
         self.assertTrue(all(self.client.get(MONEY + "/meta", headers=self.mgr).json()["rights"].values()))
-        self.assertEqual(self.set_rate("13000", headers=self.acc).status_code, 403)
-        self.assertEqual(self.client.post(MONEY + "/categories", headers=self.acc, json={"name": "Trips"}).status_code, 403)
-        made = self.client.post(MONEY + "/categories", headers=self.mgr, json={"name": "Trips"})
+        self.assertEqual(self.set_rate("13000", headers=self.acc).status_code, 201)
+        made = self.client.post(MONEY + "/categories", headers=self.acc, json={"name": "Trips"})
         self.assertEqual(made.status_code, 201)
+        renamed = self.client.patch(f"{MONEY}/categories/{made.json()['id']}", headers=self.acc, json={"name": "School trips"})
+        self.assertEqual(renamed.json()["name"], "School trips")
         self.assertEqual(self.client.patch(f"{MONEY}/categories/{self.category('tuition')}", headers=self.mgr, json={"is_active": False}).status_code, 409)
 
     def test_every_change_is_logged_with_user_and_time(self):
@@ -416,7 +428,6 @@ class PdfTests(MoneyBase):
     def test_the_month_report_is_a_signed_pdf_for_those_who_may_export(self):
         self.income("20", "USD")
         self.expense("60000", "SYP")
-        self.assertEqual(self.client.get(MONEY + "/export/summary.pdf", headers=self.acc).status_code, 403)  # needs books.export
         response = self.client.get(MONEY + "/export/summary.pdf", headers=self.mgr)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertTrue(response.content.startswith(b"%PDF"))
@@ -474,7 +485,7 @@ class AutomaticSalaryTests(MoneyBase):
         rana = self.hire("Rana", salary="150", salary_currency="USD").json()
         with self.at(date(2026, 11, 16)):
             self.meta()
-            self.expense("280000", "SYP", category="salaries", employee_id=lina["id"], salary_month="2026-11", description="salary with advance")
+            self.expense("280000", "SYP", category="salaries", employee_id=lina["id"], salary_month="2026-11", description="salary with advance", day=date(2026, 11, 16))
         with self.at(date(2026, 12, 1)):
             self.meta()
         self.assertEqual(sorted((str(r.employee_id), r.amount, r.created_by) for r in self.salary_rows()), sorted([(lina["id"], Decimal("280000.00"), "acc"), (rana["id"], Decimal("150.00"), "auto")]))
@@ -512,7 +523,7 @@ class OpeningBalanceTests(MoneyBase):
         return self.client.post(MONEY + "/opening", headers=headers or self.mgr, json={"as_of": (day or local_today()).isoformat(), "usd": usd, "syp": syp})
 
     def test_only_the_management_enters_it_and_it_is_logged(self):
-        self.assertEqual(self.opening(headers=self.acc).status_code, 403)
+        self.assertEqual(self.opening(headers=self.teacher).status_code, 403)
         self.assertEqual(self.opening(day=local_today() + timedelta(days=1)).status_code, 422)
         self.assertEqual(self.opening(usd="-1").status_code, 422)
         made = self.opening()

@@ -175,6 +175,38 @@ class Money extends StatelessWidget {
 
 Color _signColor(String? v) => _zero(v) ? _faint : (_negative(v) ? _bad : _good);
 
+/// "Profit in dollars" / "Loss in pounds" / "No profit, no loss", with an arrow in its colour: the word says it, not only the sign.
+class _ProfitWord extends StatelessWidget {
+  const _ProfitWord({required this.value, required this.currency});
+  final String? value;
+  final String currency; // usd or syp
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final zero = _zero(value);
+    final loss = _negative(value);
+    final tone = zero ? _muted : (loss ? _bad : _good);
+    final word = zero ? s.get('mnNoProfitLoss') : s.get(loss ? 'mnLoss' : 'mnProfit');
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(color: tone.withValues(alpha: 0.12), shape: BoxShape.circle),
+          child: Icon(zero ? Icons.remove_rounded : (loss ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded), size: 16, color: tone),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            '$word ${s.get(currency == 'usd' ? 'mnInDollarsShort' : 'mnInPoundsShort')}',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tone),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// A white panel with a title line (icon, title, actions on the other side) and its content.
 class _Panel extends StatelessWidget {
   const _Panel({required this.title, required this.child, this.icon, this.actions = const [], this.subtitle, this.padding = const EdgeInsets.fromLTRB(16, 0, 16, 16)});
@@ -869,12 +901,9 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          s.get(code == 'usd' ? 'mnInDollars' : 'mnInPounds'),
-                          style: const TextStyle(fontSize: 12.5, color: _muted, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 4),
-                        Money(code.toUpperCase(), surplus[code] as String?, size: 24, weight: FontWeight.w900, color: _signColor(surplus[code] as String?)),
+                        _ProfitWord(value: surplus[code] as String?, currency: code),
+                        const SizedBox(height: 6),
+                        Money(code.toUpperCase(), (surplus[code] as String?)?.replaceFirst('-', ''), size: 24, weight: FontWeight.w900, color: _signColor(surplus[code] as String?)),
                         const SizedBox(height: 6),
                         changeLine('surplus', code),
                       ],
@@ -1816,8 +1845,9 @@ class _InvoicesPanel extends StatelessWidget {
 
 /// A new invoice to a parent: the child or a payer, the currency, the items. An invoice is a claim, not income.
 class InvoiceForm extends StatefulWidget {
-  const InvoiceForm({super.key, required this.meta});
+  const InvoiceForm({super.key, required this.meta, this.invoice});
   final MoneyMeta meta;
+  final Map<String, dynamic>? invoice; // an invoice to change
   @override
   State<InvoiceForm> createState() => _InvoiceFormState();
 }
@@ -1835,6 +1865,18 @@ class _InvoiceFormState extends State<InvoiceForm> {
   @override
   void initState() {
     super.initState();
+    final v = widget.invoice;
+    if (v != null) {
+      _day = DateTime.parse(v['issued_on'] as String);
+      _payer.text = v['payer_name'] as String? ?? '';
+      _description.text = v['description'] as String? ?? '';
+      _currency = v['currency'] as String;
+      _child = (v['child_id'] as String? ?? '').isEmpty ? null : v['child_id'] as String;
+      _items
+        ..clear()
+        ..addAll([for (final i in _list(v['items'])) (TextEditingController(text: i['description'] as String), TextEditingController(text: (_currency == 'USD' ? i['usd'] : i['syp']) as String))]);
+      if (_items.isEmpty) _items.add((TextEditingController(), TextEditingController()));
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final list = await SessionScope.of(context).api.get('/api/admin/people/children') as List;
@@ -1855,16 +1897,12 @@ class _InvoiceFormState extends State<InvoiceForm> {
     }
     setState(() => _busy = true);
     try {
-      final v = await SessionScope.of(context).api.post('/api/admin/money/invoices', {
-        'issued_on': dayText(_day),
-        'child_id': _child,
-        'payer_name': _payer.text.trim(),
-        'description': _description.text.trim(),
-        'currency': _currency,
-        'items': items,
-      }) as Map;
+      final api = SessionScope.of(context).api;
+      final body = {'issued_on': dayText(_day), 'child_id': _child, 'payer_name': _payer.text.trim(), 'description': _description.text.trim(), 'currency': _currency, 'items': items};
+      final old = widget.invoice;
+      final v = (old == null ? await api.post('/api/admin/money/invoices', body) : await api.patch('/api/admin/money/invoices/${old['id']}', body)) as Map;
       if (!mounted) return;
-      toast(context, '${s.get('mnInvoiceMade')} ${v['number']}');
+      toast(context, old == null ? '${s.get('mnInvoiceMade')} ${v['number']}' : s.get('mnInvoiceSaved'));
       Navigator.pop(context, v['id'] as String);
     } on ApiException catch (e) {
       if (mounted) toast(context, problemText(context, e));
@@ -1877,7 +1915,7 @@ class _InvoiceFormState extends State<InvoiceForm> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(s.get('mnNewInvoice'))),
+      appBar: AppBar(title: Text(widget.invoice == null ? s.get('mnNewInvoice') : '${s.get('mnEditInvoice')} ${widget.invoice!['number']}')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
@@ -1970,7 +2008,7 @@ class _InvoiceFormState extends State<InvoiceForm> {
       bottomNavigationBar: BottomActionBar(
         children: [
           Expanded(
-            child: FilledButton(onPressed: _busy ? null : _save, child: Text(s.get('mnCreateInvoice'))),
+            child: FilledButton(onPressed: _busy ? null : _save, child: Text(s.get(widget.invoice == null ? 'mnCreateInvoice' : 'mnSaveChange'))),
           ),
         ],
       ),
@@ -2098,6 +2136,19 @@ class _InvoicePageState extends State<InvoicePage> {
                             spacing: 10,
                             runSpacing: 10,
                             children: [
+                              if (widget.meta.canCorrect && v['voided'] != true)
+                                _primary(s.get('mnEditInvoice'), Icons.edit_outlined, () async {
+                                  final id = await Navigator.push<String>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => InvoiceForm(meta: widget.meta, invoice: v),
+                                    ),
+                                  );
+                                  if (id != null) {
+                                    _changed = true;
+                                    await reload();
+                                  }
+                                }),
                               _secondary(s.get('mnInvoicePdf'), Icons.picture_as_pdf_outlined, () => _pdf(context, '/api/admin/money/invoices/${widget.id}.pdf', '${v['number']}.pdf')),
                               if (widget.meta.canCorrect && v['status'] == 'open' && v['voided'] != true)
                                 _secondary(s.get('mnCancelInvoice'), Icons.block, color: _bad, () async {
@@ -2144,6 +2195,22 @@ class _InvoicePageState extends State<InvoicePage> {
                                               style: const TextStyle(fontSize: 12.5, color: _muted),
                                             ),
                                             if (p['voided'] == true) Padding(padding: const EdgeInsets.only(top: 4), child: _Tag('${s.get('mnCancelled')}: ${p['void_reason'] ?? ''}')),
+                                            if (widget.meta.canCorrect && p['voided'] != true && p['is_reversal'] != true)
+                                              Padding(
+                                                padding: const EdgeInsets.only(top: 6),
+                                                child: _secondary(s.get('mnCancelPayment'), Icons.block, color: _bad, () async {
+                                                  final reason = await askText(context, s.get('mnCancelReason'), maxLength: 300, maxLines: 2, confirm: 'mnCancelPayment');
+                                                  if (reason == null || !context.mounted) return;
+                                                  try {
+                                                    await api.post('/api/admin/money/income/${p['id']}/void', {'reason': reason});
+                                                    _changed = true;
+                                                    if (context.mounted) toast(context, s.get('mnCancelledDone'));
+                                                    await reload();
+                                                  } on ApiException catch (e) {
+                                                    if (context.mounted) toast(context, problemText(context, e));
+                                                  }
+                                                }),
+                                              ),
                                           ],
                                         ),
                                       ),
@@ -2164,6 +2231,11 @@ class _InvoicePageState extends State<InvoicePage> {
                               ],
                             ],
                           ),
+                  ),
+                  _Panel(
+                    title: s.get('mnHistory'),
+                    icon: Icons.history_rounded,
+                    child: _History(id: widget.id),
                   ),
                   if (open && v['voided'] != true && widget.meta.rate != null)
                     _PaymentForm(
@@ -2292,6 +2364,60 @@ class _PaymentFormState extends State<_PaymentForm> {
   }
 }
 
+/// The history of an entry or an invoice: who did what, when, and why.
+class _History extends StatelessWidget {
+  const _History({required this.id});
+  final String id;
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return FutureBuilder<dynamic>(
+      future: SessionScope.of(context).api.get('/api/admin/money/history/$id'),
+      builder: (context, snap) {
+        if (snap.hasError) return Text(problemText(context, snap.error!));
+        if (!snap.hasData) return const Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator());
+        final lines = _list(snap.data);
+        if (lines.isEmpty) return Text(s.get('mnNoHistory'), style: const TextStyle(color: _muted));
+        return Column(
+          children: [
+            for (final x in lines)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 5),
+                      child: Icon(Icons.circle, size: 8, color: brandBlue),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${s.get('mnAction_${(x['action'] as String).replaceAll('.', '_')}')} · ${x['actor'] == 'auto' ? s.get('mnSystem') : x['actor']}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            (x['at'] as String? ?? '').replaceFirst('T', ' ').padRight(16).substring(0, 16),
+                            textDirection: TextDirection.ltr,
+                            style: const TextStyle(fontSize: 12, color: _muted),
+                          ),
+                          if ((x['reason'] as String? ?? '').isNotEmpty) Text(x['reason'] as String, style: const TextStyle(fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 // ---- income categories (management) ----------------------------------------------------------------------------------------------
 class _CategoriesPanel extends StatefulWidget {
   const _CategoriesPanel({required this.meta, required this.onChanged});
@@ -2334,6 +2460,17 @@ class _CategoriesPanelState extends State<_CategoriesPanel> {
             for (final c in widget.meta.incomeCategories)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
+                secondary: IconButton(
+                  tooltip: s.get('mnRename'),
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          final name = await askText(context, s.get('mnRename'), initial: c['name'] as String, maxLength: 80);
+                          if (name == null || name.trim().length < 2) return;
+                          await _call(() => api.patch('/api/admin/money/categories/${c['id']}', {'name': name.trim()}));
+                        },
+                ),
                 title: Text(c['name'] as String, style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: c['key'] == 'tuition' ? Text(s.get('mnBuiltIn'), style: const TextStyle(fontSize: 12)) : null,
                 value: c['is_active'] == true,

@@ -764,6 +764,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(monthTitle('en', monthKey(DateTime.now()))), findsOneWidget);
       expect(find.text('Profit / loss'), findsWidgets);
+      expect(find.text('Profit in dollars'), findsOneWidget); // said in words, not only by the sign
+      expect(find.text('Profit in pounds'), findsOneWidget);
       expect(find.text('SYP 140,000'), findsWidgets);
       expect(find.text('USD 1,040.00'), findsOneWidget); // the cash at the end of the month
       expect(find.text('Fees'), findsOneWidget);
@@ -883,6 +885,35 @@ void main() {
       final (method, path, body) = calls.single;
       expect((method, path), ('PATCH', '/api/admin/money/income/e1'));
       expect((body['description'], body['amount'], body['currency'], body['expected_version']), ('Donation of the club', '500000', 'SYP', 3));
+    });
+
+    testWidgets('a loss is called a loss and shown without the minus sign', (tester) async {
+      tall(tester);
+      await tester.pumpWidget(page(const MoneySummaryPage(), (r) {
+        if (r.url.path.endsWith('/meta')) return json(meta());
+        return json({...summary(r.url.queryParameters['month']!), 'surplus': {'usd': '-700.00', 'syp': '0'}});
+      }));
+      await tester.pumpAndSettle();
+      expect(find.text('Loss in dollars'), findsOneWidget);
+      expect(find.text('No profit, no loss in pounds'), findsOneWidget);
+      expect(find.text('USD 700.00'), findsOneWidget);
+    });
+
+    testWidgets('an invoice is changed through the same form (with the right to correct)', (tester) async {
+      tall(tester);
+      final calls = <(String, String, Map<String, dynamic>)>[];
+      await tester.pumpWidget(page(InvoicePage(id: 'i9', meta: MoneyMeta(meta(correct: true))), (r) => incomeServer(r, calls, correct: true)));
+      await tester.pumpAndSettle();
+      expect(find.text('History'), findsOneWidget);
+      await tester.tap(find.text('Edit invoice'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit invoice INV-2026-0002'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextField, 'Amount (USD)'), '12');
+      await tester.tap(find.text('Save change'));
+      await tester.pumpAndSettle();
+      final (method, path, body) = calls.single;
+      expect((method, path, body['payer_name']), ('PATCH', '/api/admin/money/invoices/i9', 'Club'));
+      expect(body['items'], [{'description': 'Trip', 'amount': '12'}]);
     });
 
     testWidgets('a new invoice with its items is created and then opened', (tester) async {

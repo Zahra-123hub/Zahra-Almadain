@@ -137,10 +137,10 @@ def build_router(read_guard: Callable[..., Actor], manage_guard: Callable[..., A
     def export_employees(
         fmt: str,
         scope: str = "all",
-        actor: Actor = Depends(manage_guard),
+        actor: Actor = Depends(read_guard),
         session: Session = Depends(get_session),
     ) -> Response:
-        """The staff list as a signed PDF (management and admin only). A plain output of the central table."""
+        """The staff list as a signed PDF (management, admin and the accounting). A plain output of the central table."""
         if fmt != "pdf" or scope not in ("all", "active"):
             raise HTTPException(422, "التصدير بصيغة PDF فقط، لكل الموظفين أو للفعّالين.")
         query = select(Employee).order_by(Employee.employee_no, Employee.name)

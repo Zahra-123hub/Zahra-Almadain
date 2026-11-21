@@ -8,7 +8,7 @@ Backend `backend/app/money.py` (prefix `/api/admin/money`), web `admin/money.js`
 
 * Amounts are `Decimal`. Every entry stores: the amount really paid, the currency really paid (USD/SYP), the rate used
   (SYP for one USD) and the value in the other currency. Rounding, one rule, half up: dollars → whole pounds, pounds → cents.
-* The rate of the booking day is proposed. Only the management may type another one. A new rate (valid from a day) is added on the
+* The rate of the booking day is proposed. The management and the accountant may type another one. A new rate (valid from a day) is added on the
   rate strip at the top of every page; rates are never overwritten, old entries never change.
 * **Rule for totals:** each column adds the money that was really paid in that currency (income in USD − expenses in USD, and the
   same for SYP). The value of an entry in the other currency is shown beside it but never counted again, so nothing is counted twice.
@@ -47,9 +47,9 @@ a reason, logged). In a closed month nothing is added, changed or cancelled; a c
 | | Management / admin | Accountant |
 |---|---|---|
 | See and enter income, expenses, invoices, payments, salaries | yes | yes |
-| Change and cancel entries, cancel invoices | yes | with grant `books.correct` |
-| Exports (income, expenses, summary; XLSX and CSV) | yes | with grant `books.export` |
-| Rate, own rate in a form, month closing, income categories, staff export | yes | no |
+| Change and cancel entries, change and cancel invoices, cancel payments | yes | yes |
+| Exports (income, expenses, summary, invoice, staff list; PDF only) | yes | yes |
+| Rate, own rate in a form, month closing, income categories, cash balance | yes | yes |
 | Staff list | manages | reads |
 
 ## Log

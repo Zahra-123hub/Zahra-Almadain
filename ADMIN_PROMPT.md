@@ -120,9 +120,11 @@ Details stehen in `docs/accounting.md`. Für die Oberfläche wichtig:
 | Recht | Leitung / Admin | Buchhaltung |
 |---|---|---|
 | `record` (erfassen, ansehen) | ja | ja |
-| `correct` (ändern, stornieren) | ja | nur mit `books.correct` |
-| `export` (PDF) | ja | nur mit `books.export` |
-| `manage` (Kurs, eigener Kurs im Formular, Monatsabschluss, Kategorien, Anfangsbestand, Mitarbeiter-PDF) | ja | nein |
+| `correct` (Buchungen, Rechnungen, Zahlungen ändern und stornieren) | ja | ja |
+| `export` (PDF) | ja | ja |
+| `manage` (Kurs, eigener Kurs im Formular, Monatsabschluss, Kategorien, Anfangsbestand, Mitarbeiter-PDF) | ja | ja |
+
+Seit 21.11.2026 (Entscheidung des Inhabers) darf die Rolle Buchhaltung in der Buchhaltung alles. Jede Änderung bleibt mit Name, Zeit und Grund im Verlauf; gelöscht wird nichts. Die Einzelrechte `books.correct` und `books.export` werden dafür nicht mehr gebraucht. Die Mitarbeiterliste selbst (anlegen, ändern) bleibt bei der Leitung.
 
 Die Oberfläche blendet Knöpfe nach `meta.rights` aus; das Backend prüft trotzdem jede Aktion.
 

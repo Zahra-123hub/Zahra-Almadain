@@ -250,12 +250,14 @@ def ensure_open(session: Session, *days: date) -> None:
 
 # ---- who may do what --------------------------------------------------------------------------------------------------------------
 def rights(session: Session, actor: Actor) -> dict[str, bool]:
-    lead = actor.role in ("manager", "admin")
+    """The management, the admin and the accountant may do everything in the accounting (decided by the owner, 2026-11-21).
+    Every change stays in the history with name, time and reason; nothing is deleted."""
+    lead = actor.role in ("manager", "admin", "accountant")
     return {
         "record": True,
         "correct": lead or has_grant(session, actor, "books.correct"),
         "export": lead or has_grant(session, actor, "books.export"),
-        "manage": lead,  # rate, month closing, income categories, staff export
+        "manage": lead,  # rate, month closing, income categories, cash balance, staff export
     }
 
 
@@ -890,6 +892,44 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         if worth > state["open"]:
             session.rollback()
             raise HTTPException(422, f"قيمة الدفعة ({text(invoice.currency, worth)} {invoice.currency}) أكبر من المتبقي ({text(invoice.currency, state['open'])} {invoice.currency}). صحّح المبلغ؛ لا يُقتطع تلقائياً.")
+        session.commit()
+        session.refresh(invoice)
+        return invoice_dict(invoice, child_names(session, {invoice.child_id}), with_payments=True)
+
+    @router.patch("/invoices/{invoice_id}")
+    def change_invoice(invoice_id: uuid.UUID, payload: InvoiceIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """Changes an invoice: day, child or payer, description, items. With payments on it the currency stays, and the new total
+        may not fall below what was paid. The old version stays in the history."""
+        need(session, actor, "correct")
+        invoice = get_invoice(session, invoice_id)
+        if invoice.voided_at is not None:
+            raise HTTPException(409, "الفاتورة ملغاة ولا تُعدَّل.")
+        check_day(payload.issued_on)
+        if payload.child_id is None and not payload.payer_name.strip():
+            raise HTTPException(422, "اختر الطفل أو اكتب اسم الجهة الدافعة.")
+        if payload.child_id is not None and session.get(Child, payload.child_id) is None:
+            raise HTTPException(404, "الطفل غير موجود.")
+        state = invoice_state(invoice)
+        if state["paid"] != 0 and payload.currency != invoice.currency:
+            raise HTTPException(409, "على الفاتورة دفعات، فلا تتغير عملتها.")
+        before = {"issued_on": invoice.issued_on.isoformat(), "child_id": str(invoice.child_id) if invoice.child_id else None, "payer_name": invoice.payer_name,
+                  "description": invoice.description, "currency": invoice.currency, "rate": rate_text(invoice.rate),
+                  "items": [{"description": i.description, "amount": str(i.amount)} for i in invoice.items]}
+        rate = Decimal(invoice.rate) if payload.rate is None or Decimal(payload.rate) == Decimal(invoice.rate) else chosen_rate(session, actor, payload.issued_on, payload.rate)
+        invoice.issued_on, invoice.child_id, invoice.payer_name = payload.issued_on, payload.child_id, payload.payer_name.strip()
+        invoice.description, invoice.currency, invoice.rate = payload.description.strip(), payload.currency, rate
+        invoice.items = [
+            InvoiceItem(position=n, description=item.description.strip(), amount=cents(item.amount), amount_other=to_other(cents(item.amount), payload.currency, rate))
+            for n, item in enumerate(payload.items, start=1)
+        ]
+        session.flush()
+        if invoice_state(invoice)["open"] < 0:
+            session.rollback()
+            raise HTTPException(422, "المجموع الجديد أقل مما دُفع على الفاتورة.")
+        after = {**before, "issued_on": invoice.issued_on.isoformat(), "child_id": str(invoice.child_id) if invoice.child_id else None, "payer_name": invoice.payer_name,
+                 "description": invoice.description, "currency": invoice.currency, "rate": rate_text(rate),
+                 "items": [{"description": i.description, "amount": str(i.amount)} for i in invoice.items]}
+        audit(session, actor, "invoice.update", "invoice", invoice.id, before, after)
         session.commit()
         session.refresh(invoice)
         return invoice_dict(invoice, child_names(session, {invoice.child_id}), with_payments=True)

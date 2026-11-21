@@ -133,12 +133,13 @@ class StaffTests(ControlsBase):
         self.assertEqual(parent_tie.status_code, 404)
 
     # ---- the export (a signed PDF) ----
-    def test_the_export_is_a_pdf_for_the_management_only_and_logged(self):
+    def test_the_export_is_a_pdf_for_the_management_and_the_accounting_and_logged(self):
         self.add("Lina Ali", phone="+963933123456", hired_on="2024-09-01", salary="500000", salary_currency="SYP")
         gone = self.add("Hana Omar").json()
         self.client.delete(f"{E}/{gone['id']}", headers=self.mgr)
-        for headers in (self.acc, self.teacher, self.parent):
+        for headers in (self.teacher, self.parent):
             self.assertEqual(self.client.get(E + "/export.pdf", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get(E + "/export.pdf", headers=self.acc).status_code, 200)
         for wrong in ("/export.csv", "/export.xlsx", "/export.pdf?scope=weird"):
             self.assertEqual(self.client.get(E + wrong, headers=self.mgr).status_code, 422, wrong)
         everyone = self.client.get(E + "/export.pdf", headers=self.mgr)
@@ -149,7 +150,7 @@ class StaffTests(ControlsBase):
         self.assertEqual(self.client.get(E + "/export.pdf?scope=active", headers=self.mgr).status_code, 200)
         with Session(self.engine) as s:
             lines = s.scalars(select(FeeAuditLog).where(FeeAuditLog.action == "employee.export").order_by(FeeAuditLog.at)).all()
-            self.assertEqual([line.details for line in lines], ["pdf 2", "pdf 1"])  # every person, then only the active one
+            self.assertEqual([line.details for line in lines], ["pdf 2", "pdf 2", "pdf 1"])  # the accounting, every person, then only the active one
 
     def test_the_staff_pdf_lists_the_central_table_without_private_notes(self):
         from app import pdfs

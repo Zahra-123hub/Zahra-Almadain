@@ -129,7 +129,7 @@ Geldspalten sind `Numeric(14,2)`, Kurse `Numeric(18,6)`. Geld wird in Python **i
 - **Buchhaltung** (`money.py`, Präfix `/api/admin/money`, Oberfläche `admin/money.js`): genau drei Seiten – Einnahmen (mit Rechnungen und deren Zahlungen), Ausgaben (mit Gehältern), Monatsübersicht (mit Abschluss). Endpunkte: `/meta`, `/rates` (GET, POST nur Leitung), `/categories`, `/income` (+ `PATCH`, `/void`), `/invoices` (+ `/payments`, `/void`), `/expenses` (+ `PATCH`, `/void`), `/salaries`, `/history/{id}`, `/summary`, `/closings` (+ `/reopen`), `/export/income|expenses|summary.xlsx|csv`. Details: `docs/accounting.md`.
 - **Personal und Kinder** (`people.py`, Präfix `/api/admin/people`): `/employees` (lesen: Leitung, Admin, Buchhaltung; ändern: Leitung, Admin), `/employees/export.xlsx|csv?scope=all|active` (nur Leitung/Admin, Telefon/Nr. bleiben Text), `/staff-accounts`, `/children`, `/parent-accounts`. Deaktivieren statt Löschen.
 - **Protokoll** (`activity.py`, Präfix `/api/admin/activity`): lesen, Personen, Excel-Export. Admin: alle Bereiche; Leitung: Geldbereich; Buchhaltung: nur eigene Zeilen.
-- **Rechte (`money.rights`):** Leitung/Admin alles; Buchhaltung erfasst und liest; Ändern/Stornieren nur mit `books.correct`, Export nur mit `books.export` (vergibt der Admin in der Kontrollzentrale); Kurs, eigener Kurs im Formular, Monatsabschluss, Kategorien und Personal-Export nur Leitung/Admin.
+- **Rechte (`money.rights`):** Leitung, Admin und Buchhaltung dürfen in der Buchhaltung alles (seit 21.11.2026): erfassen, ändern, stornieren, Rechnungen bearbeiten, Export, Kurs, Monatsabschluss, Kategorien, Anfangsbestand, Mitarbeiter-PDF. Jede Änderung steht im Verlauf. Die Mitarbeiterliste selbst verwaltet nur die Leitung.
 
 ---
 
