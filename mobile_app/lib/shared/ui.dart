@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
 
 import '../localization/strings.dart';
 import '../models/models.dart';
@@ -573,6 +575,16 @@ Future<void> openPrivateFile(BuildContext context, ApiClient api, String path, S
     final file = File('${dir.path}/$safe');
     await file.writeAsBytes(data, flush: true);
     await OpenFilex.open(file.path);
+  } catch (e) {
+    if (context.mounted) toast(context, problemText(context, e));
+  }
+}
+
+/// Loads a PDF from the server and opens the system print dialog straight away.
+Future<void> printPrivatePdf(BuildContext context, ApiClient api, String path, String filename, {Map<String, String>? query}) async {
+  try {
+    final data = await api.bytes(path, query: query);
+    await Printing.layoutPdf(name: filename, onLayout: (_) async => Uint8List.fromList(data));
   } catch (e) {
     if (context.mounted) toast(context, problemText(context, e));
   }

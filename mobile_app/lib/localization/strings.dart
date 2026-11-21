@@ -182,6 +182,7 @@ class S {
     'mnExpensesByCategory': {'ar': 'المصروفات حسب الفئة', 'de': 'Ausgaben nach Kategorie', 'en': 'Expenses by category'},
     'mnNoEntries': {'ar': 'لا توجد حركات في هذا الشهر', 'de': 'Keine Buchungen in diesem Monat', 'en': 'No entries this month'},
     'mnReportPdf': {'ar': 'تقرير الشهر PDF', 'de': 'Monatsbericht als PDF', 'en': 'Month report as PDF'},
+    'mnPrint': {'ar': 'طباعة', 'de': 'Drucken', 'en': 'Print'},
     'mnIncomePdf': {'ar': 'الإيرادات PDF', 'de': 'Einnahmen als PDF', 'en': 'Income as PDF'},
     'mnExpensesPdf': {'ar': 'المصروفات PDF', 'de': 'Ausgaben als PDF', 'en': 'Expenses as PDF'},
     'mnInvoicePdf': {'ar': 'الفاتورة PDF موقّعة', 'de': 'Rechnung als PDF (signiert)', 'en': 'Invoice as PDF (signed)'},

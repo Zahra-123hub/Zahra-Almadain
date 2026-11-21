@@ -768,6 +768,7 @@ Widget _toolbar({required List<Widget> start, List<Widget> end = const []}) => P
 );
 
 Future<void> _pdf(BuildContext context, String path, String name, [Map<String, String>? query]) => openPrivateFile(context, SessionScope.of(context).api, path, name, query: query);
+Future<void> _print(BuildContext context, String path, String name, [Map<String, String>? query]) => printPrivatePdf(context, SessionScope.of(context).api, path, name, query: query);
 
 // ================================================================================================================================
 // the month overview
@@ -982,6 +983,7 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
         end: [
           if (meta.canManage && closed) _secondary(s.get('mnReopen'), Icons.lock_open_rounded, reopenMonth),
           if (meta.canManage && !closed && month.compareTo(meta.thisMonth) < 0) _secondary(s.get('mnCloseMonth'), Icons.lock_outline_rounded, closeMonth),
+          if (meta.canExport) _secondary(s.get('mnPrint'), Icons.print_outlined, () => _print(context, '/api/admin/money/export/summary.pdf', 'report-$month.pdf', {'month': month})),
           if (meta.canExport) _primary(s.get('mnReportPdf'), Icons.picture_as_pdf_outlined, () => _pdf(context, '/api/admin/money/export/summary.pdf', 'report-$month.pdf', {'month': month})),
         ],
       ),
@@ -1414,6 +1416,7 @@ class _MoneyEntriesPageState extends State<MoneyEntriesPage> {
           RateChip(meta, onChanged: reload),
         ],
         end: [
+          if (meta.canExport) _secondary(s.get('mnPrint'), Icons.print_outlined, () => _print(context, '/api/admin/money/export/${widget.kind}.pdf', '${widget.kind}-$month.pdf', {'month': month})),
           if (meta.canExport) _secondary('PDF', Icons.picture_as_pdf_outlined, () => _pdf(context, '/api/admin/money/export/${widget.kind}.pdf', '${widget.kind}-$month.pdf', {'month': month})),
           _primary(s.get(income ? 'mnNewIncome' : 'mnNewExpense'), Icons.add_rounded, meta.rate == null ? null : () => openForm()),
         ],
@@ -2149,6 +2152,7 @@ class _InvoicePageState extends State<InvoicePage> {
                                     await reload();
                                   }
                                 }),
+                              _secondary(s.get('mnPrint'), Icons.print_outlined, () => _print(context, '/api/admin/money/invoices/${widget.id}.pdf', '${v['number']}.pdf')),
                               _secondary(s.get('mnInvoicePdf'), Icons.picture_as_pdf_outlined, () => _pdf(context, '/api/admin/money/invoices/${widget.id}.pdf', '${v['number']}.pdf')),
                               if (widget.meta.canCorrect && v['status'] == 'open' && v['voided'] != true)
                                 _secondary(s.get('mnCancelInvoice'), Icons.block, color: _bad, () async {
