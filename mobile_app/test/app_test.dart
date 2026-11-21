@@ -713,9 +713,9 @@ void main() {
       expect(monthTitle('de', '2026-03'), 'März 2026');
     });
 
-    Map<String, dynamic> meta({bool export = false}) => {
-          'role': 'accountant', 'name': 'acc', 'today': '2026-11-16',
-          'rights': {'record': true, 'correct': false, 'export': export, 'manage': false},
+    Map<String, dynamic> meta({bool export = false, bool correct = false, bool manage = false}) => {
+          'role': manage ? 'manager' : 'accountant', 'name': 'acc', 'today': '2026-11-16',
+          'rights': {'record': true, 'correct': correct, 'export': export, 'manage': manage},
           'rate': {'syp_per_usd': '12000', 'valid_from': '2026-11-16', 'by': 'auto', 'source': 'auto', 'stale': false},
           'income_categories': [{'id': 'c1', 'key': 'tuition', 'name': 'Fees', 'is_active': true}],
           'expense_categories': [{'key': 'food', 'ar': 'الطعام', 'en': 'Food'}, {'key': 'salaries', 'ar': 'الرواتب', 'en': 'Salaries'}],
@@ -732,58 +732,124 @@ void main() {
       );
     }
 
-    testWidgets('the month overview shows profit or loss and the cash in dollars and pounds', (tester) async {
-      tester.view.physicalSize = const Size(800, 2400);
+    void tall(WidgetTester tester) {
+      tester.view.physicalSize = const Size(900, 2600);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      final pair = {'usd': '0.00', 'syp': '0'};
-      await tester.pumpWidget(page(const MoneySummaryPage(), (r) {
-        if (r.url.path.endsWith('/meta')) return json(meta());
-        return json({
-          'month': '2026-11', 'previous_month': '2026-10', 'closed': false, 'closing': null,
+    }
+
+    final pair = {'usd': '0.00', 'syp': '0'};
+    Map<String, dynamic> summary(String month, {bool closed = false}) => {
+          'month': month, 'previous_month': shiftMonth(month, -1), 'closed': closed, 'closing': closed ? {'by': 'boss', 'at': null} : null,
           'income': {'usd': '40.00', 'syp': '500000'}, 'expense': {'usd': '0.00', 'syp': '360000'}, 'surplus': {'usd': '40.00', 'syp': '140000'},
           'salaries': {'usd': '0.00', 'syp': '300000'}, 'other_expenses': pair, 'income_count': 3, 'expense_count': 2,
           'income_by_category': [{'category_id': 'c1', 'key': 'tuition', 'name': 'Fees', 'usd': '40.00', 'syp': '0', 'count': 2}],
           'expense_by_category': [{'category': 'food', 'ar': 'الطعام', 'en': 'Food', 'usd': '0.00', 'syp': '60000', 'count': 1}],
-          'previous': {'income': pair, 'expense': pair, 'surplus': pair}, 'change': {}, 'converted': {'income': pair, 'expense': pair, 'surplus': pair},
+          'previous': {'income': pair, 'expense': pair, 'surplus': pair},
+          'change': {
+            for (final k in ['income', 'expense', 'surplus'])
+              k: {'usd': {'difference': '40.00', 'percent': null}, 'syp': {'difference': '-20000', 'percent': '-12.5'}},
+          },
+          'converted': {'income': pair, 'expense': pair, 'surplus': pair},
           'invoices': {'open': 0, 'partial': 1, 'open_amount': {'usd': '15.00', 'syp': '0'}},
-          'balance': {'start': {'usd': '1000.00', 'syp': '5000000'}, 'end': {'usd': '1040.00', 'syp': '5140000'}, 'profit': {'usd': '40.00', 'syp': '140000'}, 'opening': {}},
-        });
+          'balance': {'start': {'usd': '1000.00', 'syp': '5000000'}, 'end': {'usd': '1040.00', 'syp': '5140000'}, 'profit': {'usd': '40.00', 'syp': '140000'}, 'opening': {'USD': {'as_of': '2026-10-01'}}},
+        };
+
+    testWidgets('the month overview shows profit or loss, the change and the cash in dollars and pounds', (tester) async {
+      tall(tester);
+      await tester.pumpWidget(page(const MoneySummaryPage(), (r) {
+        if (r.url.path.endsWith('/meta')) return json(meta());
+        return json(summary(r.url.queryParameters['month']!));
       }));
       await tester.pumpAndSettle();
       expect(find.text(monthTitle('en', monthKey(DateTime.now()))), findsOneWidget);
-      expect(find.text('Profit / loss'), findsOneWidget);
-      expect(find.text('SYP 140,000'), findsOneWidget);
+      expect(find.text('Profit / loss'), findsWidgets);
+      expect(find.text('SYP 140,000'), findsWidgets);
       expect(find.text('USD 1,040.00'), findsOneWidget); // the cash at the end of the month
       expect(find.text('Fees'), findsOneWidget);
+      expect(find.textContaining('-12.5%'), findsWidgets); // the change against the month before
       expect(find.text('Month report as PDF'), findsNothing); // no export right
+      expect(find.text('Close the month'), findsNothing); // no management right
+      expect(find.text('Enter the cash balance'), findsNothing);
     });
 
-    testWidgets('income: the entries with both currencies, the open invoices, and a new entry through the form', (tester) async {
-      tester.view.physicalSize = const Size(800, 2400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final posted = <Map<String, dynamic>>[];
-      await tester.pumpWidget(page(const MoneyEntriesPage(kind: 'income'), (r) {
-        if (r.url.path.endsWith('/meta')) return json(meta());
-        if (r.url.path.endsWith('/invoices')) {
-          return json({'rows': [{'id': 'i1', 'number': 'INV-2026-0001', 'child': 'Amal', 'payer_name': '', 'status': 'partial', 'open': {'usd': '15.00', 'syp': '180000'}}]});
-        }
-        if (r.url.path.endsWith('/children')) return json([{'id': 'k1', 'name': 'Amal'}]);
+    testWidgets('the management closes a past month (after asking) and may correct the cash', (tester) async {
+      tall(tester);
+      final posted = <String, Object?>{};
+      await tester.pumpWidget(page(const MoneySummaryPage(), (r) {
+        if (r.url.path.endsWith('/meta')) return json(meta(export: true, manage: true));
         if (r.method == 'POST') {
-          posted.add(jsonDecode(r.body) as Map<String, dynamic>);
-          return json({'id': 'e2'}, 201);
+          posted[r.url.path] = jsonDecode(r.body);
+          return json({'closed': true}, 201);
         }
-        return json({
-          'rows': [{'id': 'e1', 'booked_on': '2026-11-16', 'description': 'Donation', 'category_id': 'c1', 'category': 'Other', 'child': '', 'payer_name': 'Club',
-            'amount': '500000', 'currency': 'SYP', 'rate': '12000', 'usd': '41.67', 'syp': '500000', 'note': '', 'voided': false, 'is_reversal': false, 'reversed': false}],
-          'totals': {'USD': '0', 'SYP': '500000', 'value': {'USD': '41.67', 'SYP': '500000'}}, 'count': 1,
-        });
+        return json(summary(r.url.queryParameters['month']!, closed: posted.isNotEmpty));
       }));
+      await tester.pumpAndSettle();
+      expect(find.text('Month report as PDF'), findsOneWidget);
+      expect(find.text('Correct the balance'), findsOneWidget);
+      expect(find.text('Close the month'), findsNothing); // the running month cannot be closed yet
+      await tester.tap(find.byTooltip('Previous month'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Close the month'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Close the month'));
+      await tester.pumpAndSettle();
+      final before = shiftMonth(monthKey(DateTime.now()), -1).split('-');
+      expect(posted['/api/admin/money/closings'], {'year': int.parse(before[0]), 'month': int.parse(before[1])});
+      expect(find.text('Reopen the month'), findsOneWidget);
+    });
+
+    Map<String, dynamic> donation() => {
+          'id': 'e1', 'booked_on': '2026-11-16', 'description': 'Donation', 'category_id': 'c1', 'category': 'Fees', 'child_id': '', 'child': '', 'payer_name': 'Club',
+          'amount': '500000', 'currency': 'SYP', 'rate': '12000', 'usd': '41.67', 'syp': '500000', 'note': '', 'voided': false, 'is_reversal': false, 'reversed': false,
+          'invoice_id': '', 'invoice_number': '', 'version': 3, 'month_closed': false, 'created_by': 'acc',
+        };
+
+    http.Response incomeServer(http.Request r, List<(String, String, Map<String, dynamic>)> calls, {bool correct = false}) {
+      final path = r.url.path;
+      if (path.endsWith('/meta')) return json(meta(correct: correct, manage: correct, export: correct));
+      if (r.method != 'GET') {
+        calls.add((r.method, path, jsonDecode(r.body) as Map<String, dynamic>));
+        if (path.endsWith('/money/invoices')) return json({'id': 'i9', 'number': 'INV-2026-0002'}, 201);
+        return json({'id': 'e2'}, 201);
+      }
+      if (path.endsWith('/invoices/i9')) {
+        return json({
+          'id': 'i9', 'number': 'INV-2026-0002', 'issued_on': '2026-11-16', 'child_id': '', 'child': '', 'payer_name': 'Club', 'description': '', 'currency': 'USD', 'rate': '12000',
+          'items': [{'description': 'Trip', 'usd': '10.00', 'syp': '120000'}], 'total': {'usd': '10.00', 'syp': '120000'}, 'paid': pair, 'open': {'usd': '10.00', 'syp': '120000'},
+          'status': 'open', 'voided': false, 'void_reason': null, 'payments': [],
+        });
+      }
+      if (path.endsWith('/invoices')) {
+        return json({'rows': [{'id': 'i1', 'number': 'INV-2026-0001', 'issued_on': '2026-11-02', 'child': 'Amal', 'payer_name': '', 'description': '', 'status': 'partial',
+          'total': {'usd': '30.00', 'syp': '360000'}, 'open': {'usd': '15.00', 'syp': '180000'}}]});
+      }
+      if (path.contains('/history/')) return json([{'at': '2026-11-16T09:30:00', 'actor': 'acc', 'action': 'income.create', 'reason': ''}]);
+      if (path.endsWith('/children')) return json([{'id': 'k1', 'name': 'Amal'}]);
+      if (path.endsWith('/employees')) return json([{'id': 'p1', 'name': 'Rama Al-Dairi'}]);
+      if (path.endsWith('/salaries')) {
+        return json({'month': '2026-11', 'paid': 1, 'unpaid': 1, 'rows': [
+          {'employee_id': 'p1', 'name': 'Rama Al-Dairi', 'job_title': 'Teacher of the small group', 'is_active': true, 'salary': '1100000', 'salary_currency': 'SYP',
+           'paid': true, 'automatic': true, 'paid_amount': '1100000', 'paid_currency': 'SYP'},
+          {'employee_id': 'p2', 'name': 'Someone With A Rather Long Name', 'job_title': 'Cook', 'is_active': true, 'salary': null, 'salary_currency': 'SYP', 'paid': false, 'automatic': false},
+        ]});
+      }
+      if (path.endsWith('/expenses')) {
+        return json({'rows': [{...donation(), 'category': 'salaries', 'category_ar': 'الرواتب', 'category_en': 'Salaries', 'recipient': 'Rama', 'employee_id': 'p1', 'employee': 'Rama Al-Dairi', 'salary_month': '2026-10'}],
+          'totals': {'USD': '0', 'SYP': '500000', 'value': {'USD': '41.67', 'SYP': '500000'}}, 'count': 1});
+      }
+      return json({'rows': [donation()], 'totals': {'USD': '0', 'SYP': '500000', 'value': {'USD': '41.67', 'SYP': '500000'}}, 'count': 1});
+    }
+
+    testWidgets('income: the entries with both currencies, the open invoices, and a new entry through the form', (tester) async {
+      tall(tester);
+      final calls = <(String, String, Map<String, dynamic>)>[];
+      await tester.pumpWidget(page(const MoneyEntriesPage(kind: 'income'), (r) => incomeServer(r, calls)));
       await tester.pumpAndSettle();
       expect(find.text('Donation'), findsOneWidget);
       expect(find.text('USD 41.67'), findsWidgets);
       expect(find.text('INV-2026-0001 · Amal'), findsOneWidget);
+      expect(find.text('Income categories'), findsNothing); // only for the management
       await tester.tap(find.text('New income'));
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, 'Reason'), 'November fee');
@@ -792,10 +858,72 @@ void main() {
       expect(find.text('≈ SYP 300,000'), findsOneWidget); // only a hint; the server calculates the real value
       await tester.tap(find.text('Record'));
       await tester.pumpAndSettle();
-      expect(posted.single['amount'], '25');
-      expect(posted.single['currency'], 'USD');
-      expect(posted.single['category_id'], 'c1');
-      expect(posted.single.containsKey('rate'), isFalse); // only the management sends a rate of its own
+      final (method, path, body) = calls.single;
+      expect((method, path), ('POST', '/api/admin/money/income'));
+      expect((body['amount'], body['currency'], body['category_id']), ('25', 'USD', 'c1'));
+      expect(body.containsKey('rate'), isFalse); // only the management sends a rate of its own
+    });
+
+    testWidgets('an entry opens with its history; with the right to correct it is changed with its version', (tester) async {
+      tall(tester);
+      final calls = <(String, String, Map<String, dynamic>)>[];
+      await tester.pumpWidget(page(const MoneyEntriesPage(kind: 'income'), (r) => incomeServer(r, calls, correct: true)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Donation'));
+      await tester.pumpAndSettle();
+      expect(find.text('History'), findsOneWidget);
+      expect(find.textContaining('recorded'), findsOneWidget);
+      expect(find.text('Cancel the entry'), findsOneWidget);
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Change the income'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextField, 'Reason'), 'Donation of the club');
+      await tester.tap(find.text('Save change'));
+      await tester.pumpAndSettle();
+      final (method, path, body) = calls.single;
+      expect((method, path), ('PATCH', '/api/admin/money/income/e1'));
+      expect((body['description'], body['amount'], body['currency'], body['expected_version']), ('Donation of the club', '500000', 'SYP', 3));
+    });
+
+    testWidgets('a new invoice with its items is created and then opened', (tester) async {
+      tall(tester);
+      final calls = <(String, String, Map<String, dynamic>)>[];
+      await tester.pumpWidget(page(const MoneyEntriesPage(kind: 'income'), (r) => incomeServer(r, calls)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New invoice'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'or the payer'), 'Club');
+      await tester.enterText(find.widgetWithText(TextField, 'Item 1'), 'Trip');
+      await tester.enterText(find.widgetWithText(TextField, 'Amount (USD)'), '10');
+      await tester.tap(find.text('Create invoice'));
+      await tester.pumpAndSettle();
+      final (method, path, body) = calls.single;
+      expect((method, path), ('POST', '/api/admin/money/invoices'));
+      expect((body['payer_name'], body['currency']), ('Club', 'USD'));
+      expect(body['items'], [{'description': 'Trip', 'amount': '10'}]);
+      expect(find.text('INV-2026-0002'), findsOneWidget); // the invoice page
+      expect(find.text('Record a payment'), findsWidgets);
+    });
+    testWidgets('the pages fit a phone screen in Arabic without overflowing', (tester) async {
+      tester.view.physicalSize = const Size(390, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final calls = <(String, String, Map<String, dynamic>)>[];
+      for (final child in [const MoneySummaryPage(), const MoneyEntriesPage(kind: 'income'), const MoneyEntriesPage(kind: 'expenses')]) {
+        final session = Session(ApiClient(client: MockClient((r) async {
+          if (r.url.path.endsWith('/summary')) return json(summary(r.url.queryParameters['month']!));
+          return incomeServer(r, calls, correct: true);
+        })))..api.token = 't';
+        await tester.pumpWidget(MaterialApp(
+          locale: const Locale('ar'),
+          supportedLocales: S.supported,
+          localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+          builder: (context, c) => SessionScope(session: session, child: c!),
+          home: Scaffold(body: child),
+        ));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
     });
   });
 }
