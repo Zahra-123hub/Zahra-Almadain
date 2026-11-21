@@ -380,7 +380,16 @@ class _Tag extends StatelessWidget {
   );
 }
 
+/// "Test" mark of a trial entry (it can be deleted for good with "delete test data" on the overview).
+Widget _testTag(S s) => _Tag(s.get('mnTestTag'), fg: _warn, bg: _warnBg, icon: Icons.science_outlined);
+
 Widget? _stateTag(S s, Map<String, dynamic> r) {
+  final state = _stateTagOnly(s, r);
+  if (r['is_test'] != true) return state;
+  return Wrap(spacing: 6, runSpacing: 6, children: [_testTag(s), ?state]);
+}
+
+Widget? _stateTagOnly(S s, Map<String, dynamic> r) {
   if (r['voided'] == true) return _Tag('${s.get('mnCancelled')}: ${r['void_reason'] ?? ''}', icon: Icons.block);
   if (r['is_reversal'] == true) return _Tag(s.get('mnReversal'), fg: _warn, bg: _warnBg, icon: Icons.undo_rounded);
   if (r['reversed'] == true) return _Tag(s.get('mnReversed'), fg: _warn, bg: _warnBg, icon: Icons.undo_rounded);
@@ -394,6 +403,8 @@ Widget _invoiceTag(S s, String status) => switch (status) {
   'void' => _Tag(s.get('mnCancelled')),
   _ => _Tag(s.get('mnOpen'), fg: _bad, bg: _badBg),
 };
+
+Widget _invoiceTags(S s, Map<String, dynamic> v) => Wrap(spacing: 6, runSpacing: 6, children: [if (v['is_test'] == true) _testTag(s), _invoiceTag(s, v['status'] as String)]);
 
 /// Buttons that keep their natural width (the theme makes filled buttons full width).
 Widget _primary(String label, IconData icon, VoidCallback? onPressed) => FilledButton.icon(
@@ -990,6 +1001,7 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
       hero,
       kpis,
       _CashPanel(meta: meta, d: d, onChanged: reload),
+      _TestPanel(meta: meta, onChanged: reload),
       _Panel(
         title: s.get('mnCompare'),
         subtitle: '${s.get('mnVsPrevious')}: ${monthTitle(s.code, prevMonth)}',
@@ -1037,6 +1049,79 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
 
 /// The money the kindergarten has: start of the month, + income, − expenses, = profit, end of the month. The management
 /// enters the opening balance here.
+/// Trial data: shows how many entries are marked as test and lets the management delete them for good. Hidden when there are none.
+class _TestPanel extends StatefulWidget {
+  const _TestPanel({required this.meta, required this.onChanged});
+  final MoneyMeta meta;
+  final Future<void> Function() onChanged;
+  @override
+  State<_TestPanel> createState() => _TestPanelState();
+}
+
+class _TestPanelState extends State<_TestPanel> {
+  Map<String, dynamic>? _data;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = _map(await SessionScope.of(context).api.get('/api/admin/money/test-data'));
+      if (mounted) setState(() => _data = d);
+    } catch (_) {}
+  }
+
+  Future<void> _purge() async {
+    final s = S.of(context);
+    final total = _data?['total'] ?? 0;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        content: Text('${s.get('mnTestConfirm')} ($total)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))),
+          FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, true), child: Text(s.get('delete'))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await SessionScope.of(context).api.post('/api/admin/money/test-data/purge', {});
+      if (!mounted) return;
+      toast(context, s.get('mnTestDeleted'));
+      await widget.onChanged();
+    } on ApiException catch (e) {
+      if (mounted) toast(context, problemText(context, e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final d = _data;
+    if (d == null || (d['total'] ?? 0) == 0) return const SizedBox.shrink();
+    return _Panel(
+      title: s.get('mnTestData'),
+      icon: Icons.science_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${s.get('mnIncome')}: ${d['income']} · ${s.get('mnExpenses')}: ${d['expenses']} · ${s.get('mnTestInvoices')}: ${d['invoices']}'),
+          if (widget.meta.canManage)
+            Padding(padding: const EdgeInsets.only(top: 12), child: _secondary(s.get('mnTestDelete'), Icons.delete_forever_outlined, _busy ? null : _purge, color: _bad)),
+        ],
+      ),
+    );
+  }
+}
+
 class _CashPanel extends StatelessWidget {
   const _CashPanel({required this.meta, required this.d, required this.onChanged});
   final MoneyMeta meta;
@@ -1822,7 +1907,7 @@ class _InvoicesPanel extends StatelessWidget {
                             style: const TextStyle(fontSize: 12.5, color: _muted),
                           ),
                           const SizedBox(height: 6),
-                          _invoiceTag(s, v['status'] as String),
+                          _invoiceTags(s, v),
                         ],
                       ),
                     ),
@@ -1864,6 +1949,7 @@ class _InvoiceFormState extends State<InvoiceForm> {
   String? _child;
   List<Map<String, dynamic>> _children = [];
   bool _busy = false;
+  bool _test = false;
 
   @override
   void initState() {
@@ -1901,7 +1987,7 @@ class _InvoiceFormState extends State<InvoiceForm> {
     setState(() => _busy = true);
     try {
       final api = SessionScope.of(context).api;
-      final body = {'issued_on': dayText(_day), 'child_id': _child, 'payer_name': _payer.text.trim(), 'description': _description.text.trim(), 'currency': _currency, 'items': items};
+      final body = {'issued_on': dayText(_day), 'child_id': _child, 'payer_name': _payer.text.trim(), 'description': _description.text.trim(), 'currency': _currency, 'items': items, if (widget.invoice == null) 'test': _test};
       final old = widget.invoice;
       final v = (old == null ? await api.post('/api/admin/money/invoices', body) : await api.patch('/api/admin/money/invoices/${old['id']}', body)) as Map;
       if (!mounted) return;
@@ -1961,6 +2047,7 @@ class _InvoiceFormState extends State<InvoiceForm> {
                       selected: {_currency},
                       onSelectionChanged: (v) => setState(() => _currency = v.first),
                     ),
+                    if (widget.invoice == null) CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _test, onChanged: (v) => setState(() => _test = v ?? false), title: Text(s.get('mnTestEntry'))),
                   ],
                 ),
               ),
@@ -2094,7 +2181,7 @@ class _InvoicePageState extends State<InvoicePage> {
                                   ],
                                 ),
                               ),
-                              _invoiceTag(s, v['status'] as String),
+                              _invoiceTags(s, v),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -2639,6 +2726,7 @@ class _MoneyEntryFormState extends State<MoneyEntryForm> {
   String? _category;
   String _currency = 'USD';
   String? _link; // a child (income) or a person of the staff (salary)
+  bool _test = false; // a trial entry: "delete test data" removes it again
   List<Map<String, dynamic>> _people = [];
   bool _busy = false;
   bool get income => widget.kind == 'income';
@@ -2731,6 +2819,7 @@ class _MoneyEntryFormState extends State<MoneyEntryForm> {
       if (income) ...{'category_id': _category, 'child_id': _link, 'payer_name': _who.text.trim()},
       if (!income) ...{'category': _category, 'recipient': _who.text.trim(), 'employee_id': salary ? _link : null, 'salary_month': salary ? _salaryMonth : null},
       if (row != null) 'expected_version': row['version'],
+      if (row == null) 'test': _test,
     };
     setState(() => _busy = true);
     try {
@@ -2880,6 +2969,7 @@ class _MoneyEntryFormState extends State<MoneyEntryForm> {
                 ),
               ),
               if (!income) _hint(s.get('mnOnlyPaid')),
+              if (row == null) CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, value: _test, onChanged: (v) => setState(() => _test = v ?? false), title: Text(s.get('mnTestEntry'))),
             ],
           ),
         ),

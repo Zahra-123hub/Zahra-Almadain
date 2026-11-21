@@ -23,7 +23,7 @@ from typing import Any, Callable
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app import activity, pdfs
@@ -305,6 +305,7 @@ class IncomeIn(BaseModel):
     currency: str = Field(pattern="^(USD|SYP)$")
     rate: Decimal | None = Rate
     note: str = Field(default="", max_length=500)
+    test: bool = False  # a trial entry that "delete test data" removes again
 
 
 class ExpenseIn(BaseModel):
@@ -318,6 +319,7 @@ class ExpenseIn(BaseModel):
     currency: str = Field(pattern="^(USD|SYP)$")
     rate: Decimal | None = Rate
     note: str = Field(default="", max_length=500)
+    test: bool = False
 
 
 class Versioned(BaseModel):
@@ -349,6 +351,7 @@ class InvoiceIn(BaseModel):
     currency: str = Field(pattern="^(USD|SYP)$")
     rate: Decimal | None = Rate
     items: list[ItemIn] = Field(min_length=1, max_length=20)
+    test: bool = False
 
 
 class PaymentIn(BaseModel):
@@ -359,6 +362,7 @@ class PaymentIn(BaseModel):
     payer_name: str = Field(default="", max_length=120)
     note: str = Field(default="", max_length=500)
     category_id: uuid.UUID | None = None  # default: kindergarten fees
+    test: bool = False
 
 
 class OpeningIn(BaseModel):
@@ -406,7 +410,7 @@ def invoice_dict(invoice: Invoice, names: dict[uuid.UUID, str], with_payments: b
         "items": [{"description": i.description, **both(i.amount, cur, i.amount_other)} for i in invoice.items],
         "total": both(state["total"], cur, state["total_other"]), "paid": both(state["paid"], cur, state["paid_other"]),
         "open": both(state["open"], cur, state["open_other"]), "status": state["status"],
-        "voided": invoice.voided_at is not None, "void_reason": invoice.void_reason, "created_by": invoice.created_by,
+        "voided": invoice.voided_at is not None, "void_reason": invoice.void_reason, "created_by": invoice.created_by, "is_test": bool(invoice.is_test),
     }
     if with_payments:
         data["payments"] = [
@@ -581,7 +585,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
             "amount": text(e.currency, e.amount), "currency": e.currency, "rate": rate_text(e.rate), **both(e.amount, e.currency, e.amount_other),
             "note": e.note, "invoice_id": str(e.invoice_id) if e.invoice_id else "", "invoice_number": e.invoice.number if e.invoice_id and e.invoice else "",
             "is_reversal": e.reverses_id is not None, "reversed": e.id in reversed_set, "voided": e.voided_at is not None, "void_reason": e.void_reason,
-            "voided_by": e.voided_by, "created_by": e.created_by, "version": e.version or 1, "month_closed": closed,
+            "voided_by": e.voided_by, "created_by": e.created_by, "version": e.version or 1, "month_closed": closed, "is_test": bool(e.is_test),
         }
 
     def expense_dict(e: ExpenseEntry, staff: dict[uuid.UUID, str], reversed_set: set[uuid.UUID], closed: bool) -> dict[str, Any]:
@@ -593,7 +597,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
             "salary_month": e.salary_month or "", "amount": text(e.currency, e.amount), "currency": e.currency, "rate": rate_text(e.rate),
             **both(e.amount, e.currency, e.amount_other), "note": e.note, "is_reversal": e.reverses_id is not None, "reversed": e.id in reversed_set,
             "voided": e.voided_at is not None, "void_reason": e.void_reason, "voided_by": e.voided_by, "created_by": e.created_by,
-            "version": e.version or 1, "month_closed": closed,
+            "version": e.version or 1, "month_closed": closed, "is_test": bool(e.is_test),
         }
 
     def closed_months(session: Session) -> set[tuple[int, int]]:
@@ -754,7 +758,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         entry = IncomeEntry(
             booked_on=payload.booked_on, description=description, category_id=category_id, child_id=child_id, payer_name=payload.payer_name.strip(),
             amount=amount, currency=payload.currency, rate=rate, amount_other=to_other(amount, payload.currency, rate), note=payload.note.strip(),
-            invoice_id=invoice.id if invoice else None, created_by=actor.name[:80],
+            invoice_id=invoice.id if invoice else None, created_by=actor.name[:80], is_test=bool(payload.test or (invoice is not None and invoice.is_test)),
         )
         session.add(entry)
         session.flush()
@@ -862,7 +866,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         numbers = [int(n.rsplit("-", 1)[-1]) for n in session.scalars(select(Invoice.number).where(Invoice.number.like(f"INV-{year}-%"))).all() if n.rsplit("-", 1)[-1].isdigit()]
         invoice = Invoice(
             number=f"INV-{year}-{max(numbers or [0]) + 1:04d}", issued_on=payload.issued_on, child_id=payload.child_id, payer_name=payload.payer_name.strip(),
-            description=payload.description.strip(), currency=payload.currency, rate=rate, created_by=actor.name[:80],
+            description=payload.description.strip(), currency=payload.currency, rate=rate, created_by=actor.name[:80], is_test=payload.test,
         )
         invoice.items = [
             InvoiceItem(position=n, description=item.description.strip(), amount=cents(item.amount), amount_other=to_other(cents(item.amount), payload.currency, rate))
@@ -1005,7 +1009,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         entry = ExpenseEntry(
             booked_on=payload.booked_on, description=description, category=payload.category, recipient=payload.recipient.strip(),
             employee_id=payload.employee_id, salary_month=payload.salary_month, amount=amount, currency=payload.currency, rate=rate,
-            amount_other=to_other(amount, payload.currency, rate), note=payload.note.strip(), created_by=actor.name[:80],
+            amount_other=to_other(amount, payload.currency, rate), note=payload.note.strip(), created_by=actor.name[:80], is_test=payload.test,
         )
         session.add(entry)
         session.flush()
@@ -1192,6 +1196,32 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         audit(session, actor, "month.reopen", "month", f"{year}-{month:02d}", {"closed": True}, {"closed": False}, closing.reopen_reason)
         session.commit()
         return {"month": f"{year}-{month:02d}", "closed": False}
+
+    # ---- trial data: entries marked "test" can be deleted for good (the only place where something is really deleted) ---------------
+    def test_counts(session: Session) -> dict[str, int]:
+        count = lambda model: session.scalar(select(func.count()).select_from(model).where(model.is_test.is_(True))) or 0  # noqa: E731
+        return {"income": count(IncomeEntry), "expenses": count(ExpenseEntry), "invoices": count(Invoice)}
+
+    @router.get("/test-data")
+    def test_data(response: Response, _actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "no-store"
+        counts = test_counts(session)
+        return {**counts, "total": sum(counts.values())}
+
+    @router.post("/test-data/purge")
+    def purge_test_data(actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """Deletes every entry marked as test (reversals first, then the entries, then the invoices with their items). Real entries
+        are never touched. What was deleted is written to the activity log."""
+        need(session, actor, "manage")
+        counts = test_counts(session)
+        for model in (IncomeEntry, ExpenseEntry):
+            session.execute(delete(model).where(model.is_test.is_(True), model.reverses_id.is_not(None)))
+            session.execute(delete(model).where(model.is_test.is_(True)))
+        for invoice in session.scalars(select(Invoice).where(Invoice.is_test.is_(True))).all():
+            session.delete(invoice)
+        audit(session, actor, "test.purge", "test", "all", counts, {"deleted": True})
+        session.commit()
+        return {**counts, "total": sum(counts.values())}
 
     # ---- exports: signed PDF documents (both currencies and the rate in each) ------------------------------------------------------
     def only_pdf(fmt: str) -> None:

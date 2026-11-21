@@ -507,6 +507,7 @@ class Invoice(Base):
     voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
     voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # a trial entry: can be deleted for good with "delete test data"
     items: Mapped[list[InvoiceItem]] = relationship(back_populates="invoice", cascade="all, delete-orphan", lazy="selectin", order_by="InvoiceItem.position")
     payments: Mapped[list[IncomeEntry]] = relationship(back_populates="invoice", lazy="selectin", order_by="IncomeEntry.booked_on")
 
@@ -549,6 +550,7 @@ class IncomeEntry(Base):
     voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
     voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # a trial entry: can be deleted for good with "delete test data"
     invoice: Mapped[Invoice | None] = relationship(back_populates="payments")
 
 
@@ -578,6 +580,7 @@ class ExpenseEntry(Base):
     voided_at: Mapped[datetime | None] = mapped_column(nullable=True)
     voided_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     void_reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # a trial entry: can be deleted for good with "delete test data"
 
 
 class MonthClosing(Base):

@@ -565,3 +565,31 @@ class OpeningBalanceTests(MoneyBase):
         state = self.client.get(MONEY + "/opening", headers=self.mgr).json()
         self.assertEqual(state["opening"]["USD"]["amount"], "1200.00")
         self.assertEqual([h["amount"] for h in state["history"] if h["currency"] == "USD"], ["1200.00", "1000.00"])
+
+
+class TestDataTests(MoneyBase):
+    def test_trial_entries_are_marked_and_deleted_for_good_without_touching_real_ones(self):
+        real = self.income("30", "USD", description="real income").json()
+        trial = self.income("20", "USD", description="trial income", test=True).json()
+        self.assertEqual((real["is_test"], trial["is_test"]), (False, True))
+        self.assertTrue(self.expense("5", "USD", description="trial expense", test=True).json()["is_test"])
+        invoice = self.invoice(test=True).json()
+        self.assertTrue(invoice["is_test"])
+        paid = self.pay(invoice["id"], "10").json()  # a payment of a trial invoice is a trial entry too
+        self.assertTrue(all(p["id"] for p in paid["payments"]))
+        counts = self.client.get(MONEY + "/test-data", headers=self.acc).json()
+        self.assertEqual((counts["income"], counts["expenses"], counts["invoices"], counts["total"]), (2, 1, 1, 4))
+        # a trial entry in a cancelled state is deleted as well
+        self.client.post(f"{MONEY}/income/{trial['id']}/void", headers=self.acc, json={"reason": "trial cancelled"})
+        done = self.client.post(MONEY + "/test-data/purge", headers=self.acc)
+        self.assertEqual((done.status_code, done.json()["total"]), (200, 4))
+        rows = self.client.get(MONEY + "/income", headers=self.acc).json()["rows"]
+        self.assertEqual([r["description"] for r in rows], ["real income"])
+        self.assertEqual(self.client.get(MONEY + "/expenses", headers=self.acc).json()["count"], 0)
+        self.assertEqual(self.client.get(MONEY + "/invoices", headers=self.acc).json()["rows"], [])
+        self.assertEqual(self.client.get(MONEY + "/test-data", headers=self.acc).json()["total"], 0)
+
+    def test_without_the_mark_nothing_is_a_trial(self):
+        self.income("20", "USD")
+        self.assertEqual(self.client.post(MONEY + "/test-data/purge", headers=self.acc).json()["total"], 0)
+        self.assertEqual(self.client.get(MONEY + "/income", headers=self.acc).json()["count"], 1)

@@ -1,7 +1,7 @@
 /* The accounting: three pages only. Income (الإيرادات), expenses (المصروفات), month overview (الملخص الشهري).
    Every amount stands in US dollars and Syrian pounds side by side. Totals are made per currency from the money really paid in it;
    the value in the other currency is shown beside an entry and never counted a second time.
-   Invoices, payments, salaries, the exchange rate and the exports live inside these pages. Nothing is deleted.
+   Invoices, payments, salaries, the exchange rate and the exports live inside these pages. Nothing is deleted, except entries marked as test.
 
    Layout of a page: the rate strip, a row of key figures, a toolbar (month, filters, "new", PDF), the form (only when asked for),
    the table. The tables become cards on a phone (labelCells) and never make the page wider than the screen. */
@@ -25,7 +25,17 @@ function mnMonthName(value){ var p = String(value).split("-"); return MONTHS_AR[
 function mnCells(row, cls){
   return [h("td", {class:"num " + (cls || ""), dir:"ltr", text:uiNum(row.usd)}), h("td", {class:"num " + (cls || ""), dir:"ltr", text:uiNum(row.syp)})];
 }
+function mnTestBadge(row){ return row.is_test ? uiBadge(uiT(["تجريبي", "Test"]), "review") : ""; }
 function mnState(row){
+  var test = mnTestBadge(row), state = mnStateOnly(row);
+  return test ? h("span", {}, [test, " ", state]) : state;
+}
+/* "this is only a trial": the entry is marked and can be deleted for good later (management: "delete test data" on the overview) */
+function mnTestBox(){
+  var box = h("input", {type:"checkbox"});
+  return {node:h("label", {class:"a-check"}, [box, uiT(["إدخال تجريبي (يمكن حذفه لاحقاً نهائياً)", "Test entry (can be deleted for good later)"])]), value:function(){ return box.checked; }};
+}
+function mnStateOnly(row){
   if(row.voided) return uiBadge(uiT(["ملغاة: ", "Cancelled: "]) + row.void_reason, "neutral");
   if(row.is_reversal) return uiBadge(uiT(["قيد عكسي", "Reversal"]), "review");
   if(row.reversed) return uiBadge(uiT(["صُحّحت بقيد عكسي", "Reversed"]), "review");
@@ -212,10 +222,11 @@ function tabIncome(){
       var cat = uiSelect(meta.income_categories.filter(function(c){ return c.is_active || (row && c.id === row.category_id); }).map(function(c){ return [c.id, c.name]; }), row ? row.category_id : undefined);
       var child = uiSelect([["", "—"]].concat(children.map(function(c){ return [c.id, c.name]; })), row ? row.child_id : "");
       var payer = h("input", {type:"text", maxlength:"120", value:row ? row.payer_name : ""}), note = h("input", {type:"text", maxlength:"500", value:row ? row.note : ""});
-      var m = mnMoneyFields(meta, row), msg = mnMsg();
+      var m = mnMoneyFields(meta, row), msg = mnMsg(), tst = mnTestBox();
       day.addEventListener("change", function(){ m.dayChanged(day.value); });
       var save = mnBtn(row ? uiT(["حفظ التعديل", "Save change"]) : uiT(["تسجيل الإيراد", "Record income"]), "sun", function(){
         var body = Object.assign({booked_on:day.value, description:desc.value.trim(), category_id:cat.value, child_id:child.value || null, payer_name:payer.value.trim(), note:note.value.trim()}, m.values());
+        if(!row) body.test = tst.value();
         if(row) body.expected_version = row.version;
         request("/api/admin/money/income" + (row ? "/" + row.id : ""), {method:row ? "PATCH" : "POST", body:JSON.stringify(body)})
           .then(function(){ uiToast(uiT(["تم الحفظ.", "Saved."]), "ok"); formBox.innerHTML = ""; load(); }).catch(mnErr(msg));
@@ -224,7 +235,7 @@ function tabIncome(){
       formBox.appendChild(mnFormCard(row ? uiT(["تعديل الإيراد", "Change the income"]) : uiT(["إيراد جديد", "New income"]),
         [uiField(uiT(["التاريخ", "Date"]), day), uiField(uiT(["السبب", "Reason"]), desc), uiField(uiT(["الفئة", "Category"]), cat),
          uiField(uiT(["الطفل (اختياري)", "Child (optional)"]), child), uiField(uiT(["الدافع (اختياري)", "Payer (optional)"]), payer)].concat(m.nodes, [uiField(uiT(["ملاحظة", "Note"]), note)]),
-        [m.preview, h("div", {class:"a-row"}, [save]), msg], function(){ formBox.innerHTML = ""; }));
+        [m.preview, row ? "" : tst.node, h("div", {class:"a-row"}, [save]), msg], function(){ formBox.innerHTML = ""; }));
       formBox.scrollIntoView({behavior:"smooth", block:"start"});
     }
     /* invoices: a claim, not an income; a payment is an income tied to the invoice */
@@ -238,7 +249,7 @@ function tabIncome(){
           uiT(["المتبقي USD", "Open USD"]), uiT(["المتبقي SYP", "Open SYP"]), uiT(["الحالة", "Status"])], d.rows.map(function(r){
           var st = MN_STATUS[r.status];
           var tr = h("tr", {class:"clickable", tabindex:"0", onclick:function(){ openInvoice(r.id); }}, [h("td", {dir:"ltr", text:r.number}), h("td", {class:"mn-date", dir:"ltr", text:r.issued_on}),
-            h("td", {text:r.child || r.payer_name})].concat(mnCells(r.total), mnCells(r.open, r.status === "paid" ? "" : "due"), [h("td", {}, [uiBadge(uiT(st), st[2])])]));
+            h("td", {text:r.child || r.payer_name})].concat(mnCells(r.total), mnCells(r.open, r.status === "paid" ? "" : "due"), [h("td", {}, [mnTestBadge(r), r.is_test ? " " : "", uiBadge(uiT(st), st[2])])]));
           tr.addEventListener("keydown", function(e){ if(e.key === "Enter") openInvoice(r.id); });
           return tr;
         }), uiT(["لا توجد فواتير", "No invoices"])));
@@ -295,7 +306,7 @@ function tabIncome(){
       var child = uiSelect([["", "—"]].concat(children.map(function(c){ return [c.id, c.name]; })), old ? old.child_id : "");
       var payer = h("input", {type:"text", maxlength:"120", value:old ? old.payer_name : ""}), desc = h("input", {type:"text", maxlength:"300", value:old ? old.description : ""});
       var cur = uiSelect([["USD", uiT(["دولار (USD)", "Dollar (USD)"])], ["SYP", uiT(["ليرة (SYP)", "Pound (SYP)"])]], old ? old.currency : "USD");
-      var msg = mnMsg();
+      var msg = mnMsg(), tst = mnTestBox();
       function item(text, amount){
         var d = h("input", {type:"text", maxlength:"200", value:text || "", placeholder:uiT(["مثال: رسوم شهرية", "e.g. monthly fee"])}), a = h("input", {type:"number", min:"0.01", step:"0.01", inputMode:"decimal", value:amount || ""});
         var row = h("div", {class:"mn-item"}, [uiField(uiT(["البند", "Item"]), d), uiField(uiT(["المبلغ", "Amount"]), a), mnBtn("✕", "ghost mn-mini", function(){ if(items.children.length > 1) row.remove(); }, uiT(["إزالة البند", "Remove item"]))]);
@@ -307,9 +318,10 @@ function tabIncome(){
         [h("h4", {text:uiT(["البنود", "Items"])}), items,
          h("div", {class:"a-row"}, [mnBtn(uiT(["+ بند", "+ Item"]), "ghost", function(){ item(); }), mnBtn(old ? uiT(["حفظ التعديل", "Save change"]) : uiT(["إنشاء الفاتورة", "Create invoice"]), "sun", function(){
            var list = Array.prototype.map.call(items.children, function(r){ return {description:r._d.value.trim(), amount:r._a.value}; }).filter(function(i){ return i.amount !== ""; });
-           request("/api/admin/money/invoices" + (old ? "/" + old.id : ""), {method:old ? "PATCH" : "POST", body:JSON.stringify({issued_on:day.value, child_id:child.value || null, payer_name:payer.value.trim(), description:desc.value.trim(), currency:cur.value, items:list})})
+           request("/api/admin/money/invoices" + (old ? "/" + old.id : ""), {method:old ? "PATCH" : "POST", body:JSON.stringify({issued_on:day.value, child_id:child.value || null, payer_name:payer.value.trim(), description:desc.value.trim(), currency:cur.value, items:list, test:old ? undefined : tst.value()})})
              .then(function(v){ uiToast(old ? uiT(["حُفظت الفاتورة.", "Invoice saved."]) : uiT(["أُنشئت الفاتورة ", "Invoice made: "]) + v.number, "ok"); invForm.innerHTML = ""; loadInvoices(); load(); openInvoice(v.id); }).catch(mnErr(msg));
          })]),
+         old ? "" : tst.node,
          h("p", {class:"hint", text:uiT(["الفاتورة مطالبة وليست إيراداً. يدخل المال في الإيرادات عند تسجيل الدفعة فقط.", "An invoice is a claim, not income. Money counts as income only when a payment is recorded."])}), msg],
         function(){ invForm.innerHTML = ""; }));
       invForm.scrollIntoView({behavior:"smooth", block:"start"});
@@ -386,12 +398,12 @@ function tabExpense(){
       function sync(){ personField.hidden = monthField.hidden = cat.value !== "salaries"; }
       cat.addEventListener("change", sync); sync();
       day.addEventListener("change", function(){ m.dayChanged(day.value); });
-      var msg = mnMsg();
+      var msg = mnMsg(), tst = mnTestBox();
       var save = mnBtn(row ? uiT(["حفظ التعديل", "Save change"]) : uiT(["تسجيل المصروف", "Record expense"]), "sun", function(){
         var salary = cat.value === "salaries";
         var body = Object.assign({booked_on:day.value, description:desc.value.trim(), category:cat.value, recipient:recipient.value.trim(), note:note.value.trim(),
           employee_id:salary && person.value ? person.value : null, salary_month:salary ? month.value : null}, m.values());
-        if(row) body.expected_version = row.version;
+        if(row) body.expected_version = row.version; else body.test = tst.value();
         request("/api/admin/money/expenses" + (row ? "/" + row.id : ""), {method:row ? "PATCH" : "POST", body:JSON.stringify(body)})
           .then(function(){ uiToast(uiT(["تم الحفظ.", "Saved."]), "ok"); formBox.innerHTML = ""; refresh(); }).catch(mnErr(msg));
       });
@@ -399,7 +411,7 @@ function tabExpense(){
       formBox.appendChild(mnFormCard(row ? uiT(["تعديل المصروف", "Change the expense"]) : salaryFor ? uiT(["صرف راتب ", "Pay the salary of "]) + salaryFor.name : uiT(["مصروف جديد", "New expense"]),
         [uiField(uiT(["تاريخ الدفع", "Date paid"]), day), uiField(uiT(["السبب", "Reason"]), desc), uiField(uiT(["الفئة", "Category"]), cat), personField, monthField,
          uiField(uiT(["المستلم (اختياري)", "Recipient (optional)"]), recipient)].concat(m.nodes, [uiField(uiT(["ملاحظة", "Note"]), note)]),
-        [m.preview, h("p", {class:"hint", text:uiT(["يُسجَّل المصروف بعد الدفع فعلاً فقط.", "Record an expense only once it was really paid."])}), h("div", {class:"a-row"}, [save]), msg],
+        [m.preview, h("p", {class:"hint", text:uiT(["يُسجَّل المصروف بعد الدفع فعلاً فقط.", "Record an expense only once it was really paid."])}), row ? "" : tst.node, h("div", {class:"a-row"}, [save]), msg],
         function(){ formBox.innerHTML = ""; }));
       formBox.scrollIntoView({behavior:"smooth", block:"start"});
     }
@@ -494,6 +506,7 @@ function tabSummary(){
         h("p", {class:"hint", text:uiT(["كل عمود يجمع المال المدفوع فعلاً بعملته؛ لا يُجمع الدولار والليرة معاً. للمقارنة فقط، كل الحركات محوّلة بسعرها: ", "Each column adds the money really paid in its currency; dollars and pounds are never added. For comparison only, everything converted at its rate: "]) +
           "USD " + uiNum(d.converted.surplus.usd) + " / SYP " + uiNum(d.converted.surplus.syp) + " · " + d.income_count + uiT([" إيراد، ", " income, "]) + d.expense_count + uiT([" مصروف", " expenses"])})]));
       page.appendChild(mnBalanceCard(meta, d, draw3));
+      page.appendChild(mnTestCard(meta, draw3));
       page.appendChild(h("div", {class:"mn-two"}, [
         h("div", {class:"a-card"}, [h("h3", {text:uiT(["الإيرادات حسب الفئة", "Income by category"])}), catTable(d.income_by_category, function(r){ return r.name; })]),
         h("div", {class:"a-card"}, [h("h3", {text:uiT(["المصروفات حسب الفئة", "Expenses by category"])}), catTable(d.expense_by_category, function(r){ return uiT([r.ar, r.en]); })])]));
@@ -501,6 +514,26 @@ function tabSummary(){
   }
   draw3();
   return page;
+}
+
+/* ======================================================================================== trial data */
+/* Entries made with "test entry" ticked can be deleted for good here (management). Real entries are never touched. */
+function mnTestCard(meta, again){
+  var box = h("div", {class:"a-card"}), msg = mnMsg();
+  request("/api/admin/money/test-data").then(function(d){
+    if(!d.total) return;
+    box.appendChild(h("h3", {text:uiT(["بيانات تجريبية", "Test data"])}));
+    box.appendChild(h("p", {class:"hint", text:uiT(["إيرادات: ", "Income: "]) + d.income + uiT([" · مصروفات: ", " · Expenses: "]) + d.expenses + uiT([" · فواتير: ", " · Invoices: "]) + d.invoices}));
+    if(meta.rights.manage){
+      box.appendChild(h("div", {class:"a-row"}, [mnBtn(uiT(["حذف البيانات التجريبية نهائياً", "Delete the test data for good"]), "ghost", function(){
+        if(!window.confirm(uiT(["سيُحذف نهائياً كل ما أُدخل كتجريبي (" + d.total + " حركة). الحركات الحقيقية لا تتأثر. متابعة؟", "Everything entered as a test (" + d.total + " entries) will be deleted for good. Real entries are not touched. Continue?"]))) return;
+        request("/api/admin/money/test-data/purge", {method:"POST"}).then(function(){ uiToast(uiT(["حُذفت البيانات التجريبية.", "Test data deleted."]), "ok"); again(); }).catch(mnErr(msg));
+      })]));
+    }
+    box.appendChild(msg);
+    box.hidden = false;
+  }).catch(function(){});
+  return box;
 }
 
 /* ======================================================================================== the money the kindergarten has */
