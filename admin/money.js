@@ -369,7 +369,8 @@ function tabIncome(){
     page.appendChild(tiles);
     page.appendChild(h("div", {class:"a-card"}, [h("h3", {text:uiT(["الإيرادات", "Income"])}), bar.node, listBox]));
     page.appendChild(formBox);
-    page.appendChild(h("div", {class:"a-card"}, [h("div", {class:"mn-head"}, [h("h3", {text:uiT(["فواتير الأهالي", "Invoices to parents"])}), mnBtn(uiT(["+ فاتورة جديدة", "+ New invoice"]), "sun", function(){ showInvoiceForm(null); })]),
+    page.appendChild(h("div", {class:"a-card"}, [h("div", {class:"mn-head"}, [h("h3", {text:uiT(["مستحقات الروضة على الأهالي", "What parents owe us"])}), mnBtn(uiT(["+ فاتورة جديدة للأهالي", "+ New invoice to parents"]), "sun", function(){ showInvoiceForm(null); })]),
+      h("p", {class:"hint", text:uiT(["فواتير نُصدرها للأهالي، وتصبح إيراداً عند الدفع فقط.", "Invoices we send to parents. Income only once paid."])}),
       h("div", {class:"mn-grid mn-filters"}, [uiField(uiT(["الحالة", "Status"]), invStatus)]), invList]));
     page.appendChild(invForm);
     page.appendChild(invDetail);
