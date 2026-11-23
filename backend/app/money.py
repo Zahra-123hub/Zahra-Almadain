@@ -1278,6 +1278,61 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         session.refresh(invoice)
         return invoice_dict(invoice, child_names(session, {invoice.child_id}), with_payments=True)
 
+    # ---- cancelled entries can be deleted for good (management); what was deleted stays written in the activity log -----------------
+    def remember_salary(session: Session, actor: Actor, e: ExpenseEntry) -> None:
+        """A deleted salary of a month is not booked again by the automatic run (nobody wanted it)."""
+        if e.employee_id is not None and e.salary_month and e.reverses_id is None:
+            activity.record(session, actor_id=actor.account_id, actor_name=actor.name, domain="finance", action="salary.skip", entity_type="salary", entity_id=e.salary_month, details=str(e.employee_id))
+
+    def check_deletable(session: Session, entry: Any, what: str) -> None:
+        if entry.voided_at is None:
+            raise HTTPException(409, "تُحذف الحركات الملغاة فقط. ألغِ الحركة أولاً.")
+        if entry.reverses_id is not None or session.scalar(select(type(entry).id).where(type(entry).reverses_id == entry.id)) is not None:
+            raise HTTPException(409, "هذه الحركة جزء من قيد عكسي ولا تُحذف.")
+        ensure_open(session, entry.booked_on)
+
+    @router.delete("/income/{entry_id}")
+    def delete_income(entry_id: uuid.UUID, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        need(session, actor, "manage")
+        entry = get_income(session, entry_id)
+        check_deletable(session, entry, "income")
+        before = income_snapshot(entry)
+        session.delete(entry)
+        audit(session, actor, "income.delete", "income", entry_id, before, {"deleted": True}, entry.void_reason)
+        session.commit()
+        return {"id": str(entry_id), "deleted": True}
+
+    @router.delete("/expenses/{entry_id}")
+    def delete_expense(entry_id: uuid.UUID, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        need(session, actor, "manage")
+        entry = get_expense(session, entry_id)
+        check_deletable(session, entry, "expense")
+        before = expense_snapshot(entry)
+        remember_salary(session, actor, entry)
+        session.delete(entry)
+        audit(session, actor, "expense.delete", "expense", entry_id, before, {"deleted": True}, entry.void_reason)
+        session.commit()
+        return {"id": str(entry_id), "deleted": True}
+
+    @router.delete("/invoices/{invoice_id}")
+    def delete_invoice(invoice_id: uuid.UUID, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """A cancelled invoice goes with its (cancelled) payments."""
+        need(session, actor, "manage")
+        invoice = get_invoice(session, invoice_id)
+        if invoice.voided_at is None:
+            raise HTTPException(409, "تُحذف الفواتير الملغاة فقط. ألغِ الفاتورة أولاً.")
+        payments = session.scalars(select(IncomeEntry).where(IncomeEntry.invoice_id == invoice.id)).all()
+        if any(p.voided_at is None or p.reverses_id is not None for p in payments):
+            raise HTTPException(409, "على الفاتورة دفعات غير ملغاة أو قيود عكسية، فلا تُحذف.")
+        before = {"number": invoice.number, "currency": invoice.currency, "items": [{"description": i.description, "amount": str(i.amount)} for i in invoice.items], "payments": len(payments)}
+        for payment in payments:
+            session.delete(payment)
+        session.flush()
+        session.delete(invoice)
+        audit(session, actor, "invoice.delete", "invoice", invoice_id, before, {"deleted": True}, invoice.void_reason)
+        session.commit()
+        return {"id": str(invoice_id), "deleted": True}
+
     # ---- exports: signed PDF documents (both currencies and the rate in each) ------------------------------------------------------
     def only_pdf(fmt: str) -> None:
         if fmt != "pdf":

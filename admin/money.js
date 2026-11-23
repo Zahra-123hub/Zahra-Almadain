@@ -9,7 +9,7 @@
 var MN = {meta:null};
 var MN_STATUS = {open:["مفتوحة", "Open", "due"], partial:["مدفوعة جزئياً", "Partly paid", "review"], paid:["مدفوعة بالكامل", "Paid", "paid"], void:["ملغاة", "Cancelled", "neutral"]};
 var MN_ACTIONS = {
-  "income.create":["سُجّل", "recorded"], "income.update":["عُدّل", "changed"], "income.void":["أُلغي", "cancelled"], "income.reverse":["صُحّح بقيد عكسي", "reversed"], "income.mark_test":["تغيّرت علامة التجريب", "test mark changed"], "expense.mark_test":["تغيّرت علامة التجريب", "test mark changed"],
+  "income.create":["سُجّل", "recorded"], "income.update":["عُدّل", "changed"], "income.void":["أُلغي", "cancelled"], "income.reverse":["صُحّح بقيد عكسي", "reversed"], "income.mark_test":["تغيّرت علامة التجريب", "test mark changed"], "income.delete":["حُذفت نهائياً", "deleted for good"], "expense.delete":["حُذفت نهائياً", "deleted for good"], "expense.mark_test":["تغيّرت علامة التجريب", "test mark changed"],
   "expense.create":["سُجّل", "recorded"], "expense.update":["عُدّل", "changed"], "expense.void":["أُلغي", "cancelled"], "expense.reverse":["صُحّح بقيد عكسي", "reversed"],
   "salary.auto":["سُجّل الراتب تلقائياً", "salary booked automatically"],
   "invoice.create":["أُنشئت", "created"], "invoice.update":["عُدّلت", "changed"], "invoice.void":["أُلغيت", "cancelled"]
@@ -191,6 +191,12 @@ function mnRowActions(meta, kind, r, columns, onEdit, done){
     box.appendChild(mnBtn(r.month_closed ? uiT(["قيد عكسي", "Reverse"]) : uiT(["إلغاء", "Cancel"]), "ghost mn-mini", function(){ mnCancel(kind, r, done); }));
   }
   box.appendChild(mnBtn(uiT(["السجل", "Log"]), "ghost mn-mini", function(){ mnHistoryRow(r.id, columns, box.closest("tr")); }));
+  if(meta.rights.manage && r.voided && !r.is_reversal){
+    box.appendChild(mnBtn(uiT(["حذف نهائي", "Delete for good"]), "ghost mn-mini", function(){
+      if(!window.confirm(uiT(["ستُحذف الحركة نهائياً ولا يمكن استرجاعها. يبقى سطر عنها في سجل النشاط. متابعة؟", "The entry is deleted for good and cannot be brought back. A line stays in the activity log. Continue?"]))) return;
+      request("/api/admin/money/" + kind + "/" + r.id, {method:"DELETE"}).then(function(){ uiToast(uiT(["حُذفت.", "Deleted."]), "ok"); done(); }).catch(function(e){ uiToast(errText(e), "err"); });
+    }));
+  }
   if(meta.rights.manage && !r.is_reversal){
     box.appendChild(mnBtn(r.is_test ? uiT(["إزالة علامة التجريب", "Remove test mark"]) : uiT(["تعليم كتجريبي", "Mark as test"]), "ghost mn-mini", function(){
       request("/api/admin/money/" + kind + "/" + r.id + "/test", {method:"POST", body:JSON.stringify({test:!r.is_test})})
@@ -299,6 +305,12 @@ function tabIncome(){
         if(meta.rights.correct && !v.voided){
           kids.push(h("div", {class:"a-row"}, [mnBtn(uiT(["تعديل الفاتورة", "Edit the invoice"]), "ghost", function(){ showInvoiceForm(v); }),
             mnBtn(uiT(["السجل", "Log"]), "ghost", function(){ mnInvoiceLog(v.id, logBox); })]));
+        }
+        if(meta.rights.manage && v.voided){
+          kids.push(h("div", {class:"a-row"}, [mnBtn(uiT(["حذف الفاتورة نهائياً", "Delete the invoice for good"]), "ghost", function(){
+            if(!window.confirm(uiT(["ستُحذف الفاتورة ودفعاتها الملغاة نهائياً ولا يمكن استرجاعها. يبقى سطر في سجل النشاط. متابعة؟", "The invoice and its cancelled payments are deleted for good and cannot be brought back. A line stays in the activity log. Continue?"]))) return;
+            request("/api/admin/money/invoices/" + v.id, {method:"DELETE"}).then(function(){ uiToast(uiT(["حُذفت.", "Deleted."]), "ok"); invDetail.innerHTML = ""; loadInvoices(); load(); }).catch(function(e){ uiToast(errText(e), "err"); });
+          })]));
         }
         if(meta.rights.manage){
           kids.push(h("div", {class:"a-row"}, [mnBtn(v.is_test ? uiT(["إزالة علامة التجريب", "Remove test mark"]) : uiT(["تعليم كتجريبية", "Mark as test"]), "ghost", function(){

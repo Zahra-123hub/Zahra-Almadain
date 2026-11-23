@@ -640,3 +640,25 @@ class TestDataTests(MoneyBase):
         self.client.post(f"{MONEY}/invoices/{invoice['id']}/test", headers=self.acc, json={"test": False})
         self.assertEqual(self.client.get(MONEY + "/test-data", headers=self.acc).json()["total"], 0)
 
+
+    def test_a_cancelled_entry_is_deleted_for_good_but_a_live_one_is_not(self):
+        live = self.income("30", "USD", description="live").json()
+        old = self.income("11", "USD", description="old").json()
+        self.client.post(f"{MONEY}/income/{old['id']}/void", headers=self.acc, json={"reason": "cancelled before"})
+        self.assertEqual(self.client.delete(f"{MONEY}/income/{live['id']}", headers=self.acc).status_code, 409)
+        done = self.client.delete(f"{MONEY}/income/{old['id']}", headers=self.acc)
+        self.assertEqual((done.status_code, done.json()["deleted"]), (200, True))
+        rows = self.client.get(MONEY + "/income", headers=self.acc).json()["rows"]
+        self.assertEqual([r["id"] for r in rows], [live["id"]])
+        self.assertIn("income.delete", self.actions())
+
+    def test_a_cancelled_invoice_is_deleted_with_its_cancelled_payments_and_one_with_live_payments_is_not(self):
+        invoice = self.invoice().json()
+        self.assertEqual(self.client.delete(f"{MONEY}/invoices/{invoice['id']}", headers=self.acc).status_code, 409)  # not cancelled
+        paid = self.pay(invoice["id"], "10").json()
+        pay_id = paid["payments"][0]["id"]
+        self.client.post(f"{MONEY}/income/{pay_id}/void", headers=self.acc, json={"reason": "wrong payment"})
+        self.client.post(f"{MONEY}/invoices/{invoice['id']}/void", headers=self.acc, json={"reason": "wrong invoice"})
+        self.assertEqual(self.client.delete(f"{MONEY}/invoices/{invoice['id']}", headers=self.acc).status_code, 200)
+        self.assertEqual(self.client.get(MONEY + "/invoices", headers=self.acc).json()["rows"], [])
+        self.assertEqual(self.client.get(MONEY + "/income", headers=self.acc).json()["rows"], [])

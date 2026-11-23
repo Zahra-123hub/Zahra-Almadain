@@ -409,6 +409,22 @@ Widget _invoiceTag(S s, String status) => switch (status) {
 
 Widget _invoiceTags(S s, Map<String, dynamic> v) => Wrap(spacing: 6, runSpacing: 6, children: [if (v['is_test'] == true) _testTag(s), _invoiceTag(s, v['status'] as String)]);
 
+/// Asks before something is deleted for good.
+Future<bool> _confirmForever(BuildContext context) async {
+  final s = S.of(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      content: Text(s.get('mnDeleteForeverAsk')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(s.get('cancel'))),
+        FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(110, 44)), onPressed: () => Navigator.pop(context, true), child: Text(s.get('delete'))),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
 /// Buttons that keep their natural width (the theme makes filled buttons full width).
 Widget _primary(String label, IconData icon, VoidCallback? onPressed) => FilledButton.icon(
   style: FilledButton.styleFrom(
@@ -1829,16 +1845,35 @@ class _EntrySheet extends StatelessWidget {
               ),
               if (meta.canManage && r['is_reversal'] != true) ...[
                 const SizedBox(height: 18),
-                _secondary(s.get(r['is_test'] == true ? 'mnUnmarkTest' : 'mnMarkTest'), Icons.science_outlined, () async {
-                  try {
-                    await api.post('/api/admin/money/$kind/${r['id']}/test', {'test': r['is_test'] != true});
-                    if (!context.mounted) return;
-                    toast(context, s.get(r['is_test'] == true ? 'mnTestUnmarked' : 'mnTestMarked'));
-                    Navigator.pop(context, 'changed');
-                  } on ApiException catch (e) {
-                    if (context.mounted) toast(context, problemText(context, e));
-                  }
-                }),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _secondary(s.get(r['is_test'] == true ? 'mnUnmarkTest' : 'mnMarkTest'), Icons.science_outlined, () async {
+                      try {
+                        await api.post('/api/admin/money/$kind/${r['id']}/test', {'test': r['is_test'] != true});
+                        if (!context.mounted) return;
+                        toast(context, s.get(r['is_test'] == true ? 'mnTestUnmarked' : 'mnTestMarked'));
+                        Navigator.pop(context, 'changed');
+                      } on ApiException catch (e) {
+                        if (context.mounted) toast(context, problemText(context, e));
+                      }
+                    }),
+                    // a cancelled entry can be deleted for good (its line stays in the activity log)
+                    if (r['voided'] == true)
+                      _secondary(s.get('mnDeleteForever'), Icons.delete_forever_outlined, color: _bad, () async {
+                        if (!await _confirmForever(context)) return;
+                        try {
+                          await api.delete('/api/admin/money/$kind/${r['id']}');
+                          if (!context.mounted) return;
+                          toast(context, s.get('mnDeletedDone'));
+                          Navigator.pop(context, 'changed');
+                        } on ApiException catch (e) {
+                          if (context.mounted) toast(context, problemText(context, e));
+                        }
+                      }),
+                  ],
+                ),
               ],
               if (mayCorrect) ...[
                 const SizedBox(height: 18),
@@ -2293,6 +2328,18 @@ class _InvoicePageState extends State<InvoicePage> {
                                   }
                                 }),
                               _secondary(s.get('mnPrint'), Icons.print_outlined, () => _print(context, '/api/admin/money/invoices/${widget.id}.pdf', '${v['number']}.pdf')),
+                              if (widget.meta.canManage && v['voided'] == true)
+                                _secondary(s.get('mnDeleteForever'), Icons.delete_forever_outlined, color: _bad, () async {
+                                  if (!await _confirmForever(context)) return;
+                                  try {
+                                    await api.delete('/api/admin/money/invoices/${widget.id}');
+                                    if (!context.mounted) return;
+                                    toast(context, s.get('mnDeletedDone'));
+                                    Navigator.pop(context, true);
+                                  } on ApiException catch (e) {
+                                    if (context.mounted) toast(context, problemText(context, e));
+                                  }
+                                }),
                               if (widget.meta.canManage)
                                 _secondary(s.get(v['is_test'] == true ? 'mnUnmarkTest' : 'mnMarkTest'), Icons.science_outlined, () async {
                                   try {
