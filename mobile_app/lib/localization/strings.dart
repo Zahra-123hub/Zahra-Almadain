@@ -189,6 +189,8 @@ class S {
     'mnTestUnmarked': {'ar': 'أُزيلت علامة التجريب.', 'de': 'Testmarkierung entfernt.', 'en': 'Test mark removed.'},
     'mnAction_income_mark_test': {'ar': 'تغيّرت علامة التجريب', 'de': 'Testmarkierung geändert', 'en': 'test mark changed'},
     'mnAction_expense_mark_test': {'ar': 'تغيّرت علامة التجريب', 'de': 'Testmarkierung geändert', 'en': 'test mark changed'},
+    'mnBetterThanBefore': {'ar': 'أفضل من الشهر السابق بمقدار', 'de': 'Besser als im Vormonat um', 'en': 'Better than last month by'},
+    'mnWorseThanBefore': {'ar': 'أسوأ من الشهر السابق بمقدار', 'de': 'Schlechter als im Vormonat um', 'en': 'Worse than last month by'},
     'mnTestTag': {'ar': 'تجريبي', 'de': 'Test', 'en': 'Test'},
     'mnTestEntry': {'ar': 'إدخال تجريبي (يمكن حذفه لاحقاً نهائياً)', 'de': 'Testeintrag (lässt sich später endgültig löschen)', 'en': 'Test entry (can be deleted for good later)'},
     'mnTestData': {'ar': 'بيانات تجريبية', 'de': 'Testdaten', 'en': 'Test data'},

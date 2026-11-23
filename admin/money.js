@@ -52,8 +52,13 @@ function mnTile(label, value, sub, kind){
 function mnProfitTile(code, value, income, expense){
   var n = Number(value), word = n > 0 ? ["ربح", "Profit"] : n < 0 ? ["خسارة", "Loss"] : ["لا ربح ولا خسارة", "No profit, no loss"];
   var cur = code === "USD" ? [" بالدولار", " in dollars"] : [" بالليرة", " in pounds"];
-  return mnTile(uiT(word) + uiT(cur), (n > 0 ? "▲ " : n < 0 ? "▼ " : "") + code + " " + uiNum(String(value).replace("-", "")),
+  var tile = mnTile(uiT(word) + uiT(cur), code + " " + uiNum(String(value).replace("-", "")),
     uiT(["إيرادات ", "income "]) + uiNum(income) + uiT([" − مصروفات ", " − expenses "]) + uiNum(expense), n < 0 ? "bad" : n > 0 ? "good" : "");
+  var label = tile.querySelector("small");
+  label.className = "mn-verdict"; // the word "profit" / "loss" as a filled pill
+  label.textContent = (n > 0 ? "▲ " : n < 0 ? "▼ " : "") + uiT(word);
+  tile.insertBefore(h("small", {text:uiT(cur).trim()}), tile.children[1]);
+  return tile;
 }
 
 /* the card of a form: a title, a close button, the fields in a grid that wraps on small screens */

@@ -516,6 +516,9 @@ html:not([dir=rtl]) .a-card .a-switch input:checked+.track::after{transform:tran
 .mn-tile.good strong{color:#2f8f4e}
 .mn-tile.bad strong{color:var(--red,#c0392b)}
 .mn-tile.warn{border-color:#e8a33d}
+.mn-verdict{justify-self:start;padding:3px 12px;border-radius:999px;background:var(--muted);color:#fff !important;font-weight:700}
+.mn-tile.good .mn-verdict{background:#2f8f4e}
+.mn-tile.bad .mn-verdict{background:var(--red,#c0392b)}
 @media(prefers-color-scheme:dark){.mn-tile.good strong{color:#8fd19e}}
 .mn-toolbar{display:grid;grid-template-columns:1fr auto;gap:10px 16px;align-items:end;margin-bottom:14px}
 .mn-toolbar .mn-span{grid-column:1 / -1}

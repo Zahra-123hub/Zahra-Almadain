@@ -175,7 +175,7 @@ class Money extends StatelessWidget {
 
 Color _signColor(String? v) => _zero(v) ? _faint : (_negative(v) ? _bad : _good);
 
-/// "Profit in dollars" / "Loss in pounds" / "No profit, no loss", with an arrow in its colour: the word says it, not only the sign.
+/// The verdict in one glance: a filled pill "Profit" (green) / "Loss" (red) / "No profit, no loss" (grey) and the currency beside it.
 class _ProfitWord extends StatelessWidget {
   const _ProfitWord({required this.value, required this.currency});
   final String? value;
@@ -187,21 +187,24 @@ class _ProfitWord extends StatelessWidget {
     final loss = _negative(value);
     final tone = zero ? _muted : (loss ? _bad : _good);
     final word = zero ? s.get('mnNoProfitLoss') : s.get(loss ? 'mnLoss' : 'mnProfit');
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: tone.withValues(alpha: 0.12), shape: BoxShape.circle),
-          child: Icon(zero ? Icons.remove_rounded : (loss ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded), size: 16, color: tone),
-        ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            '$word ${s.get(currency == 'usd' ? 'mnInDollarsShort' : 'mnInPoundsShort')}',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: tone),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(color: tone, borderRadius: BorderRadius.circular(20)),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(zero ? Icons.remove_rounded : (loss ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded), size: 16, color: Colors.white),
+              const SizedBox(width: 6),
+              Text(word, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+            ],
           ),
         ),
+        Text(s.get(currency == 'usd' ? 'mnInDollarsShort' : 'mnInPoundsShort'), style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _muted)),
       ],
     );
   }
@@ -878,6 +881,20 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
       );
     }
 
+    // the comparison with the month before in words (better / worse / the same), not as a bare +/- number
+    Widget compareWords(String code) {
+      final raw = (change['surplus'] as Map?)?[code] as Map?;
+      if (raw == null) return const SizedBox.shrink();
+      final diff = raw['difference'] as String?;
+      if (_zero(diff)) return Text(s.get('mnSameAsBefore'), style: const TextStyle(fontSize: 12.5, color: _muted));
+      final better = !_negative(diff);
+      final tone = better ? _good : _bad;
+      return Text(
+        '${s.get(better ? 'mnBetterThanBefore' : 'mnWorseThanBefore')} ${moneyText(diff?.replaceFirst('-', ''))}',
+        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: tone),
+      );
+    }
+
     final surplus = _map(d['surplus']);
     final hero = Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -915,9 +932,14 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
                       children: [
                         _ProfitWord(value: surplus[code] as String?, currency: code),
                         const SizedBox(height: 6),
-                        Money(code.toUpperCase(), (surplus[code] as String?)?.replaceFirst('-', ''), size: 24, weight: FontWeight.w900, color: _signColor(surplus[code] as String?)),
+                        Money(code.toUpperCase(), (surplus[code] as String?)?.replaceFirst('-', ''), size: 26, weight: FontWeight.w900, color: _signColor(surplus[code] as String?)),
                         const SizedBox(height: 6),
-                        changeLine('surplus', code),
+                        Text(
+                          '${s.get('mnIncome')} ${moneyText(_map(d['income'])[code] as String?)}  −  ${s.get('mnExpenses')} ${moneyText(_map(d['expense'])[code] as String?)}',
+                          style: const TextStyle(fontSize: 12.5, color: _muted),
+                        ),
+                        const SizedBox(height: 4),
+                        compareWords(code),
                       ],
                     ),
                   ),
