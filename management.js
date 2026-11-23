@@ -180,8 +180,9 @@
     return function (shellMain) {
       var views = api.viewShell(shellMain, [
         ["home", "navHome"], ["kids", "navKids"], ["employees", "navEmployees"], ["children", "navAssign"], ["groups", "navGroups"], ["requests", "navRequests"],
-        ["review", "navReview"], ["notices", "navNotices"], ["notifications", "navNotifications"], ["profile", "navProfile"]]);
+        ["review", "navReview"], ["notices", "navNotices"], ["everyday", "navEveryday"], ["notifications", "navNotifications"], ["profile", "navProfile"]]);
       var panes = views.panes;
+      if (window.ZMEveryday) window.ZMEveryday(api).staffPane(panes.everyday);
       var shared = {names: {}, groups: []};
 
       // ---- home: numbers and notices

@@ -5,7 +5,7 @@
 
   var copy = {
     ar: {
-      parentTitle: "بوابة أولياء الأمور", teacherTitle: "بوابة المعلمات",
+      parentTitle: "بوابة أولياء الأمور", teacherTitle: "بوابة المعلمات", navEveryday: "الحياة اليومية",
       publishSite: "النشر على الموقع (صور، فيديو، أخبار)",      finishTitle: "إكمال التسجيل: أنشئي حسابك", finishHint: "أدخلي رمز التسجيل الذي وصلك، ثم اختاري اسم مستخدم وكلمة مرور لحسابك.",
       newUsername: "اختاري اسم مستخدم", usernameRule: "أحرف إنجليزية وأرقام و . _ - فقط، 3 أحرف على الأقل.",
       newPassword: "اختاري كلمة مرور", passwordRule: "12 حرفاً على الأقل.", confirmPassword: "أعيدي كتابة كلمة المرور",
@@ -95,6 +95,7 @@
       storageLimit: "تجاوز حجم الملف أو مساحة التخزين المتاحة."
     },
     en: {
+      navEveryday: "Everyday",
       parentTitle: "Parents' portal", teacherTitle: "Teachers' portal",
       publishSite: "Publish to website (photos, videos, news)",      finishTitle: "Finish registration: create your account", finishHint: "Enter the registration code you received, then choose a username and password for your account.",
       newUsername: "Choose a username", usernameRule: "English letters, digits and . _ - only, at least 3 characters.",

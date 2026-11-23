@@ -543,6 +543,10 @@
     tile.number = number;
     return tile;
   }
+  /* Everyday life of a child (everyday.js): the parents' child page and the kindergarten's everyday pages. */
+  function everyday() {
+    return window.ZMEveryday ? window.ZMEveryday({element: element, request: request, button: button, showError: showError, lang: function () { return lang; }}) : null;
+  }
   function dateLabel(value) { return value ? new Date(value).toLocaleDateString(lang === "ar" ? "ar" : "en") : ""; }
   function notificationText(item) {
     var map = NOTIF[lang] || NOTIF.ar;
@@ -894,6 +898,8 @@
         var list = data.reports[child.id] || [];
         card.appendChild(element("p", "p-muted", t("latestReport")));
         card.appendChild(element("p", "", list.length ? list[0].title + " · " + dateLabel(list[0].published_at || list[0].created_at) : t("noReportsYet")));
+        var ev = everyday();
+        if (ev) card.appendChild(button(ev.text("openChild"), "sun", function () { ev.parentHub(childPane, child, drawChildren); window.scrollTo(0, 0); }));
         card.appendChild(button(t("showReports"), "outline", function () { filterId = child.id; drawReports(); views.show("reports"); window.scrollTo(0, 0); }));
         grid.appendChild(card);
       });
@@ -1074,8 +1080,10 @@
     if (canTeach) defs.push(["reports", "navReports"]);
     if (canTeach || isAdmin) defs.push(["posts", "navPosts"], ["material", "navMaterial"]);
     if (canReview) defs.push(["review", "navReview"]);
+    if (window.ZMEveryday) defs.push(["everyday", "navEveryday"]);
     defs.push(["notifications", "navNotifications"], ["profile", "navProfile"]);
     var views = viewShell(shellMain, defs);
+    if (views.panes.everyday) everyday().staffPane(views.panes.everyday);
     renderDashboardWelcome(views.panes.home);
     var stats = element("div", "p-stats");
     views.panes.home.appendChild(stats);
