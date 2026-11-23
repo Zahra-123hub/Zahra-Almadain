@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import activity, community, control, mobile, money, people, security, visits
+from app import activity, community, control, kita, mobile, money, people, security, visits
 from app.actors import Actor, has_grant
 from app.database import get_engine, get_session
 from app.models import (
@@ -3473,6 +3473,7 @@ def download_material_file(
 
 app.include_router(visits.build_router(require_admin, client_address))
 app.include_router(mobile.build_router(get_platform_principal))
+app.include_router(kita.build_router(get_platform_principal))
 app.include_router(
     community.build_router(
         get_platform_principal, require_platform_role, require_manage, MAX_TEACHER_CONTENT_BYTES, require_admin, private_content_response

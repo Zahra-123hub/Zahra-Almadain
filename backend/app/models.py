@@ -611,3 +611,80 @@ class MoneyOpening(Base):
     note: Mapped[str] = mapped_column(String(300), default="", server_default="")
     created_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+# ---- everyday life of a child: notes, things to bring, the week plan, attendance, messages with the parents ------------------
+class ChildNote(Base):
+    """A short note of the kindergarten about one child: praise (a star) or a remark. The parents of the child see it."""
+
+    __tablename__ = "child_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    child_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    author_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    kind: Mapped[str] = mapped_column(String(10), default="note", server_default="note")  # praise | note
+    text: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+
+
+class BringItem(Base):
+    """"Please bring": something the children of a group (or one child) should bring, with the day it is needed."""
+
+    __tablename__ = "bring_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    class_name: Mapped[str] = mapped_column(String(60), default="", server_default="", index=True)  # empty: every group
+    child_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(String(1000), default="", server_default="")
+    due_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    author_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
+
+
+class WeekPlanEntry(Base):
+    """One cell of the week plan of a group: a weekday (0 = Sunday ... 4 = Thursday), a position in the day, what happens."""
+
+    __tablename__ = "week_plan_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    class_name: Mapped[str] = mapped_column(String(60), default="", server_default="", index=True)
+    weekday: Mapped[int] = mapped_column(Integer)
+    position: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    title: Mapped[str] = mapped_column(String(120))
+    detail: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Attendance(Base):
+    """Whether a child was there on one day. Set by the kindergarten; the parents may report an absence beforehand."""
+
+    __tablename__ = "attendance"
+    __table_args__ = (UniqueConstraint("child_id", "day", name="uq_attendance_child_day"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    child_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String(12))  # present | absent | sick | excused
+    note: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    by_parent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    set_by: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    set_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ChatMessage(Base):
+    """A message between the parents of a child and the kindergarten. One conversation per child and parent account."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    child_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    sender_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    sender_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    from_parent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    body: Mapped[str] = mapped_column(String(2000))
+    read_at: Mapped[datetime | None] = mapped_column(nullable=True)  # read by the other side
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), index=True)
