@@ -157,10 +157,11 @@ class AdminControlPage extends StatelessWidget {
           _t(context, 'نظرة عامة', 'Übersicht', 'Overview'),
           _t(context, 'المعلمات', 'Lehrerinnen', 'Teachers'),
           _t(context, 'الأطفال', 'Kinder', 'Children'),
+          _t(context, 'الأنشطة', 'Aktivität', 'Activity'),
           _t(context, 'النظام', 'System', 'System'),
           _t(context, 'الصلاحيات', 'Rechte', 'Permissions'),
         ],
-        pages: const [_ControlOverview(), _ControlTeachers(), _ControlChildren(), _ControlSystem(), _ControlGrants()],
+        pages: const [_ControlOverview(), _ControlTeachers(), _ControlChildren(), _ControlActivity(), _ControlSystem(), _ControlGrants()],
       );
 }
 
@@ -1858,4 +1859,696 @@ class AdminSecurityPage extends StatelessWidget {
           ),
         ]);
       });
+}
+
+// =================================================================================================================================
+// children records, staff and groups (the management portal of the website)
+// =================================================================================================================================
+class AdminPeoplePage extends StatelessWidget {
+  const AdminPeoplePage({super.key});
+  @override
+  Widget build(BuildContext context) => _Tabbed(
+        tabs: [_t(context, 'ملفات الأطفال', 'Kinderakten', 'Children records'), _t(context, 'الموظفون', 'Personal', 'Staff'), _t(context, 'المجموعات', 'Gruppen', 'Groups')],
+        pages: const [_KidsTab(), _StaffTab(), _GroupsTab()],
+      );
+}
+
+class _KidsTab extends StatefulWidget {
+  const _KidsTab();
+  @override
+  State<_KidsTab> createState() => _KidsTabState();
+}
+
+class _KidsTabState extends State<_KidsTab> {
+  int _round = 0;
+  String _q = '';
+
+  Future<void> _open(Map<String, dynamic>? child, List<Map<String, dynamic>> parents) async {
+    final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => _KidEditor(child: child, parents: parents)));
+    if (saved == true) setState(() => _round++);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return Loader<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)>(
+      key: ValueKey(_round),
+      load: () async => Cached((_l(await api.get('/api/admin/people/children')), _l(await api.get('/api/admin/people/parent-accounts')))),
+      builder: (context, data, reload) {
+        final (kids, parents) = data;
+        final word = _q.trim().toLowerCase();
+        final shown = word.isEmpty
+            ? kids
+            : kids.where((k) => '${k['name']} ${[for (final g in _l(k['guardians'])) '${g['name']} ${g['phone']}'].join(' ')}'.toLowerCase().contains(word)).toList();
+        return ListView(padding: const EdgeInsets.all(12), children: [
+          Row(children: [
+            Expanded(
+              child: TextField(
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: _t(context, 'بحث عن طفل أو ولي أمر', 'Kind oder Eltern suchen', 'Search a child or parent')),
+                onChanged: (v) => setState(() => _q = v),
+              ),
+            ),
+            const SizedBox(width: 10),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+              icon: const Icon(Icons.add_rounded),
+              label: Text(_t(context, 'طفل جديد', 'Neues Kind', 'New child')),
+              onPressed: () => _open(null, parents),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          if (kids.isEmpty) _empty(_t(context, 'لا يوجد أطفال بعد.', 'Noch keine Kinder.', 'No children yet.')),
+          for (final k in shown)
+            Card(
+              child: ListTile(
+                leading: AvatarInitials(_str(k['name'])),
+                title: Text(_str(k['name']), style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text([
+                  if (_str(k['class_name']).isNotEmpty) _str(k['class_name']),
+                  if (_str(k['birth_date']).isNotEmpty) _str(k['birth_date']),
+                  for (final g in _l(k['guardians'])) _str(g['name']),
+                ].join(' · ')),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => _open(k, parents),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+/// One guardian block: father / other guardian, or mother. Empty fields mean "this parent is not entered".
+class _GuardianFields {
+  _GuardianFields(Map<String, dynamic>? saved, this.relations)
+      : id = saved == null ? null : _str(saved['id']),
+        relation = saved == null ? relations.first : _str(saved['relation']),
+        name = TextEditingController(text: _str(saved?['name'])),
+        phone = TextEditingController(text: _str(saved?['phone'])),
+        email = TextEditingController(text: _str(saved?['email'])),
+        account = _str(saved?['account_id']).isEmpty ? null : _str(saved?['account_id']);
+  final List<String> relations;
+  final String? id;
+  String relation;
+  final TextEditingController name;
+  final TextEditingController phone;
+  final TextEditingController email;
+  String? account;
+
+  bool get used => name.text.trim().isNotEmpty || phone.text.trim().isNotEmpty || email.text.trim().isNotEmpty || account != null;
+  Map<String, dynamic> body() => {
+        if (id != null && id!.isNotEmpty) 'id': id,
+        'relation': relation,
+        'name': name.text.trim(),
+        'phone': phone.text.trim(),
+        'email': email.text.trim(),
+        'account_id': account,
+      };
+}
+
+String _dayOf(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+class _KidEditor extends StatefulWidget {
+  const _KidEditor({required this.child, required this.parents});
+  final Map<String, dynamic>? child;
+  final List<Map<String, dynamic>> parents;
+  @override
+  State<_KidEditor> createState() => _KidEditorState();
+}
+
+class _KidEditorState extends State<_KidEditor> {
+  late final _name = TextEditingController(text: _str(widget.child?['name']));
+  late final _group = TextEditingController(text: _str(widget.child?['class_name']));
+  late String _birth = _str(widget.child?['birth_date']);
+  late final _first = _GuardianFields(_l(widget.child?['guardians']).where((g) => g['relation'] != 'mother').firstOrNull, const ['father', 'guardian']);
+  late final _mother = _GuardianFields(_l(widget.child?['guardians']).where((g) => g['relation'] == 'mother').firstOrNull, const ['mother']);
+  bool _busy = false;
+
+  String _relName(String r) => switch (r) {
+        'father' => _t(context, 'الأب', 'Vater', 'Father'),
+        'mother' => _t(context, 'الأم', 'Mutter', 'Mother'),
+        _ => _t(context, 'وليّ أمر آخر', 'Andere Bezugsperson', 'Other guardian'),
+      };
+
+  Widget _block(String title, _GuardianFields g) => FormSection(
+        title: title,
+        child: Column(children: [
+          if (g.relations.length > 1)
+            DropdownButtonFormField<String>(
+              initialValue: g.relation,
+              decoration: InputDecoration(labelText: _t(context, 'صلة القرابة', 'Beziehung', 'Relation')),
+              items: [for (final r in g.relations) DropdownMenuItem(value: r, child: Text(_relName(r)))],
+              onChanged: (v) => setState(() => g.relation = v ?? g.relation),
+            ),
+          TextField(controller: g.name, maxLength: 120, decoration: InputDecoration(labelText: _t(context, 'الاسم الكامل', 'Vollständiger Name', 'Full name'))),
+          TextField(controller: g.phone, maxLength: 40, textDirection: TextDirection.ltr, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: _t(context, 'الهاتف', 'Telefon', 'Phone'))),
+          TextField(controller: g.email, maxLength: 254, textDirection: TextDirection.ltr, keyboardType: TextInputType.emailAddress, decoration: InputDecoration(labelText: _t(context, 'البريد', 'E-Mail', 'Email'))),
+          DropdownButtonFormField<String?>(
+            initialValue: g.account,
+            isExpanded: true,
+            decoration: InputDecoration(labelText: _t(context, 'حساب الدخول', 'Anmeldekonto', 'Sign-in account')),
+            items: [
+              DropdownMenuItem<String?>(value: null, child: Text(_t(context, '— بلا حساب —', '— ohne Konto —', '— no account —'))),
+              for (final a in widget.parents) DropdownMenuItem<String?>(value: _str(a['id']), child: Text(_str(a['username']))),
+            ],
+            onChanged: (v) => setState(() => g.account = v),
+          ),
+        ]),
+      );
+
+  Future<void> _save() async {
+    final guardians = [_first, _mother].where((g) => g.used).toList();
+    if (_name.text.trim().length < 2) {
+      toast(context, _t(context, 'اكتب اسم الطفل.', 'Namen des Kindes eintragen.', 'Enter the name of the child.'));
+      return;
+    }
+    if (guardians.isEmpty) {
+      toast(context, _t(context, 'أدخل أحد الوالدين على الأقل.', 'Mindestens ein Elternteil eintragen.', 'Enter at least one parent.'));
+      return;
+    }
+    if (guardians.any((g) => g.name.text.trim().length < 2)) {
+      toast(context, _t(context, 'اكتب اسم كل وليّ أمر أدخلت بياناته.', 'Für jeden eingetragenen Elternteil den Namen eintragen.', 'Enter a name for every parent you filled in.'));
+      return;
+    }
+    final api = SessionScope.of(context).api;
+    final body = {'name': _name.text.trim(), 'class_name': _group.text.trim(), 'birth_date': _birth.isEmpty ? null : _birth, 'guardians': [for (final g in guardians) g.body()]};
+    setState(() => _busy = true);
+    final child = widget.child;
+    final ok = await _run(context, () => child == null ? api.post('/api/admin/people/children', body) : api.patch('/api/admin/people/children/${child['id']}', body),
+        done: _t(context, 'تم الحفظ.', 'Gespeichert.', 'Saved.'));
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = widget.child;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(child == null ? _t(context, 'طفل جديد', 'Neues Kind', 'New child') : _str(child['name'])),
+        actions: [
+          if (child != null)
+            IconButton(
+              tooltip: _t(context, 'إزالة من القائمة', 'Von der Liste nehmen', 'Remove from the list'),
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () async {
+                if (!await confirmDelete(context) || !context.mounted) return;
+                final api = SessionScope.of(context).api;
+                if (await _run(context, () => api.delete('/api/admin/people/children/${child['id']}'), done: _t(context, 'أُزيل الطفل من القائمة.', 'Kind von der Liste genommen.', 'Child removed from the list.')) && context.mounted) {
+                  Navigator.pop(context, true);
+                }
+              },
+            ),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: ListView(padding: const EdgeInsets.all(16), children: [
+            if (_busy) const LinearProgressIndicator(),
+            FormSection(
+              title: _t(context, 'الطفل', 'Kind', 'Child'),
+              child: Column(children: [
+                TextField(controller: _name, maxLength: 120, decoration: InputDecoration(labelText: _t(context, 'اسم الطفل', 'Name des Kindes', 'Name of the child'))),
+                TextField(controller: _group, maxLength: 60, decoration: InputDecoration(labelText: _t(context, 'المجموعة / الصف', 'Gruppe / Klasse', 'Group / class'))),
+                Row(children: [
+                  Expanded(child: Text('${_t(context, 'تاريخ الميلاد', 'Geburtsdatum', 'Birth date')}: ${_birth.isEmpty ? '—' : _birth}')),
+                  TextButton(
+                    onPressed: () async {
+                      final d = await showDatePicker(context: context, initialDate: DateTime.tryParse(_birth) ?? DateTime(DateTime.now().year - 4), firstDate: DateTime(2010), lastDate: DateTime.now());
+                      if (d != null) setState(() => _birth = _dayOf(d));
+                    },
+                    child: Text(_t(context, 'اختيار', 'Wählen', 'Choose')),
+                  ),
+                  if (_birth.isNotEmpty) IconButton(onPressed: () => setState(() => _birth = ''), icon: const Icon(Icons.close_rounded)),
+                ]),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(_t(context, 'أدخل أحد الوالدين أو كليهما. يبقى الحقل فارغاً إن كان للطفل وليّ أمر واحد.', 'Einen oder beide Elternteile eintragen. Leer lassen, wenn es nur einen gibt.', 'Enter one or both parents. Leave empty if there is only one.'), style: const TextStyle(color: _muted)),
+            ),
+            _block(_t(context, 'الأب / وليّ الأمر', 'Vater / Bezugsperson', 'Father / guardian'), _first),
+            _block(_t(context, 'الأم', 'Mutter', 'Mother'), _mother),
+          ]),
+        ),
+      ),
+      bottomNavigationBar: BottomActionBar(children: [
+        Expanded(child: FilledButton(onPressed: _busy ? null : _save, child: Text(_t(context, 'حفظ', 'Speichern', 'Save')))),
+      ]),
+    );
+  }
+}
+
+class _StaffTab extends StatefulWidget {
+  const _StaffTab();
+  @override
+  State<_StaffTab> createState() => _StaffTabState();
+}
+
+class _StaffTabState extends State<_StaffTab> {
+  int _round = 0;
+
+  Future<void> _open(Map<String, dynamic>? person, List<Map<String, dynamic>> accounts) async {
+    final saved = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => _StaffEditor(person: person, accounts: accounts)));
+    if (saved == true) setState(() => _round++);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return Loader<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)>(
+      key: ValueKey(_round),
+      load: () async => Cached((_l(await api.get('/api/admin/people/employees')), _l(await api.get('/api/admin/people/staff-accounts')))),
+      builder: (context, data, reload) {
+        final (staff, accounts) = data;
+        return ListView(padding: const EdgeInsets.all(12), children: [
+          Wrap(spacing: 10, runSpacing: 10, children: [
+            FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 46)),
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: Text(_t(context, 'موظف جديد', 'Neue Person', 'New staff member')),
+              onPressed: () => _open(null, accounts),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: Text(_t(context, 'القائمة PDF (الكل)', 'Liste als PDF (alle)', 'List as PDF (all)')),
+              onPressed: () => openPrivateFile(context, api, '/api/admin/people/employees/export.pdf', 'staff-all.pdf', query: {'scope': 'all'}),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: Text(_t(context, 'القائمة PDF (النشطون)', 'Liste als PDF (aktive)', 'List as PDF (active)')),
+              onPressed: () => openPrivateFile(context, api, '/api/admin/people/employees/export.pdf', 'staff-active.pdf', query: {'scope': 'active'}),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          if (staff.isEmpty) _empty(_t(context, 'لا يوجد موظفون بعد.', 'Noch kein Personal.', 'No staff yet.')),
+          for (final p in staff)
+            Card(
+              child: ListTile(
+                leading: AvatarInitials(_str(p['name'])),
+                title: Text(_str(p['name']), style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text([
+                  if (_str(p['job_title']).isNotEmpty) _str(p['job_title']),
+                  if (p['salary'] != null) '${_str(p['salary'])} ${_str(p['salary_currency'])}',
+                  if (_str(p['account_username']).isNotEmpty) _str(p['account_username']),
+                ].join(' · ')),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => _open(p, accounts),
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+class _StaffEditor extends StatefulWidget {
+  const _StaffEditor({required this.person, required this.accounts});
+  final Map<String, dynamic>? person;
+  final List<Map<String, dynamic>> accounts;
+  @override
+  State<_StaffEditor> createState() => _StaffEditorState();
+}
+
+class _StaffEditorState extends State<_StaffEditor> {
+  late final _name = TextEditingController(text: _str(widget.person?['name']));
+  late final _job = TextEditingController(text: _str(widget.person?['job_title']));
+  late final _salary = TextEditingController(text: _str(widget.person?['salary']));
+  late final _phone = TextEditingController(text: _str(widget.person?['phone']));
+  late final _notes = TextEditingController(text: _str(widget.person?['notes']));
+  late String _currency = _str(widget.person?['salary_currency']).isEmpty ? 'SYP' : _str(widget.person?['salary_currency']);
+  late String? _account = _str(widget.person?['account_id']).isEmpty ? null : _str(widget.person?['account_id']);
+  late String _hired = _str(widget.person?['hired_on']);
+  bool _busy = false;
+
+  Future<void> _save() async {
+    if (_name.text.trim().length < 2) {
+      toast(context, _t(context, 'اكتب الاسم.', 'Namen eintragen.', 'Enter the name.'));
+      return;
+    }
+    final api = SessionScope.of(context).api;
+    final body = <String, dynamic>{
+      'name': _name.text.trim(),
+      'job_title': _job.text.trim(),
+      'salary_currency': _currency,
+      'account_id': _account,
+      'phone': _phone.text.trim(),
+      'hired_on': _hired.isEmpty ? null : _hired,
+      'notes': _notes.text.trim(),
+      if (_salary.text.trim().isNotEmpty || widget.person != null) 'salary': _salary.text.trim().isEmpty ? null : _salary.text.trim(),
+    };
+    setState(() => _busy = true);
+    final person = widget.person;
+    try {
+      final res = _m(person == null ? await api.post('/api/admin/people/employees', body) : await api.patch('/api/admin/people/employees/${person['id']}', body));
+      if (!mounted) return;
+      final followed = (res['updated_salary_rows'] as num? ?? 0).toInt();
+      toast(context, followed > 0 ? '${_t(context, 'تم الحفظ. عُدّلت رواتب مسجّلة', 'Gespeichert. Angepasste Gehaltsbuchungen', 'Saved. Salary entries updated')}: $followed' : _t(context, 'تم الحفظ.', 'Gespeichert.', 'Saved.'));
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) toast(context, e.detail.isNotEmpty ? e.detail : problemText(context, e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final person = widget.person;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(person == null ? _t(context, 'موظف جديد', 'Neue Person', 'New staff member') : _str(person['name'])),
+        actions: [
+          if (person != null)
+            IconButton(
+              tooltip: _t(context, 'إزالة من القائمة', 'Von der Liste nehmen', 'Remove from the list'),
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () async {
+                if (!await confirmDelete(context) || !context.mounted) return;
+                final api = SessionScope.of(context).api;
+                if (await _run(context, () => api.delete('/api/admin/people/employees/${person['id']}'), done: _t(context, 'أُزيل من القائمة.', 'Von der Liste genommen.', 'Removed from the list.')) && context.mounted) {
+                  Navigator.pop(context, true);
+                }
+              },
+            ),
+        ],
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: ListView(padding: const EdgeInsets.all(16), children: [
+            if (_busy) const LinearProgressIndicator(),
+            FormSection(
+              title: _t(context, 'البيانات', 'Angaben', 'Details'),
+              child: Column(children: [
+                TextField(controller: _name, maxLength: 120, decoration: InputDecoration(labelText: _t(context, 'الاسم الكامل', 'Vollständiger Name', 'Full name'))),
+                TextField(controller: _job, maxLength: 80, decoration: InputDecoration(labelText: _t(context, 'المسمى الوظيفي', 'Tätigkeit', 'Job title'))),
+                TextField(controller: _phone, maxLength: 40, textDirection: TextDirection.ltr, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: _t(context, 'الهاتف', 'Telefon', 'Phone'))),
+                Row(children: [
+                  Expanded(child: Text('${_t(context, 'تاريخ التعيين', 'Eingestellt am', 'Hired on')}: ${_hired.isEmpty ? '—' : _hired}')),
+                  TextButton(
+                    onPressed: () async {
+                      final d = await showDatePicker(context: context, initialDate: DateTime.tryParse(_hired) ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(DateTime.now().year + 1));
+                      if (d != null) setState(() => _hired = _dayOf(d));
+                    },
+                    child: Text(_t(context, 'اختيار', 'Wählen', 'Choose')),
+                  ),
+                  if (_hired.isNotEmpty) IconButton(onPressed: () => setState(() => _hired = ''), icon: const Icon(Icons.close_rounded)),
+                ]),
+                TextField(controller: _notes, maxLength: 500, maxLines: 3, minLines: 1, decoration: InputDecoration(labelText: _t(context, 'ملاحظات', 'Notizen', 'Notes'))),
+              ]),
+            ),
+            FormSection(
+              title: _t(context, 'الراتب الشهري المعتاد', 'Übliches Monatsgehalt', 'Usual monthly salary'),
+              child: Column(children: [
+                TextField(controller: _salary, keyboardType: const TextInputType.numberWithOptions(decimal: true), textDirection: TextDirection.ltr, decoration: InputDecoration(labelText: _t(context, 'المبلغ (اختياري)', 'Betrag (optional)', 'Amount (optional)'))),
+                const SizedBox(height: 10),
+                SegmentedButton<String>(
+                  segments: const [ButtonSegment(value: 'SYP', label: Text('SYP')), ButtonSegment(value: 'USD', label: Text('USD'))],
+                  selected: {_currency},
+                  onSelectionChanged: (v) => setState(() => _currency = v.first),
+                ),
+              ]),
+            ),
+            FormSection(
+              title: _t(context, 'حساب الدخول (معلمة أو محاسب)', 'Anmeldekonto (Lehrerin oder Buchhaltung)', 'Sign-in account (teacher or accountant)'),
+              child: DropdownButtonFormField<String?>(
+                initialValue: _account,
+                isExpanded: true,
+                items: [
+                  DropdownMenuItem<String?>(value: null, child: Text(_t(context, '— بلا حساب —', '— ohne Konto —', '— no account —'))),
+                  for (final a in widget.accounts)
+                    DropdownMenuItem<String?>(
+                      value: _str(a['id']),
+                      enabled: _str(a['linked_to']).isEmpty || _str(a['id']) == _account,
+                      child: Text('${_str(a['username'])} (${[for (final r in (a['roles'] as List? ?? const [])) _role(context, '$r')].join(' + ')})${_str(a['linked_to']).isNotEmpty && _str(a['id']) != _account ? ' — ${_str(a['linked_to'])}' : ''}'),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _account = v),
+              ),
+            ),
+          ]),
+        ),
+      ),
+      bottomNavigationBar: BottomActionBar(children: [
+        Expanded(child: FilledButton(onPressed: _busy ? null : _save, child: Text(_t(context, 'حفظ', 'Speichern', 'Save')))),
+      ]),
+    );
+  }
+}
+
+class _GroupsTab extends StatelessWidget {
+  const _GroupsTab();
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return _load(context, '/api/admin/platform/groups', (context, data, reload) {
+      final groups = _l(data);
+      return ListView(padding: const EdgeInsets.all(12), children: [
+        Text(_t(context, 'تنشأ المجموعة حين تكتبها في ملف طفل. يمكنك إعادة تسميتها هنا لكل أطفالها مرة واحدة.', 'Eine Gruppe entsteht, wenn du sie bei einem Kind einträgst. Hier benennst du sie für alle Kinder auf einmal um.', 'A group exists once you type it for a child. Rename it here for all its children at once.'), style: const TextStyle(color: _muted)),
+        const SizedBox(height: 10),
+        if (groups.isEmpty) _empty(_t(context, 'لا توجد مجموعات بعد.', 'Noch keine Gruppen.', 'No groups yet.')),
+        for (final g in groups)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.groups_2_outlined),
+              title: Text(_str(g['name']), style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text('${_str(g['children'])} ${_t(context, 'أطفال', 'Kinder', 'children')}'),
+              trailing: IconButton(
+                tooltip: _t(context, 'إعادة تسمية', 'Umbenennen', 'Rename'),
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () async {
+                  final next = await askText(context, _t(context, 'الاسم الجديد', 'Neuer Name', 'New name'), initial: _str(g['name']), maxLength: 60);
+                  if (next == null || next.trim().isEmpty || next.trim() == _str(g['name']) || !context.mounted) return;
+                  if (await _run(context, () => api.post('/api/admin/platform/groups/rename', {'old_name': _str(g['name']), 'new_name': next.trim()}))) await reload();
+                },
+              ),
+            ),
+          ),
+      ]);
+    });
+  }
+}
+
+// =================================================================================================================================
+// notices of the management (shown to parents and teachers)
+// =================================================================================================================================
+class AdminNoticesPage extends StatefulWidget {
+  const AdminNoticesPage({super.key});
+  @override
+  State<AdminNoticesPage> createState() => _AdminNoticesPageState();
+}
+
+class _AdminNoticesPageState extends State<AdminNoticesPage> {
+  int _round = 0;
+  final _title = TextEditingController();
+  final _body = TextEditingController();
+  bool _busy = false;
+
+  Future<void> _publish() async {
+    if (_title.text.trim().isEmpty) return;
+    final api = SessionScope.of(context).api;
+    setState(() => _busy = true);
+    final ok = await _run(context, () => api.post('/api/admin/platform/announcements', {'title': _title.text.trim(), 'body': _body.text.trim()}), done: _t(context, 'تم النشر.', 'Veröffentlicht.', 'Published.'));
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (ok) {
+        _title.clear();
+        _body.clear();
+        _round++;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return _load(context, '/api/platform/announcements', key: ValueKey(_round), (context, data, reload) {
+      final items = _l(data);
+      return ListView(padding: const EdgeInsets.all(12), children: [
+        _Box(
+          title: _t(context, 'إعلان جديد', 'Neue Ankündigung', 'New notice'),
+          hint: _t(context, 'يظهر للأهل والمعلمات ويصلهم إشعار.', 'Erscheint bei Eltern und Lehrerinnen, sie bekommen eine Benachrichtigung.', 'Shown to parents and teachers, who get a notification.'),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            TextField(controller: _title, maxLength: 120, decoration: InputDecoration(labelText: _t(context, 'العنوان', 'Titel', 'Title'))),
+            TextField(controller: _body, maxLength: 2000, maxLines: 5, minLines: 2, decoration: InputDecoration(labelText: _t(context, 'النص', 'Text', 'Text'))),
+            const SizedBox(height: 8),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: const Size(140, 46)),
+                icon: const Icon(Icons.campaign_outlined),
+                label: Text(_t(context, 'نشر', 'Veröffentlichen', 'Publish')),
+                onPressed: _busy ? null : _publish,
+              ),
+            ),
+          ]),
+        ),
+        _Box(
+          title: _t(context, 'الإعلانات المنشورة', 'Veröffentlichte Ankündigungen', 'Published notices'),
+          child: Column(children: [
+            if (items.isEmpty) _empty(_t(context, 'لا توجد إعلانات.', 'Keine Ankündigungen.', 'No notices.')),
+            for (final n in items)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(_str(n['title']), style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text([if (_str(n['body']).isNotEmpty) _str(n['body']), _when(n['created_at'])].join('\n')),
+                isThreeLine: _str(n['body']).isNotEmpty,
+                trailing: IconButton(
+                  tooltip: _t(context, 'حذف', 'Löschen', 'Delete'),
+                  icon: const Icon(Icons.delete_outline, color: _bad),
+                  onPressed: () async {
+                    if (!await confirmDelete(context) || !context.mounted) return;
+                    if (await _run(context, () => api.delete('/api/admin/platform/announcements/${n['id']}'))) await reload();
+                  },
+                ),
+              ),
+          ]),
+        ),
+      ]);
+    });
+  }
+}
+
+// =================================================================================================================================
+// teachers' posts and materials (the teacher portal of the website, admin view)
+// =================================================================================================================================
+class AdminTeacherWorkPage extends StatelessWidget {
+  const AdminTeacherWorkPage({super.key});
+  @override
+  Widget build(BuildContext context) => _Tabbed(
+        tabs: [_t(context, 'كل المنشورات', 'Alle Beiträge', 'All posts'), _t(context, 'مواد المعلمات', 'Materialien', 'Materials')],
+        pages: const [_AllPosts(), _AllMaterials()],
+      );
+}
+
+class _AllPosts extends StatelessWidget {
+  const _AllPosts();
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return _load(context, '/api/platform/admin/posts', (context, data, reload) {
+      final posts = _l(data);
+      return ListView(padding: const EdgeInsets.all(12), children: [
+        if (posts.isEmpty) _empty(_t(context, 'لا توجد منشورات.', 'Keine Beiträge.', 'No posts.')),
+        for (final p in posts)
+          _Box(
+            title: _str(p['title']),
+            hint: [
+              p['scope'] == 'child' ? '${_t(context, 'خاص', 'Privat', 'Private')}${_str(p['child_name']).isEmpty ? '' : ' · ${_str(p['child_name'])}'}' : _t(context, 'عام', 'Für alle', 'General'),
+              _str(p['author']).isNotEmpty ? _str(p['author']) : _str(p['author_username']),
+              _str(p['created_at']).length >= 10 ? _str(p['created_at']).substring(0, 10) : '',
+            ].where((x) => x.isNotEmpty).join(' · '),
+            trailing: IconButton(
+              tooltip: _t(context, 'حذف', 'Löschen', 'Delete'),
+              icon: const Icon(Icons.delete_outline, color: _bad),
+              onPressed: () async {
+                if (!await confirmDelete(context) || !context.mounted) return;
+                if (await _run(context, () => api.delete('/api/platform/admin/posts/${p['id']}'))) await reload();
+              },
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_str(p['body']).isNotEmpty) Text(_str(p['body']), style: const TextStyle(height: 1.5)),
+              if (_l(p['files']).isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final f in _l(p['files']))
+                    ActionChip(
+                      avatar: const Icon(Icons.attach_file_rounded, size: 18),
+                      label: Text('${_str(f['filename'])} · ${formatSize((f['size'] as num? ?? 0).toInt())}'),
+                      onPressed: () => openPrivateFile(context, api, '/api/platform/admin/teacher-content/${f['id']}/download', _str(f['filename'])),
+                    ),
+                ]),
+              ],
+            ]),
+          ),
+      ]);
+    });
+  }
+}
+
+class _AllMaterials extends StatelessWidget {
+  const _AllMaterials();
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return _load(context, '/api/platform/admin/teacher-content', (context, data, reload) {
+      final items = _l(data);
+      return ListView(padding: const EdgeInsets.all(12), children: [
+        if (items.isEmpty) _empty(_t(context, 'لا توجد ملفات.', 'Keine Dateien.', 'No files.')),
+        for (final c in items)
+          Card(
+            child: ListTile(
+              leading: FileTypePlate(filename: _str(c['filename'])),
+              title: Text(_str(c['filename']), maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text([_str(c['owner_username']), formatSize((c['size'] as num? ?? 0).toInt())].where((x) => x.isNotEmpty).join(' · ')),
+              onTap: () => openPrivateFile(context, api, '/api/platform/admin/teacher-content/${c['id']}/download', _str(c['filename'])),
+              trailing: IconButton(
+                tooltip: _t(context, 'حذف', 'Löschen', 'Delete'),
+                icon: const Icon(Icons.delete_outline, color: _bad),
+                onPressed: () async {
+                  if (!await confirmDelete(context) || !context.mounted) return;
+                  if (await _run(context, () => api.delete('/api/platform/admin/teacher-content/${c['id']}'))) await reload();
+                },
+              ),
+            ),
+          ),
+      ]);
+    });
+  }
+}
+
+// ---- control centre: activity of every area ---------------------------------------------------------------------------------------
+class _ControlActivity extends StatefulWidget {
+  const _ControlActivity();
+  @override
+  State<_ControlActivity> createState() => _ControlActivityState();
+}
+
+class _ControlActivityState extends State<_ControlActivity> {
+  String _domain = 'all';
+  @override
+  Widget build(BuildContext context) {
+    String dn(String k) {
+      final x = _domains[k];
+      return x == null ? k : _t(context, x[0], x[1], x[2]);
+    }
+
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String>(
+              initialValue: _domain,
+              decoration: InputDecoration(labelText: _t(context, 'المجال', 'Bereich', 'Area')),
+              items: [for (final k in _domains.keys) DropdownMenuItem(value: k, child: Text(dn(k)))],
+              onChanged: (v) => setState(() => _domain = v ?? 'all'),
+            ),
+          ),
+        ),
+      ),
+      Expanded(
+        child: _load(context, '/api/admin/control/activity', key: ValueKey(_domain), query: {'limit': '200', 'domain': _domain}, (context, data, reload) {
+          final rows = _l(data);
+          return ListView(padding: const EdgeInsets.all(12), children: [
+            if (rows.isEmpty) _empty(_t(context, 'لا توجد إجراءات', 'Keine Einträge', 'No activity')),
+            for (final r in rows)
+              Card(
+                child: ListTile(
+                  title: Text('${_str(r['actor'])} · ${dn(_str(r['domain']))}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text([_str(r['action']), if (_str(r['reason']).isNotEmpty) _str(r['reason'])].join('\n')),
+                  trailing: Text(_str(r['at_local']).replaceFirst('T', ' ').padRight(16).substring(0, 16), textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12, color: _muted)),
+                ),
+              ),
+          ]);
+        }),
+      ),
+    ]);
+  }
 }

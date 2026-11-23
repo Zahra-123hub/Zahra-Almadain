@@ -173,6 +173,9 @@ class AdminShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
+        ShellItem(id: 'people', icon: Icons.badge_outlined, activeIcon: Icons.badge, label: t('الأطفال والموظفون', 'Kinderakten und Personal', 'Children records and staff'), page: (_) => const AdminPeoplePage()),
+        ShellItem(id: 'notices', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: t('الإعلانات', 'Ankündigungen', 'Notices'), page: (_) => const AdminNoticesPage()),
+        ShellItem(id: 'teacherwork', icon: Icons.forum_outlined, activeIcon: Icons.forum, label: t('منشورات ومواد المعلمات', 'Beiträge und Materialien', 'Posts and materials'), page: (_) => const AdminTeacherWorkPage()),
         ShellItem(id: 'website', icon: Icons.language_outlined, activeIcon: Icons.language, label: t('الموقع', 'Webseite', 'Website'), page: (_) => const AdminWebsitePage()),
         ShellItem(id: 'log', icon: Icons.history_rounded, activeIcon: Icons.history_rounded, label: t('سجل النظام', 'Protokoll', 'Activity log'), page: (_) => const AdminLogPage()),
         ShellItem(id: 'visitors', icon: Icons.insights_outlined, activeIcon: Icons.insights, label: t('الزوّار', 'Besucher', 'Visitors'), page: (_) => const AdminVisitorsPage()),
