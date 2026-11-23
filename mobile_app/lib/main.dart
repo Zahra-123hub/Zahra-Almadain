@@ -107,7 +107,7 @@ class ParentShell extends StatelessWidget {
       ],
       more: [
         ShellItem(id: 'posts', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: s.get('postsAndNotices'), page: (_) => const ParentPosts()),
-        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
+        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (go) => NotificationsPage(goTo: go)),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
     );
@@ -129,7 +129,7 @@ class TeacherShell extends StatelessWidget {
       ],
       more: [
         ShellItem(id: 'files', icon: Icons.folder_outlined, activeIcon: Icons.folder, label: s.get('materials'), page: (_) => const TeacherMaterials()),
-        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
+        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (go) => NotificationsPage(goTo: go)),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
     );

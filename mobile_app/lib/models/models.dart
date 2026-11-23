@@ -106,8 +106,9 @@ class Notice {
 }
 
 class AppNotification {
-  AppNotification({required this.id, required this.kind, required this.subject, required this.read, this.createdAt});
+  AppNotification({required this.id, required this.kind, required this.subject, required this.read, this.createdAt, this.view = ''});
   final String id;
+  final String view; // the page it points to (reports, review, home ...)
   final String kind;
   final String subject;
   final bool read;
@@ -118,6 +119,7 @@ class AppNotification {
         subject: _s(j['subject']),
         read: j['read'] == true,
         createdAt: _date(j['created_at']),
+        view: _s(j['view']),
       );
 }
 
