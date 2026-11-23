@@ -363,6 +363,7 @@ class S {
     'mnSearch': {'ar': 'بحث في الوصف والأسماء', 'de': 'In Beschreibung und Namen suchen', 'en': 'Search descriptions and names'},
     'mnStaffList': {'ar': 'قائمة الموظفين', 'de': 'Mitarbeiterliste', 'en': 'Staff list'},
     'mnStatusPaid': {'ar': 'مدفوعة بالكامل', 'de': 'Bezahlt', 'en': 'Paid'},
+    'mnTotalBoth': {'ar': 'المجموع بالليرة والدولار', 'de': 'Summe in Lira und Dollar', 'en': 'Total in pounds and dollars'},
     'mnTotalDollars': {'ar': 'المجموع بالدولار', 'de': 'Summe in Dollar', 'en': 'Total in dollars'},
     'mnTotalPounds': {'ar': 'المجموع بالليرة', 'de': 'Summe in Lira', 'en': 'Total in pounds'},
     'mnUnpaid': {'ar': 'غير مسددة', 'de': 'Offen', 'en': 'Unpaid'},

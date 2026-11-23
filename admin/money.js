@@ -119,8 +119,8 @@ function mnToolbar(meta, categories, onChange, kind, newLabel, onNew){
 /* the key figures above a list: the value of everything in dollars and in pounds, what was really paid, the number */
 function mnTotals(d, kindWord){
   return h("div", {class:"mn-tiles"}, [
-    mnTile(uiT(["المجموع بالدولار", "Total in dollars"]), "USD " + uiNum(d.totals.value.USD), uiT(["منها مدفوع بالدولار: ", "really paid in dollars: "]) + uiNum(d.totals.USD)),
-    mnTile(uiT(["المجموع بالليرة", "Total in pounds"]), "SYP " + uiNum(d.totals.value.SYP), uiT(["منها مدفوع بالليرة: ", "really paid in pounds: "]) + uiNum(d.totals.SYP)),
+    mnTile(uiT(["المجموع بالليرة والدولار", "Total in pounds and dollars"]), "SYP " + uiNum(d.totals.value.SYP) + "   ·   USD " + uiNum(d.totals.value.USD),
+      uiT(["مدفوع فعلاً بالليرة: ", "really paid in pounds: "]) + uiNum(d.totals.SYP) + uiT([" · بالدولار: ", " · in dollars: "]) + uiNum(d.totals.USD)),
     mnTile(kindWord, String(d.count), uiT(["حركة محسوبة", "entries counted"]))
   ]);
 }

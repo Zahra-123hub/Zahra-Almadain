@@ -312,7 +312,8 @@ class _Grid extends StatelessWidget {
 
 /// A key figure: an icon, a label, the amount in dollars and in pounds, a short line under it.
 class _Kpi extends StatelessWidget {
-  const _Kpi({required this.icon, required this.label, required this.usd, required this.syp, this.tone = brandBlue, this.badge, this.foot});
+  const _Kpi({required this.icon, required this.label, required this.usd, required this.syp, this.tone = brandBlue, this.badge, this.foot, this.sypFirst = false});
+  final bool sypFirst; // pounds on top (big), dollars below
   final IconData icon;
   final String label;
   final String? usd;
@@ -345,9 +346,12 @@ class _Kpi extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            if (usd != null) Money('USD', usd, size: 19, weight: FontWeight.w800),
-            if (usd != null && syp != null) const SizedBox(height: 2),
-            if (syp != null) Money('SYP', syp, size: 19, weight: FontWeight.w800),
+            if (sypFirst && syp != null) Money('SYP', syp, size: 24, weight: FontWeight.w900),
+            if (sypFirst && usd != null && syp != null) const SizedBox(height: 4),
+            if (sypFirst && usd != null) Money('USD', usd, size: 18, weight: FontWeight.w800),
+            if (!sypFirst && usd != null) Money('USD', usd, size: 19, weight: FontWeight.w800),
+            if (!sypFirst && usd != null && syp != null) const SizedBox(height: 2),
+            if (!sypFirst && syp != null) Money('SYP', syp, size: 19, weight: FontWeight.w800),
             if (foot != null) ...[const Spacer(), const SizedBox(height: 10), Text(foot!, style: const TextStyle(fontSize: 12, color: _muted, height: 1.4))],
           ],
         ),
@@ -1565,21 +1569,15 @@ class _MoneyEntriesPageState extends State<MoneyEntriesPage> {
       _Grid(
         minWidth: 200,
         children: [
+          // one box for both currencies: pounds big, dollars below; the foot says what was really paid in each
           _Kpi(
-            icon: Icons.attach_money_rounded,
+            icon: Icons.account_balance_wallet_outlined,
             tone: income ? _good : _bad,
-            label: s.get('mnTotalDollars'),
+            label: s.get('mnTotalBoth'),
             usd: value['USD'] as String?,
-            syp: null,
-            foot: '${s.get('mnReallyPaidUsd')}: ${moneyText(totals['USD'] as String?)}',
-          ),
-          _Kpi(
-            icon: Icons.payments_outlined,
-            tone: income ? _good : _bad,
-            label: s.get('mnTotalPounds'),
-            usd: null,
             syp: value['SYP'] as String?,
-            foot: '${s.get('mnReallyPaidSyp')}: ${moneyText(totals['SYP'] as String?)}',
+            sypFirst: true,
+            foot: '${s.get('mnReallyPaidSyp')}: ${moneyText(totals['SYP'] as String?)}\n${s.get('mnReallyPaidUsd')}: ${moneyText(totals['USD'] as String?)}',
           ),
           _CountCard(count: d['count'] as int, label: s.get(income ? 'mnIncomeCount' : 'mnExpenseCount')),
         ],
