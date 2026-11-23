@@ -70,6 +70,13 @@ class ApiClient {
     try {
       final body = jsonDecode(utf8.decode(response.bodyBytes));
       if (body is Map && body['detail'] is String) detail = body['detail'] as String;
+      // a list of field problems (422): "password: String should have at least 12 characters"
+      if (body is Map && body['detail'] is List) {
+        detail = [
+          for (final item in body['detail'] as List)
+            if (item is Map) '${item['loc'] is List && (item['loc'] as List).isNotEmpty ? '${(item['loc'] as List).last}: ' : ''}${item['msg'] ?? ''}',
+        ].join(' · ');
+      }
     } catch (_) {}
     final status = response.statusCode;
     if (status == 401) {

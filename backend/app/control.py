@@ -35,6 +35,11 @@ def naive_utc(moment: datetime) -> datetime:
     return moment.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def stored_utc(moment: datetime) -> datetime:
+    """A time read from the database as naive UTC, whether the column keeps a time zone (PostgreSQL) or not (SQLite)."""
+    return moment if moment.tzinfo is None else naive_utc(moment)
+
+
 class GrantIn(BaseModel):
     username: str = Field(min_length=3, max_length=80)
     grant: str = Field(max_length=40)
@@ -200,7 +205,7 @@ def build_router(guard: Callable[..., Actor], admin_guard: Callable[..., Actor])
                 "account_id": str(account_id), "name": names.get(account_id) or account.username, "username": account.username,
                 "last_seen": None if last_seen is None else last_seen.isoformat(),
                 "last_seen_local": None if last_seen is None else to_local(last_seen).isoformat(),
-                "active_that_day": bool(last_seen is not None and start <= last_seen < end) or made > 0 or changed > 0,
+                "active_that_day": bool(last_seen is not None and start <= stored_utc(last_seen) < end) or made > 0 or changed > 0,
                 "reports_created": made, "reports_changed": changed,
                 "reports_submitted_open": session.scalar(select(func.count()).select_from(DailyReport).where(DailyReport.author_id == account_id, DailyReport.status == "submitted")) or 0,
                 "drafts_open": session.scalar(select(func.count()).select_from(DailyReport).where(DailyReport.author_id == account_id, DailyReport.status == "draft")) or 0,
@@ -223,7 +228,8 @@ def build_router(guard: Callable[..., Actor], admin_guard: Callable[..., Actor])
         reported = {cid for (cid,) in session.execute(select(DailyReport.child_id).where(DailyReport.status == "published", DailyReport.published_at >= recent).distinct()).all()}
         active = session.scalars(select(Child).where(Child.is_active.is_(True))).all()
         left = session.scalars(select(Child).where(Child.left_on.is_not(None), Child.left_on >= since).order_by(Child.left_on.desc())).all()
-        new = [c for c in active if c.created_at and c.created_at >= local_day_bounds(since)[0]]
+        # PostgreSQL gives these times with a time zone, SQLite without one: both are compared as naive UTC
+        new = [c for c in active if c.created_at and stored_utc(c.created_at) >= local_day_bounds(since)[0]]
         return {
             "active": len(active),
             "groups": [{"name": name or "", "children": count} for name, count in groups],

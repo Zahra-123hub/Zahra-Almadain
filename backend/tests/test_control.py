@@ -1,5 +1,6 @@
 """The control centre: who may see it, and that every number is counted from the real tables."""
 
+import unittest
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -184,3 +185,12 @@ class ControlTests(ControlsBase):
 
 
 A_EMP = PEOPLE + "/employees"
+
+
+class StoredTimesWithZoneTests(unittest.TestCase):
+    def test_times_with_and_without_a_zone_compare_the_same(self):
+        from datetime import datetime, timezone as tz
+        from app.control import stored_utc
+        naive = datetime(2026, 11, 1, 10, 0)
+        self.assertEqual(stored_utc(naive), naive)
+        self.assertEqual(stored_utc(naive.replace(tzinfo=tz.utc)), naive)

@@ -117,10 +117,12 @@ String problemText(BuildContext context, Object error, {bool login = false}) {
       case ApiProblem.disabled:
         return s.get('disabled');
       default:
-        return s.get('serverError');
+        // the server's own reason, when it gave one, says more than a general sentence
+        if (error.detail.isNotEmpty) return error.detail;
+        return '${s.get('serverError')}${error.status == 0 ? '' : ' (${error.status})'}';
     }
   }
-  return s.get('serverError');
+  return '${s.get('serverError')} ($error)';
 }
 
 void toast(BuildContext context, String text) {
