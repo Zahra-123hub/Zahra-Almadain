@@ -147,7 +147,6 @@ class ManagementShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
-        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
     );
@@ -168,7 +167,6 @@ class AccountingShell extends StatelessWidget {
         ShellItem(id: 'expenses', icon: Icons.north_east_rounded, activeIcon: Icons.north_east_rounded, label: s.get('mnExpenses'), page: (_) => const MoneyEntriesPage(kind: 'expenses')),
       ],
       more: [
-        ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (_) => const NotificationsPage()),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
     );

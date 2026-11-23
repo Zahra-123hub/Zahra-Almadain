@@ -187,6 +187,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     Navigator.push(context, MaterialPageRoute<void>(builder: (_) => SubPage(title: item.label, child: item.page(_goTo))));
   }
 
+  /// Areas without a notifications page (the management and the accounting) show no bell either.
+  bool get _hasBell => _all.any((i) => i.id == 'notifications');
+
   void _openBell() {
     final notifications = _all.where((i) => i.id == 'notifications');
     if (notifications.isEmpty) return;
@@ -219,7 +222,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           _Sidebar(roleLabel: widget.roleLabel, items: _all, selected: _id, onSelect: (id) => setState(() => _id = id)),
           Expanded(
             child: Column(children: [
-              AppHeader(title: title, onBell: _openBell, besideSidebar: true),
+              AppHeader(title: title, onBell: _hasBell ? _openBell : null, besideSidebar: true),
               const UpdateHint(),
               Expanded(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: Breakpoints.content), child: content))),
             ]),
@@ -231,7 +234,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final bottomIndex = _id == _moreId || widget.more.any((m) => m.id == _id) ? widget.items.length : widget.items.indexWhere((i) => i.id == _id);
     return Scaffold(
       body: Column(children: [
-        AppHeader(title: title, onBell: _openBell),
+        AppHeader(title: title, onBell: _hasBell ? _openBell : null),
         const UpdateHint(),
         Expanded(child: content),
       ]),
