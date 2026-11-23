@@ -932,18 +932,24 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
                       children: [
                         _ProfitWord(value: surplus[code] as String?, currency: code),
                         const SizedBox(height: 6),
-                        Money(code.toUpperCase(), (surplus[code] as String?)?.replaceFirst('-', ''), size: 26, weight: FontWeight.w900, color: _signColor(surplus[code] as String?)),
-                        // the same result worth the other currency (each entry at its own rate): dollars and pounds in one box
-                        if ((d['surplus_value'] as Map?)?[code] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('${s.get('mnWorth')} ', style: const TextStyle(fontSize: 13, color: _muted)),
-                              Money(code == 'usd' ? 'SYP' : 'USD', ((d['surplus_value'] as Map)[code] as String?)?.replaceFirst('-', ''), size: 17, weight: FontWeight.w800, color: _signColor(surplus[code] as String?)),
-                            ],
-                          ),
+                        // pounds big, dollars small below: the figure of the box's own currency is the real one, the other is its value at the stored rates
+                        Builder(
+                          builder: (_) {
+                            final own = (surplus[code] as String?)?.replaceFirst('-', '');
+                            final worth = ((d['surplus_value'] as Map?)?[code] as String?)?.replaceFirst('-', '');
+                            final tone = _signColor(surplus[code] as String?);
+                            final syp = code == 'syp' ? own : worth;
+                            final usd = code == 'usd' ? own : worth;
+                            if (syp == null || usd == null) return Money(code.toUpperCase(), own, size: 26, weight: FontWeight.w900, color: tone);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Money('SYP', syp, size: 26, weight: FontWeight.w900, color: tone),
+                                const SizedBox(height: 2),
+                                Money('USD', usd, size: 18, weight: FontWeight.w800, color: tone),
+                              ],
+                            );
+                          },
                         ),
                         const SizedBox(height: 6),
                         Text(

@@ -52,8 +52,8 @@ function mnTile(label, value, sub, kind){
 function mnProfitTile(code, value, income, expense, worth){
   var n = Number(value), word = n > 0 ? ["ربح", "Profit"] : n < 0 ? ["خسارة", "Loss"] : ["لا ربح ولا خسارة", "No profit, no loss"];
   var cur = code === "USD" ? [" بالدولار", " in dollars"] : [" بالليرة", " in pounds"];
-  var other = code === "USD" ? "SYP" : "USD";
-  var tile = mnTile(uiT(word) + uiT(cur), code + " " + uiNum(String(value).replace("-", "")) + "   ≈   " + other + " " + uiNum(String(worth).replace("-", "")),
+  var own = uiNum(String(value).replace("-", "")), val = uiNum(String(worth).replace("-", ""));
+  var tile = mnTile(uiT(word) + uiT(cur), code === "SYP" ? "SYP " + own + "   ·   USD " + val : "SYP " + val + "   ·   USD " + own,
     uiT(["إيرادات ", "income "]) + uiNum(income) + uiT([" − مصروفات ", " − expenses "]) + uiNum(expense), n < 0 ? "bad" : n > 0 ? "good" : "");
   var label = tile.querySelector("small");
   label.className = "mn-verdict"; // the word "profit" / "loss" as a filled pill
