@@ -49,29 +49,16 @@ function mnTile(label, value, sub, kind){
   return h("div", {class:"mn-tile" + (kind ? " " + kind : "")}, [h("small", {text:label}), h("strong", {dir:"ltr", text:value}), sub ? h("span", {class:"mn-tile-sub", dir:"auto", text:sub}) : ""]);
 }
 /* profit or loss of one currency, said in words: "ربح" / "خسارة" / "لا ربح ولا خسارة", the amount without a sign */
-function mnProfitTile(code, value, income, expense){
+function mnProfitTile(code, value, income, expense, worth){
   var n = Number(value), word = n > 0 ? ["ربح", "Profit"] : n < 0 ? ["خسارة", "Loss"] : ["لا ربح ولا خسارة", "No profit, no loss"];
   var cur = code === "USD" ? [" بالدولار", " in dollars"] : [" بالليرة", " in pounds"];
-  var tile = mnTile(uiT(word) + uiT(cur), code + " " + uiNum(String(value).replace("-", "")),
+  var other = code === "USD" ? "SYP" : "USD";
+  var tile = mnTile(uiT(word) + uiT(cur), code + " " + uiNum(String(value).replace("-", "")) + "   ≈   " + other + " " + uiNum(String(worth).replace("-", "")),
     uiT(["إيرادات ", "income "]) + uiNum(income) + uiT([" − مصروفات ", " − expenses "]) + uiNum(expense), n < 0 ? "bad" : n > 0 ? "good" : "");
   var label = tile.querySelector("small");
   label.className = "mn-verdict"; // the word "profit" / "loss" as a filled pill
   label.textContent = (n > 0 ? "▲ " : n < 0 ? "▼ " : "") + uiT(word);
   tile.insertBefore(h("small", {text:uiT(cur).trim()}), tile.children[1]);
-  return tile;
-}
-
-/* the whole result in both currencies at once (every entry at the rate stored with it): one verdict, dollars and pounds side by side */
-function mnOverallTile(pair){
-  var n = Number(pair.usd) !== 0 ? Number(pair.usd) : Number(pair.syp);
-  var word = n > 0 ? ["ربح", "Profit"] : n < 0 ? ["خسارة", "Loss"] : ["لا ربح ولا خسارة", "No profit, no loss"];
-  var tile = mnTile(uiT(word), "USD " + uiNum(String(pair.usd).replace("-", "")) + "   ·   SYP " + uiNum(String(pair.syp).replace("-", "")),
-    uiT(["كل الحركات محوّلة بسعر الصرف المحفوظ مع كل حركة", "Every entry converted at the rate stored with it"]), n < 0 ? "bad" : n > 0 ? "good" : "");
-  var label = tile.querySelector("small");
-  label.className = "mn-verdict";
-  label.textContent = (n > 0 ? "▲ " : n < 0 ? "▼ " : "") + uiT(word);
-  tile.insertBefore(h("small", {text:uiT(["النتيجة الإجمالية بالدولار والليرة معاً", "Overall result in dollars and pounds together"])}), tile.children[1]);
-  tile.style.gridColumn = "1 / -1";
   return tile;
 }
 
@@ -528,9 +515,8 @@ function tabSummary(){
           uiBadge(d.closed ? uiT(["مغلق", "Closed"]) + (d.closing ? " · " + d.closing.by : "") : uiT(["مفتوح", "Open"]), d.closed ? "paid" : "neutral"),
           h("div", {class:"mn-toolbar-end"}, [closeBtn, pdf])]),
         h("div", {class:"mn-tiles"}, [
-          mnProfitTile("USD", d.surplus.usd, d.income.usd, d.expense.usd),
-          mnProfitTile("SYP", d.surplus.syp, d.income.syp, d.expense.syp),
-          mnOverallTile(d.converted.surplus),
+          mnProfitTile("USD", d.surplus.usd, d.income.usd, d.expense.usd, d.surplus_value.usd),
+          mnProfitTile("SYP", d.surplus.syp, d.income.syp, d.expense.syp, d.surplus_value.syp),
           mnTile(uiT(["الرواتب", "Salaries"]), "SYP " + uiNum(d.salaries.syp), "USD " + uiNum(d.salaries.usd)),
           mnTile(uiT(["فواتير غير مسددة", "Unpaid invoices"]), String(d.invoices.open + d.invoices.partial), "USD " + uiNum(d.invoices.open_amount.usd) + " · SYP " + uiNum(d.invoices.open_amount.syp), d.invoices.open + d.invoices.partial ? "warn" : "")
         ]),

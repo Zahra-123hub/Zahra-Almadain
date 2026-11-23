@@ -308,6 +308,14 @@ class SummaryTests(MoneyBase):
         self.assertEqual(self.summary(month_of(old))["income"]["usd"], "10.00")
 
 
+    def test_the_result_of_each_currency_is_also_given_in_the_other_currency(self):
+        self.income("20", "USD")
+        self.expense("5", "USD")
+        self.income("120000", "SYP", description="pounds in")
+        data = self.summary()
+        self.assertEqual((data["surplus"]["usd"], data["surplus_value"]["usd"]), ("15.00", "180000"))  # 15 dollars at 12000
+        self.assertEqual((data["surplus"]["syp"], data["surplus_value"]["syp"]), ("120000", "10.00"))  # 120000 pounds at 12000
+
 class ExportTests(MoneyBase):
     def test_income_expenses_and_the_month_are_separate_signed_pdfs(self):
         self.income("20", "USD")

@@ -439,10 +439,12 @@ def month_figures(session: Session, year: int, month: int) -> dict[str, Any]:
         return {code: ZERO for code in CURRENCIES}
 
     income, expense, salaries, converted_in, converted_out = blank(), blank(), blank(), blank(), blank()
+    income_value, expense_value = blank(), blank()  # what the money paid in each currency is worth in the OTHER one (at the rate of each entry)
     income_cats: dict[uuid.UUID, dict[str, Any]] = {}
     expense_cats: dict[str, dict[str, Any]] = {}
     for e in incomes:
         income[e.currency] += e.amount
+        income_value[e.currency] += e.amount_other
         converted_in[e.currency] += e.amount
         converted_in[other_of(e.currency)] += e.amount_other
         cat = income_cats.setdefault(e.category_id, {"USD": ZERO, "SYP": ZERO, "count": 0})
@@ -450,6 +452,7 @@ def month_figures(session: Session, year: int, month: int) -> dict[str, Any]:
         cat["count"] += 1
     for e in expenses:
         expense[e.currency] += e.amount
+        expense_value[e.currency] += e.amount_other
         converted_out[e.currency] += e.amount
         converted_out[other_of(e.currency)] += e.amount_other
         if e.category == "salaries":
@@ -459,6 +462,7 @@ def month_figures(session: Session, year: int, month: int) -> dict[str, Any]:
         cat["count"] += 1
     return {
         "income": income, "expense": expense, "surplus": {code: income[code] - expense[code] for code in CURRENCIES},
+        "surplus_other": {code: income_value[code] - expense_value[code] for code in CURRENCIES},
         "salaries": salaries, "other_expenses": {code: expense[code] - salaries[code] for code in CURRENCIES},
         "income_count": len(incomes), "expense_count": len(expenses), "income_cats": income_cats, "expense_cats": expense_cats,
         "converted": {"income": converted_in, "expense": converted_out, "surplus": {code: converted_in[code] - converted_out[code] for code in CURRENCIES}},
@@ -1109,6 +1113,7 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         return {
             "month": f"{year}-{month:02d}", "previous_month": f"{prev_year}-{prev_month:02d}",
             "income": pair(now["income"]), "expense": pair(now["expense"]), "surplus": pair(now["surplus"]),
+            "surplus_value": {"usd": text("SYP", now["surplus_other"]["USD"]), "syp": text("USD", now["surplus_other"]["SYP"])},  # the result of each currency worth in the other one
             "salaries": pair(now["salaries"]), "other_expenses": pair(now["other_expenses"]),
             "income_count": now["income_count"], "expense_count": now["expense_count"],
             "income_by_category": sorted(
