@@ -180,9 +180,10 @@ def auto_salaries(session: Session) -> int:
         return 0
     month_end = month_range(year, month)[1]
     taken = set(session.scalars(select(ExpenseEntry.employee_id).where(ExpenseEntry.salary_month == key, ExpenseEntry.employee_id.is_not(None))).all())
+    skipped = set(session.scalars(select(FeeAuditLog.details).where(FeeAuditLog.action == "salary.skip", FeeAuditLog.entity_id == key)).all())  # deleted as a test: nobody wanted it booked
     people = [
         p for p in session.scalars(select(Employee).where(Employee.is_active.is_(True), Employee.salary.is_not(None))).all()
-        if p.id not in taken and p.salary > 0 and (p.hired_on is None or p.hired_on <= month_end)
+        if p.id not in taken and str(p.id) not in skipped and p.salary > 0 and (p.hired_on is None or p.hired_on <= month_end)
     ]
     if not people:
         return 0
@@ -370,6 +371,10 @@ class OpeningIn(BaseModel):
     usd: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     syp: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     note: str = Field(default="", max_length=300)
+
+
+class MarkIn(BaseModel):
+    test: bool = True
 
 
 class ClosingIn(BaseModel):
@@ -1214,6 +1219,8 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         are never touched. What was deleted is written to the activity log."""
         need(session, actor, "manage")
         counts = test_counts(session)
+        for e in session.scalars(select(ExpenseEntry).where(ExpenseEntry.is_test.is_(True), ExpenseEntry.employee_id.is_not(None), ExpenseEntry.salary_month.is_not(None))).all():
+            activity.record(session, actor_id=actor.account_id, actor_name=actor.name, domain="finance", action="salary.skip", entity_type="salary", entity_id=e.salary_month, details=str(e.employee_id))
         for model in (IncomeEntry, ExpenseEntry):
             session.execute(delete(model).where(model.is_test.is_(True), model.reverses_id.is_not(None)))
             session.execute(delete(model).where(model.is_test.is_(True)))
@@ -1222,6 +1229,49 @@ def build_router(guard: Callable[..., Actor]) -> APIRouter:
         audit(session, actor, "test.purge", "test", "all", counts, {"deleted": True})
         session.commit()
         return {**counts, "total": sum(counts.values())}
+
+    def mark_group(session: Session, actor: Actor, model: Any, entry: Any, kind: str, flag: bool) -> list[Any]:
+        """Marks (or unmarks) an entry as a test together with what belongs to it: its reversals, or the entry it reverses."""
+        root = session.get(model, entry.reverses_id) if entry.reverses_id else entry
+        group = [root, *session.scalars(select(model).where(model.reverses_id == root.id)).all()]
+        for row in group:
+            before = {"is_test": bool(row.is_test)}
+            row.is_test = flag
+            audit(session, actor, f"{kind}.mark_test", kind, row.id, before, {"is_test": flag})
+        return group
+
+    @router.post("/income/{entry_id}/test")
+    def mark_income_test(entry_id: uuid.UUID, payload: MarkIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """Marks an old entry as a test (or takes the mark away) so that "delete test data" can remove it. Management only."""
+        need(session, actor, "manage")
+        entry = get_income(session, entry_id)
+        if not payload.test and entry.invoice is not None and entry.invoice.is_test:
+            raise HTTPException(409, "هذه دفعة فاتورة تجريبية. أزل العلامة عن الفاتورة نفسها.")
+        mark_group(session, actor, IncomeEntry, entry, "income", payload.test)
+        session.commit()
+        return income_list(session, [entry])[0]
+
+    @router.post("/expenses/{entry_id}/test")
+    def mark_expense_test(entry_id: uuid.UUID, payload: MarkIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        need(session, actor, "manage")
+        entry = get_expense(session, entry_id)
+        mark_group(session, actor, ExpenseEntry, entry, "expense", payload.test)
+        session.commit()
+        return expense_list(session, [entry])[0]
+
+    @router.post("/invoices/{invoice_id}/test")
+    def mark_invoice_test(invoice_id: uuid.UUID, payload: MarkIn, actor: Actor = Depends(guard), session: Session = Depends(get_session)) -> dict[str, Any]:
+        """An invoice is marked together with all its payments (and their reversals), so that deleting it leaves nothing behind."""
+        need(session, actor, "manage")
+        invoice = get_invoice(session, invoice_id)
+        before = {"is_test": bool(invoice.is_test)}
+        invoice.is_test = payload.test
+        for payment in session.scalars(select(IncomeEntry).where(IncomeEntry.invoice_id == invoice.id)).all():
+            payment.is_test = payload.test
+        audit(session, actor, "invoice.mark_test", "invoice", invoice.id, before, {"is_test": payload.test})
+        session.commit()
+        session.refresh(invoice)
+        return invoice_dict(invoice, child_names(session, {invoice.child_id}), with_payments=True)
 
     # ---- exports: signed PDF documents (both currencies and the rate in each) ------------------------------------------------------
     def only_pdf(fmt: str) -> None:

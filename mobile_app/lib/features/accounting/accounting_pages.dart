@@ -1787,6 +1787,19 @@ class _EntrySheet extends StatelessWidget {
                   );
                 },
               ),
+              if (meta.canManage && r['is_reversal'] != true) ...[
+                const SizedBox(height: 18),
+                _secondary(s.get(r['is_test'] == true ? 'mnUnmarkTest' : 'mnMarkTest'), Icons.science_outlined, () async {
+                  try {
+                    await api.post('/api/admin/money/$kind/${r['id']}/test', {'test': r['is_test'] != true});
+                    if (!context.mounted) return;
+                    toast(context, s.get(r['is_test'] == true ? 'mnTestUnmarked' : 'mnTestMarked'));
+                    Navigator.pop(context, 'changed');
+                  } on ApiException catch (e) {
+                    if (context.mounted) toast(context, problemText(context, e));
+                  }
+                }),
+              ],
               if (mayCorrect) ...[
                 const SizedBox(height: 18),
                 Wrap(
@@ -2240,6 +2253,16 @@ class _InvoicePageState extends State<InvoicePage> {
                                   }
                                 }),
                               _secondary(s.get('mnPrint'), Icons.print_outlined, () => _print(context, '/api/admin/money/invoices/${widget.id}.pdf', '${v['number']}.pdf')),
+                              if (widget.meta.canManage)
+                                _secondary(s.get(v['is_test'] == true ? 'mnUnmarkTest' : 'mnMarkTest'), Icons.science_outlined, () async {
+                                  try {
+                                    await api.post('/api/admin/money/invoices/${widget.id}/test', {'test': v['is_test'] != true});
+                                    _changed = true;
+                                    await reload();
+                                  } on ApiException catch (e) {
+                                    if (context.mounted) toast(context, problemText(context, e));
+                                  }
+                                }),
                               _secondary(s.get('mnInvoicePdf'), Icons.picture_as_pdf_outlined, () => _pdf(context, '/api/admin/money/invoices/${widget.id}.pdf', '${v['number']}.pdf')),
                               if (widget.meta.canCorrect && v['status'] == 'open' && v['voided'] != true)
                                 _secondary(s.get('mnCancelInvoice'), Icons.block, color: _bad, () async {

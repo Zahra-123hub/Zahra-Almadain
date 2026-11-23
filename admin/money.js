@@ -9,7 +9,7 @@
 var MN = {meta:null};
 var MN_STATUS = {open:["مفتوحة", "Open", "due"], partial:["مدفوعة جزئياً", "Partly paid", "review"], paid:["مدفوعة بالكامل", "Paid", "paid"], void:["ملغاة", "Cancelled", "neutral"]};
 var MN_ACTIONS = {
-  "income.create":["سُجّل", "recorded"], "income.update":["عُدّل", "changed"], "income.void":["أُلغي", "cancelled"], "income.reverse":["صُحّح بقيد عكسي", "reversed"],
+  "income.create":["سُجّل", "recorded"], "income.update":["عُدّل", "changed"], "income.void":["أُلغي", "cancelled"], "income.reverse":["صُحّح بقيد عكسي", "reversed"], "income.mark_test":["تغيّرت علامة التجريب", "test mark changed"], "expense.mark_test":["تغيّرت علامة التجريب", "test mark changed"],
   "expense.create":["سُجّل", "recorded"], "expense.update":["عُدّل", "changed"], "expense.void":["أُلغي", "cancelled"], "expense.reverse":["صُحّح بقيد عكسي", "reversed"],
   "salary.auto":["سُجّل الراتب تلقائياً", "salary booked automatically"],
   "invoice.create":["أُنشئت", "created"], "invoice.update":["عُدّلت", "changed"], "invoice.void":["أُلغيت", "cancelled"]
@@ -185,6 +185,13 @@ function mnRowActions(meta, kind, r, columns, onEdit, done){
     box.appendChild(mnBtn(r.month_closed ? uiT(["قيد عكسي", "Reverse"]) : uiT(["إلغاء", "Cancel"]), "ghost mn-mini", function(){ mnCancel(kind, r, done); }));
   }
   box.appendChild(mnBtn(uiT(["السجل", "Log"]), "ghost mn-mini", function(){ mnHistoryRow(r.id, columns, box.closest("tr")); }));
+  if(meta.rights.manage && !r.is_reversal){
+    box.appendChild(mnBtn(r.is_test ? uiT(["إزالة علامة التجريب", "Remove test mark"]) : uiT(["تعليم كتجريبي", "Mark as test"]), "ghost mn-mini", function(){
+      request("/api/admin/money/" + kind + "/" + r.id + "/test", {method:"POST", body:JSON.stringify({test:!r.is_test})})
+        .then(function(){ uiToast(r.is_test ? uiT(["أُزيلت علامة التجريب.", "Test mark removed."]) : uiT(["عُلّمت كتجريبية. تُحذف مع حذف البيانات التجريبية.", "Marked as test. It goes with deleting the test data."]), "ok"); done(); })
+        .catch(function(e){ uiToast(errText(e), "err"); });
+    }));
+  }
   return box;
 }
 function mnPaidCell(r){
@@ -286,6 +293,11 @@ function tabIncome(){
         if(meta.rights.correct && !v.voided){
           kids.push(h("div", {class:"a-row"}, [mnBtn(uiT(["تعديل الفاتورة", "Edit the invoice"]), "ghost", function(){ showInvoiceForm(v); }),
             mnBtn(uiT(["السجل", "Log"]), "ghost", function(){ mnInvoiceLog(v.id, logBox); })]));
+        }
+        if(meta.rights.manage){
+          kids.push(h("div", {class:"a-row"}, [mnBtn(v.is_test ? uiT(["إزالة علامة التجريب", "Remove test mark"]) : uiT(["تعليم كتجريبية", "Mark as test"]), "ghost", function(){
+            request("/api/admin/money/invoices/" + v.id + "/test", {method:"POST", body:JSON.stringify({test:!v.is_test})}).then(function(){ openInvoice(v.id); loadInvoices(); load(); }).catch(function(e){ uiToast(errText(e), "err"); });
+          })]));
         }
         kids.push(logBox);
         if(meta.rights.correct && v.status === "open" && !v.voided){

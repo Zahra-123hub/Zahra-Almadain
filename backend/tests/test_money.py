@@ -516,6 +516,22 @@ class AutomaticSalaryTests(MoneyBase):
         self.assertEqual([(r.recipient, r.rate) for r in self.salary_rows()], [("Lina", Decimal("12500"))])
 
 
+    def test_a_salary_deleted_as_a_test_is_not_booked_again_by_the_automatic_run(self):
+        lina = self.hire("Lina", salary="300000", salary_currency="SYP").json()
+        with self.at(date(2026, 11, 16)):
+            self.meta()
+        with self.at(date(2026, 12, 1)):
+            self.meta()
+        auto = self.salary_rows()[0]
+        with self.at(date(2026, 12, 2)):
+            self.assertEqual(self.client.post(f"{MONEY}/expenses/{auto.id}/test", headers=self.mgr, json={"test": True}).status_code, 200)
+            self.client.post(MONEY + "/test-data/purge", headers=self.mgr)
+            self.assertEqual(self.salary_rows(), [])
+            self.meta()
+        self.assertEqual(self.salary_rows(), [])  # nobody wanted it: it stays deleted
+        self.assertIsNotNone(lina)
+
+
 class OpeningBalanceTests(MoneyBase):
     """The money the kindergarten has; income and expenses are added to it, month by month."""
 
@@ -593,3 +609,26 @@ class TestDataTests(MoneyBase):
         self.income("20", "USD")
         self.assertEqual(self.client.post(MONEY + "/test-data/purge", headers=self.acc).json()["total"], 0)
         self.assertEqual(self.client.get(MONEY + "/income", headers=self.acc).json()["count"], 1)
+
+    def test_an_old_entry_can_be_marked_as_test_and_then_deleted_and_a_deleted_salary_is_not_booked_again(self):
+        old = self.income("30", "USD", description="old by mistake").json()
+        keep = self.income("11", "USD", description="keep").json()
+        self.client.post(f"{MONEY}/income/{old['id']}/void", headers=self.acc, json={"reason": "cancelled before"})
+        marked = self.client.post(f"{MONEY}/income/{old['id']}/test", headers=self.acc, json={"test": True})
+        self.assertEqual((marked.status_code, marked.json().get("is_test")), (200, True), marked.text)
+        self.assertEqual(self.client.get(MONEY + "/test-data", headers=self.acc).json()["income"], 1)
+        self.client.post(MONEY + "/test-data/purge", headers=self.acc)
+        rows = self.client.get(MONEY + "/income", headers=self.acc).json()["rows"]
+        self.assertEqual([r["id"] for r in rows], [keep["id"]])
+
+    def test_an_invoice_is_marked_with_its_payments_and_the_mark_can_be_taken_away(self):
+        invoice = self.invoice().json()
+        self.pay(invoice["id"], "10")
+        done = self.client.post(f"{MONEY}/invoices/{invoice['id']}/test", headers=self.acc, json={"test": True})
+        self.assertTrue(done.json()["is_test"])
+        self.assertEqual(self.client.get(MONEY + "/test-data", headers=self.acc).json()["income"], 1)
+        payment = self.client.get(MONEY + "/income", headers=self.acc).json()["rows"][0]
+        self.assertEqual(self.client.post(f"{MONEY}/income/{payment['id']}/test", headers=self.acc, json={"test": False}).status_code, 409)
+        self.client.post(f"{MONEY}/invoices/{invoice['id']}/test", headers=self.acc, json={"test": False})
+        self.assertEqual(self.client.get(MONEY + "/test-data", headers=self.acc).json()["total"], 0)
+
