@@ -934,14 +934,14 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
                         const SizedBox(height: 6),
                         Money(code.toUpperCase(), (surplus[code] as String?)?.replaceFirst('-', ''), size: 26, weight: FontWeight.w900, color: _signColor(surplus[code] as String?)),
                         // the same result worth the other currency (each entry at its own rate): dollars and pounds in one box
-                        if (_map(d['surplus_value'])[code] != null)
+                        if ((d['surplus_value'] as Map?)?[code] != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text('${s.get('mnWorth')} ', style: const TextStyle(fontSize: 13, color: _muted)),
-                              Money(code == 'usd' ? 'SYP' : 'USD', (_map(d['surplus_value'])[code] as String?)?.replaceFirst('-', ''), size: 17, weight: FontWeight.w800, color: _signColor(surplus[code] as String?)),
+                              Money(code == 'usd' ? 'SYP' : 'USD', ((d['surplus_value'] as Map)[code] as String?)?.replaceFirst('-', ''), size: 17, weight: FontWeight.w800, color: _signColor(surplus[code] as String?)),
                             ],
                           ),
                         ),
