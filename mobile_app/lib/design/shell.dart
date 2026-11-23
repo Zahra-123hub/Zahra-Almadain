@@ -290,9 +290,10 @@ class _MorePage extends StatelessWidget {
   }
 }
 
-String areaLabel(S s, Area a) => s.get(switch (a) { Area.management => 'managementArea', Area.accounting => 'accountingArea', Area.teacher => 'teacherArea', Area.parent => 'parentArea' });
+String areaLabel(S s, Area a) => s.get(switch (a) { Area.admin => 'adminArea', Area.management => 'managementArea', Area.accounting => 'accountingArea', Area.teacher => 'teacherArea', Area.parent => 'parentArea' });
 
 IconData areaIcon(Area a) => switch (a) {
+      Area.admin => Icons.admin_panel_settings_outlined,
       Area.management => Icons.shield_outlined,
       Area.accounting => Icons.account_balance_wallet_outlined,
       Area.teacher => Icons.edit_note_rounded,

@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/config.dart';
 import 'api.dart';
 
-enum Area { parent, teacher, management, accounting }
+enum Area { parent, teacher, management, accounting, admin }
 
 /// Who is signed in, which area is open, which language is used.
 class Session extends ChangeNotifier {
@@ -33,16 +33,17 @@ class Session extends ChangeNotifier {
   bool get isTeacher => roles.contains('teacher');
   bool get isManager => roles.contains('manager');
   bool get isAccountant => roles.contains('accountant');
-  bool get hasMobileArea => isParent || isTeacher || isManager || isAccountant;
+  bool get isAdmin => roles.contains('admin');
+  bool get hasMobileArea => isParent || isTeacher || isManager || isAccountant || isAdmin;
 
   /// The role name the server uses for each area of the app.
-  static const roleOf = {Area.management: 'manager', Area.accounting: 'accountant', Area.teacher: 'teacher', Area.parent: 'parent'};
+  static const roleOf = {Area.admin: 'admin', Area.management: 'manager', Area.accounting: 'accountant', Area.teacher: 'teacher', Area.parent: 'parent'};
 
   /// Signed in with several areas and none chosen yet: the choice screen comes first.
   bool get needsAreaChoice => signedIn && hasMobileArea && areas.length > 1 && area == null;
 
   /// The areas this account may open, in the order they are offered.
-  List<Area> get areas => [if (isManager) Area.management, if (isAccountant) Area.accounting, if (isTeacher) Area.teacher, if (isParent) Area.parent];
+  List<Area> get areas => [if (isAdmin) Area.admin, if (isManager) Area.management, if (isAccountant) Area.accounting, if (isTeacher) Area.teacher, if (isParent) Area.parent];
 
   Future<void> start() async {
     final prefs = await SharedPreferences.getInstance();

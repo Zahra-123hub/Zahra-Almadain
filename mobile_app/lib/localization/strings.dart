@@ -107,6 +107,8 @@ class S {
     'myPrivateFiles': {'ar': 'ملفاتي الخاصة', 'de': 'Meine privaten Dateien', 'en': 'My private files'},
     'shareSelected': {'ar': 'مشاركة مع الأهل', 'de': 'Für Eltern freigeben', 'en': 'Share with parents'},
     'selectToShare': {'ar': 'حدّد ملفات لمشاركتها مع الأهل', 'de': 'Dateien markieren, um sie für Eltern freizugeben', 'en': 'Tick files to share them with parents'},
+    'adminArea': {'ar': 'منطقة المدير', 'de': 'Admin-Bereich', 'en': 'Admin area'},
+    'roleAdminHint': {'ar': 'الحسابات والمتابعة والموقع والسجل', 'de': 'Konten, Kontrollzentrale, Webseite, Protokoll', 'en': 'Accounts, control centre, website, log'},
     'managementArea': {'ar': 'منطقة الإدارة', 'de': 'Leitungsbereich', 'en': 'Management area'},
     'reviewReports': {'ar': 'مراجعة التقارير', 'de': 'Berichte prüfen', 'en': 'Review reports'},
     'manageLearning': {'ar': 'إدارة المواد التعليمية', 'de': 'Lernmaterial verwalten', 'en': 'Manage learning material'},

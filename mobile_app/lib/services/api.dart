@@ -97,6 +97,9 @@ class ApiClient {
   Future<dynamic> patch(String path, Object body) async =>
       _decode(await _send(() => _http.patch(_uri(path), headers: _headers(), body: jsonEncode(body))));
 
+  Future<dynamic> put(String path, Object body) async =>
+      _decode(await _send(() => _http.put(_uri(path), headers: _headers(), body: jsonEncode(body))));
+
   Future<dynamic> delete(String path) async =>
       _decode(await _send(() => _http.delete(_uri(path), headers: _headers())));
 

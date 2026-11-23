@@ -33,7 +33,7 @@ class _RoleChooserPageState extends State<RoleChooserPage> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     final session = SessionScope.of(context);
-    final hints = {Area.management: 'roleManagementHint', Area.accounting: 'roleAccountingHint', Area.teacher: 'roleTeacherHint', Area.parent: 'roleParentHint'};
+    final hints = {Area.admin: 'roleAdminHint', Area.management: 'roleManagementHint', Area.accounting: 'roleAccountingHint', Area.teacher: 'roleTeacherHint', Area.parent: 'roleParentHint'};
     return Scaffold(
       body: Column(children: [
         AppHeader(title: s.fill('welcome', session.username ?? ''), subtitle: s.get('chooseRole')),

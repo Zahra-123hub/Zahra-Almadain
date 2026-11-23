@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'design/shell.dart';
 import 'features/accounting/accounting_pages.dart';
+import 'features/admin/admin_pages.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/role_chooser_page.dart';
 import 'features/common/common_pages.dart';
@@ -54,6 +55,8 @@ class _Root extends StatelessWidget {
     if (!session.signedIn || !session.hasMobileArea) return const LoginPage();
     if (session.needsAreaChoice) return const RoleChooserPage();
     switch (session.area) {
+      case Area.admin:
+        return const AdminShell();
       case Area.management:
         return const ManagementShell();
       case Area.accounting:
@@ -147,6 +150,34 @@ class ManagementShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
+        ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
+      ],
+    );
+  }
+}
+
+/// The admin: the same work as the admin page of the website (control centre, accounts, children and reports, accounting,
+/// website content, activity log, visitors, files, security).
+class AdminShell extends StatelessWidget {
+  const AdminShell({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    String t(String ar, String de, String en) => s.code == 'ar' ? ar : (s.code == 'de' ? de : en);
+    return AdaptiveShell(
+      roleLabel: s.get('adminArea'),
+      items: [
+        ShellItem(id: 'control', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: t('لوحة المتابعة', 'Kontrollzentrale', 'Control centre'), page: (_) => const AdminControlPage()),
+        ShellItem(id: 'accounts', icon: Icons.manage_accounts_outlined, activeIcon: Icons.manage_accounts, label: t('الحسابات', 'Konten', 'Accounts'), page: (_) => const AdminAccountsPage()),
+        ShellItem(id: 'children', icon: Icons.child_care_outlined, activeIcon: Icons.child_care, label: t('الأطفال والتقارير', 'Kinder und Berichte', 'Children and reports'), page: (_) => const AdminChildrenPage()),
+        ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
+      ],
+      more: [
+        ShellItem(id: 'website', icon: Icons.language_outlined, activeIcon: Icons.language, label: t('الموقع', 'Webseite', 'Website'), page: (_) => const AdminWebsitePage()),
+        ShellItem(id: 'log', icon: Icons.history_rounded, activeIcon: Icons.history_rounded, label: t('سجل النظام', 'Protokoll', 'Activity log'), page: (_) => const AdminLogPage()),
+        ShellItem(id: 'visitors', icon: Icons.insights_outlined, activeIcon: Icons.insights, label: t('الزوّار', 'Besucher', 'Visitors'), page: (_) => const AdminVisitorsPage()),
+        ShellItem(id: 'files', icon: Icons.folder_outlined, activeIcon: Icons.folder, label: t('الملفات', 'Dateien', 'Files'), page: (_) => const AdminFilesPage()),
+        ShellItem(id: 'security', icon: Icons.security_outlined, activeIcon: Icons.security, label: t('الأمان', 'Sicherheit', 'Security'), page: (_) => const AdminSecurityPage()),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
     );
