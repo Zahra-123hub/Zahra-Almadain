@@ -1405,6 +1405,39 @@ class _MoneyEntriesPageState extends State<MoneyEntriesPage> {
   String q = '';
   bool get income => widget.kind == 'income';
 
+  /// What the search field offers while typing: descriptions and names of all saved entries of this page, children and staff.
+  final Set<String> _pool = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPool());
+  }
+
+  Future<void> _loadPool() async {
+    final api = SessionScope.of(context).api;
+    final found = <String>{};
+    void take(Map<String, dynamic> r) {
+      for (final key in const ['description', 'payer_name', 'recipient', 'child', 'employee', 'invoice_number']) {
+        final v = r[key];
+        if (v is String && v.trim().isNotEmpty) found.add(v.trim());
+      }
+    }
+
+    try {
+      for (final r in _list(_map(await api.get('/api/admin/money/${widget.kind}', query: {'date_from': '2000-01-01'}))['rows'])) {
+        take(r);
+      }
+    } catch (_) {}
+    try {
+      final people = await api.get(income ? '/api/admin/people/children' : '/api/admin/people/employees') as List;
+      for (final p in people) {
+        if (p is Map && p['name'] is String) found.add((p['name'] as String).trim());
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _pool.addAll(found));
+  }
+
   Map<String, String> get _query => {
     if (from != null || to != null) ...{if (from != null) 'date_from': dayText(from!), if (to != null) 'date_to': dayText(to!)} else 'month': month,
     (income ? 'category_id' : 'category'): ?category,
@@ -1467,24 +1500,12 @@ class _MoneyEntriesPageState extends State<MoneyEntriesPage> {
           children: [
             SizedBox(
               width: 260,
-              child: TextField(
+              child: SuggestSearchField(
                 controller: _search,
-                textInputAction: TextInputAction.search,
-                onSubmitted: (v) => setState(() => q = v.trim()),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: s.get('mnSearch'),
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  suffixIcon: q.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          onPressed: () => setState(() {
-                            _search.clear();
-                            q = '';
-                          }),
-                        ),
-                ),
+                dense: true,
+                hint: s.get('mnSearch'),
+                suggestions: {..._pool, for (final r in rows) ...[r['description'], r['payer_name'], r['recipient'], r['child'], r['employee']].whereType<String>()},
+                onSearch: (v) => setState(() => q = v),
               ),
             ),
             SizedBox(

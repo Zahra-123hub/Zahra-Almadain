@@ -508,9 +508,11 @@ class _AccountsListState extends State<_AccountsList> {
             ? all
             : all.where((a) => '${a['username']} ${a['full_name'] ?? ''} ${a['guardian_name'] ?? ''}'.toLowerCase().contains(needle)).toList();
         return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 90), children: [
-          TextField(
-            decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: _t(context, 'بحث بالاسم', 'Nach Namen suchen', 'Search by name')),
-            onChanged: (v) => setState(() => _q = v),
+          SuggestSearchField(
+            hint: _t(context, 'بحث بالاسم', 'Nach Namen suchen', 'Search by name'),
+            searchOnType: true,
+            suggestions: [for (final a in all) ...[a['username'], a['full_name'], a['guardian_name'], a['child_name']].whereType<String>()],
+            onSearch: (v) => setState(() => _q = v),
           ),
           const SizedBox(height: 10),
           if (rows.isEmpty) _empty(_t(context, 'لا توجد حسابات', 'Keine Konten', 'No accounts')),
@@ -1608,10 +1610,11 @@ class _AdminLogPageState extends State<AdminLogPage> {
           ),
           SizedBox(
             width: 220,
-            child: TextField(
+            child: SuggestSearchField(
               controller: _search,
-              decoration: InputDecoration(labelText: _t(context, 'بحث', 'Suche', 'Search'), suffixIcon: const Icon(Icons.search)),
-              onSubmitted: (v) => setState(() => _q = v.trim()),
+              label: _t(context, 'بحث', 'Suche', 'Search'),
+              suggestions: _actors,
+              onSearch: (v) => setState(() => _q = v),
             ),
           ),
           OutlinedButton.icon(
@@ -1903,9 +1906,13 @@ class _KidsTabState extends State<_KidsTab> {
         return ListView(padding: const EdgeInsets.all(12), children: [
           Row(children: [
             Expanded(
-              child: TextField(
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: _t(context, 'بحث عن طفل أو ولي أمر', 'Kind oder Eltern suchen', 'Search a child or parent')),
-                onChanged: (v) => setState(() => _q = v),
+              child: SuggestSearchField(
+                hint: _t(context, 'بحث عن طفل أو ولي أمر', 'Kind oder Eltern suchen', 'Search a child or parent'),
+                searchOnType: true,
+                suggestions: [
+                  for (final k in kids) ...[k['name'], k['class_name'], for (final g in _l(k['guardians'])) ...[g['name'], g['phone']]].whereType<String>(),
+                ],
+                onSearch: (v) => setState(() => _q = v),
               ),
             ),
             const SizedBox(width: 10),

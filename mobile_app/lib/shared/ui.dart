@@ -798,3 +798,114 @@ class FileTile extends StatelessWidget {
     );
   }
 }
+
+/// A search field that offers matching saved items while typing (names, descriptions, numbers). Picking one searches for it.
+class SuggestSearchField extends StatefulWidget {
+  const SuggestSearchField({super.key, required this.suggestions, required this.onSearch, this.controller, this.hint, this.label, this.dense = false, this.searchOnType = false});
+  final Iterable<String> suggestions;
+  final ValueChanged<String> onSearch;
+  final TextEditingController? controller;
+  final String? hint;
+  final String? label;
+  final bool dense;
+
+  /// true: every typed letter searches at once (local lists); false: only Enter or a picked suggestion (server searches).
+  final bool searchOnType;
+
+  @override
+  State<SuggestSearchField> createState() => _SuggestSearchFieldState();
+}
+
+class _SuggestSearchFieldState extends State<SuggestSearchField> {
+  late final TextEditingController _controller = widget.controller ?? TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    if (widget.controller == null) _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  Iterable<String> _options(TextEditingValue value) {
+    final word = value.text.trim().toLowerCase();
+    if (word.isEmpty) return const [];
+    final seen = <String>{};
+    final starts = <String>[];
+    final contains = <String>[];
+    for (final raw in widget.suggestions) {
+      final item = raw.trim();
+      if (item.isEmpty || item.toLowerCase() == word || !seen.add(item.toLowerCase())) continue;
+      final lower = item.toLowerCase();
+      if (lower.startsWith(word) || lower.split(RegExp(r'\s+')).any((w) => w.startsWith(word))) {
+        starts.add(item);
+      } else if (lower.contains(word)) {
+        contains.add(item);
+      }
+    }
+    return [...starts, ...contains].take(8);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<String>(
+      textEditingController: _controller,
+      focusNode: _focus,
+      optionsBuilder: _options,
+      onSelected: (v) {
+        _controller.text = v;
+        widget.onSearch(v.trim());
+        _focus.unfocus();
+      },
+      fieldViewBuilder: (context, controller, focus, onSubmit) => ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) => TextField(
+          controller: controller,
+          focusNode: focus,
+          textInputAction: TextInputAction.search,
+          onChanged: widget.searchOnType ? (v) => widget.onSearch(v.trim()) : null,
+          onSubmitted: (v) => widget.onSearch(v.trim()),
+          decoration: InputDecoration(
+            isDense: widget.dense,
+            hintText: widget.hint,
+            labelText: widget.label,
+            prefixIcon: const Icon(Icons.search_rounded, size: 20),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    onPressed: () {
+                      controller.clear();
+                      widget.onSearch('');
+                    },
+                  ),
+          ),
+        ),
+      ),
+      optionsViewBuilder: (context, onSelected, options) => Align(
+        alignment: AlignmentDirectional.topStart,
+        child: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 300, maxWidth: 420),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              shrinkWrap: true,
+              children: [
+                for (final o in options)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.history_rounded, size: 18, color: Color(0xFF7A8797)),
+                    title: Text(o, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    onTap: () => onSelected(o),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
