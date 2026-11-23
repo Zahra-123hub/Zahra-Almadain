@@ -40,7 +40,7 @@ class AppHeader extends StatelessWidget {
   final VoidCallback? onBell;
   final Widget? trailing;
 
-  /// In a wide window the sidebar sits right next to the header, so the corner on that side stays square.
+  /// In a wide window the header is a straight band next to the sidebar (no curve at the window edge); on a phone it is rounded at the bottom.
   final bool besideSidebar;
 
   @override
@@ -51,7 +51,7 @@ class AppHeader extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(Gap.l, top + Gap.m, Gap.m, Gap.l),
       decoration: BoxDecoration(
         color: brandBlue,
-        borderRadius: besideSidebar ? const BorderRadiusDirectional.only(bottomEnd: Radius.circular(Rad.l)) : const BorderRadius.vertical(bottom: Radius.circular(Rad.l)),
+        borderRadius: besideSidebar ? BorderRadius.zero : const BorderRadius.vertical(bottom: Radius.circular(Rad.l)),
       ),
       child: Row(children: [
         if (onBack != null)
