@@ -7,6 +7,7 @@ import 'features/admin/admin_pages.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/role_chooser_page.dart';
 import 'features/common/common_pages.dart';
+import 'features/everyday/everyday_pages.dart';
 import 'features/management/management_pages.dart';
 import 'features/parents/parent_pages.dart';
 import 'features/teachers/teacher_pages.dart';
@@ -119,15 +120,21 @@ class TeacherShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
+    String t(String ar, String de, String en) => s.code == 'ar' ? ar : (s.code == 'de' ? de : en);
     return AdaptiveShell(
       roleLabel: s.get('teacherArea'),
       items: [
         ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => TeacherHome(goTo: go)),
         ShellItem(id: 'children', icon: Icons.child_care_outlined, activeIcon: Icons.child_care, label: s.get('myChildren'), page: (_) => const TeacherChildren()),
         ShellItem(id: 'reports', icon: Icons.description_outlined, activeIcon: Icons.description, label: s.get('reports'), page: (_) => const TeacherReports()),
-        ShellItem(id: 'posts', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: s.get('posts'), page: (_) => const TeacherPosts()),
+        ShellItem(id: 'attendance', icon: Icons.how_to_reg_outlined, activeIcon: Icons.how_to_reg, label: t('الحضور', 'Anwesenheit', 'Attendance'), page: (_) => const StaffAttendancePage()),
       ],
       more: [
+        ShellItem(id: 'posts', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: s.get('posts'), page: (_) => const TeacherPosts()),
+        ShellItem(id: 'notes', icon: Icons.star_outline_rounded, activeIcon: Icons.star_rounded, label: t('ملاحظات وثناء', 'Lob & Notizen', 'Notes and praise'), page: (_) => const StaffNotesPage()),
+        ShellItem(id: 'bring', icon: Icons.backpack_outlined, activeIcon: Icons.backpack, label: t('أحضِر معك', 'Bitte mitbringen', 'Please bring'), page: (_) => const StaffBringPage()),
+        ShellItem(id: 'plan', icon: Icons.calendar_view_week_outlined, activeIcon: Icons.calendar_view_week, label: t('برنامج الأسبوع', 'Wochenplan', 'Week plan'), page: (_) => const StaffPlanPage()),
+        ShellItem(id: 'messages', icon: Icons.chat_outlined, activeIcon: Icons.chat, label: t('دردشة الأهالي', 'Nachrichten der Eltern', 'Messages'), page: (_) => const StaffMessagesPage()),
         ShellItem(id: 'files', icon: Icons.folder_outlined, activeIcon: Icons.folder, label: s.get('materials'), page: (_) => const TeacherMaterials()),
         ShellItem(id: 'notifications', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, label: s.get('notifications'), page: (go) => NotificationsPage(goTo: go)),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
@@ -150,6 +157,7 @@ class ManagementShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
+        ShellItem(id: 'everyday', icon: Icons.wb_sunny_outlined, activeIcon: Icons.wb_sunny, label: s.code == 'ar' ? 'الحياة اليومية' : (s.code == 'de' ? 'Kita-Alltag' : 'Everyday'), page: (_) => const StaffEverydayHub()),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
     );
@@ -173,6 +181,7 @@ class AdminShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
+        ShellItem(id: 'everyday', icon: Icons.wb_sunny_outlined, activeIcon: Icons.wb_sunny, label: t('الحياة اليومية', 'Kita-Alltag', 'Everyday'), page: (_) => const StaffEverydayHub()),
         ShellItem(id: 'people', icon: Icons.badge_outlined, activeIcon: Icons.badge, label: t('الأطفال والموظفون', 'Kinderakten und Personal', 'Children records and staff'), page: (_) => const AdminPeoplePage()),
         ShellItem(id: 'notices', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: t('الإعلانات', 'Ankündigungen', 'Notices'), page: (_) => const AdminNoticesPage()),
         ShellItem(id: 'teacherwork', icon: Icons.forum_outlined, activeIcon: Icons.forum, label: t('منشورات ومواد المعلمات', 'Beiträge und Materialien', 'Posts and materials'), page: (_) => const AdminTeacherWorkPage()),

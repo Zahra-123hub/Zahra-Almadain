@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/tokens.dart';
+import '../everyday/everyday_pages.dart';
 import '../../localization/strings.dart';
 import '../../models/models.dart';
 import '../../services/api.dart';
@@ -139,6 +140,37 @@ class ParentHome extends StatelessWidget {
         final unread = (d['unread'] as num).toInt();
         return ListView(padding: const EdgeInsets.all(16), children: [
           HeroCard(title: s.fill('welcome', session.username ?? '')),
+          // one big card per child: it opens the child's page with all the tiles (notes, plan, attendance, messages, fees ...)
+          for (final e in names.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(22),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChildHubPage(child: Child(e.key, e.value)))),
+                  child: Ink(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF7FB3F0), Color(0xFF4F8EDC)]),
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Row(children: [
+                      AvatarInitials(e.value, size: 52),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(e.value, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 2),
+                          Text(s.get('childPageHint'), style: const TextStyle(color: Colors.white)),
+                        ]),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 30),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
           Row(children: [
             Expanded(child: StatTile(icon: Icons.child_care, value: '${names.length}', label: s.get('myChildren'), onTap: () => goTo('children'))),
             const SizedBox(width: 10),
@@ -179,7 +211,7 @@ class _ParentChildrenState extends State<ParentChildren> {
             Card(
               child: InkWell(
                 hoverColor: brandSoft,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChildReportsPage(child: c))),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChildHubPage(child: c))),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(children: [
@@ -188,7 +220,7 @@ class _ParentChildrenState extends State<ParentChildren> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(c.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 2),
-                      Text(s.get('reports'), style: const TextStyle(color: Color(0xFF5B6878))),
+                      Text(s.get('childPageHint'), style: const TextStyle(color: Color(0xFF5B6878))),
                     ])),
                     const Icon(Icons.chevron_right_rounded),
                   ]),

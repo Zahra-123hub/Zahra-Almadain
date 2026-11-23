@@ -22,6 +22,12 @@ String notificationText(S s, AppNotification n) {
       'report_direct' => (icon: Icons.mark_email_read_rounded, color: brandBlue),
       'post_new' => (icon: Icons.forum_rounded, color: const Color(0xFF7A4FB3)),
       'announcement' => (icon: Icons.campaign_rounded, color: const Color(0xFFC0392B)),
+      'note_praise' => (icon: Icons.star_rounded, color: const Color(0xFF5FA34C)),
+      'note_note' => (icon: Icons.edit_note_rounded, color: const Color(0xFF5C8FE0)),
+      'bring_new' => (icon: Icons.backpack_rounded, color: const Color(0xFFE5952B)),
+      'plan_changed' => (icon: Icons.calendar_view_week_rounded, color: const Color(0xFF5C8FE0)),
+      'absence_reported' => (icon: Icons.sick_rounded, color: const Color(0xFFCF5443)),
+      'message_new' => (icon: Icons.chat_rounded, color: const Color(0xFF368F81)),
       _ => (icon: Icons.notifications_rounded, color: const Color(0xFF5B6878)),
     };
 

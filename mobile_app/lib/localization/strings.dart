@@ -55,6 +55,7 @@ class S {
     'yesterday': {'ar': 'أمس', 'de': 'Gestern', 'en': 'Yesterday'},
     'thisWeek': {'ar': 'هذا الأسبوع', 'de': 'Diese Woche', 'en': 'This week'},
     'earlier': {'ar': 'أقدم', 'de': 'Älter', 'en': 'Earlier'},
+    'childPageHint': {'ar': 'الملاحظات والبرنامج والحضور والرسائل والرسوم', 'de': 'Notizen, Wochenplan, Anwesenheit, Nachrichten, Gebühren', 'en': 'Notes, week plan, attendance, messages, fees'},
     'readAll': {'ar': 'تعيين الكل كمقروء', 'de': 'Alle als gelesen markieren', 'en': 'Mark all as read'},
     'language': {'ar': 'اللغة', 'de': 'Sprache', 'en': 'Language'},
     'changePassword': {'ar': 'تغيير كلمة المرور', 'de': 'Passwort ändern', 'en': 'Change password'},
@@ -387,6 +388,12 @@ class S {
     'n_report_submitted': {'ar': 'تقرير بانتظار الاعتماد: {s}', 'de': 'Bericht wartet auf Prüfung: {s}', 'en': 'A report awaits approval: {s}'},
     'n_report_direct': {'ar': 'نشرت معلمة تقريراً مباشرة لأهل {s}', 'de': 'Eine Lehrkraft hat direkt für die Eltern von {s} veröffentlicht', 'en': 'A teacher published straight to the parents of {s}'},
     'n_post_new': {'ar': 'منشور جديد: {s}', 'de': 'Neuer Beitrag: {s}', 'en': 'New post: {s}'},
+    'n_note_praise': {'ar': 'ثناء جديد لـ {s} ⭐', 'de': 'Neues Lob für {s} ⭐', 'en': 'New praise for {s} ⭐'},
+    'n_note_note': {'ar': 'ملاحظة جديدة عن {s}', 'de': 'Neue Notiz zu {s}', 'en': 'New note about {s}'},
+    'n_bring_new': {'ar': 'أحضِر معك: {s}', 'de': 'Bitte mitbringen: {s}', 'en': 'Please bring: {s}'},
+    'n_plan_changed': {'ar': 'تغيّر برنامج الأسبوع لمجموعة {s}', 'de': 'Neuer Wochenplan für die Gruppe {s}', 'en': 'New week plan for group {s}'},
+    'n_absence_reported': {'ar': 'أبلغ الأهل عن غياب {s}', 'de': 'Eltern melden {s} ab', 'en': 'Parents reported {s} absent'},
+    'n_message_new': {'ar': 'رسالة جديدة بخصوص {s}', 'de': 'Neue Nachricht zu {s}', 'en': 'New message about {s}'},
     'n_announcement': {'ar': 'إعلان جديد: {s}', 'de': 'Neue Mitteilung: {s}', 'en': 'New notice: {s}'},
   };
 }
