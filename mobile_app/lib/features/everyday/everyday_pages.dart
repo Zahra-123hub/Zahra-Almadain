@@ -90,8 +90,14 @@ class _Tile {
 }
 
 class ChildHubPage extends StatefulWidget {
-  const ChildHubPage({super.key, required this.child});
+  const ChildHubPage({super.key, required this.child, this.embedded = false, this.top});
   final Child child;
+
+  /// true: shown inside the parents' home (no own page, no back button).
+  final bool embedded;
+
+  /// Shown above the tiles (the choice between several children on the home page).
+  final Widget? top;
   @override
   State<ChildHubPage> createState() => _ChildHubPageState();
 }
@@ -102,8 +108,7 @@ class _ChildHubPageState extends State<ChildHubPage> {
   @override
   Widget build(BuildContext context) {
     final c = widget.child;
-    return Scaffold(
-      body: _load(context, '/api/platform/parent/children/${c.id}/overview', key: ValueKey(_round), (context, data, reload) {
+    final hub = _load(context, '/api/platform/parent/children/${c.id}/overview', key: ValueKey('${c.id}$_round'), (context, data, reload) {
         final d = _m(data);
         final counts = _m(d['counts']);
         int n(String k) => (counts[k] as num? ?? 0).toInt();
@@ -120,16 +125,19 @@ class _ChildHubPageState extends State<ChildHubPage> {
         ];
         final today = _s(_m(d['today'])['attendance']);
         return CustomScrollView(slivers: [
+          if (widget.top != null) SliverToBoxAdapter(child: widget.top),
           SliverToBoxAdapter(
             child: Container(
-              padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 20),
+              padding: EdgeInsets.fromLTRB(16, widget.embedded ? 16 : MediaQuery.paddingOf(context).top + 8, 16, 20),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(colors: [Color(0xFFDCEBFB), Color(0xFFF4F7FB)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
               ),
               child: Row(children: [
-                IconButton(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.arrow_back_rounded)),
-                const SizedBox(width: 4),
+                if (!widget.embedded) ...[
+                  IconButton(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.arrow_back_rounded)),
+                  const SizedBox(width: 4),
+                ],
                 AvatarInitials(_s(d['name']), size: 58),
                 const SizedBox(width: 12),
                 Expanded(
@@ -165,8 +173,107 @@ class _ChildHubPageState extends State<ChildHubPage> {
             }),
           ),
         ]);
-      }),
+      });
+    return widget.embedded ? hub : Scaffold(body: hub);
+  }
+}
+
+/// The parents' home: the tiles of the child right away; with several children a choice on top.
+class ParentTilesHome extends StatefulWidget {
+  const ParentTilesHome({super.key});
+  @override
+  State<ParentTilesHome> createState() => _ParentTilesHomeState();
+}
+
+class _ParentTilesHomeState extends State<ParentTilesHome> {
+  String? _chosen;
+
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return Loader<List<Child>>(
+      load: () async {
+        final c = await api.getCached('/api/platform/children');
+        return Cached(parseList(c.data, Child.fromJson), fromCache: c.fromCache);
+      },
+      builder: (context, children, reload) {
+        if (children.isEmpty) {
+          return _empty(context, Icons.child_care_outlined, _t(context, 'لم يُربط حسابك بطفل بعد. تربطه الروضة بعد الموافقة.', 'Dein Konto ist noch mit keinem Kind verbunden. Das macht die Kita.', 'Your account is not linked to a child yet. The kindergarten does that.'));
+        }
+        final child = children.firstWhere((c) => c.id == _chosen, orElse: () => children.first);
+        final chooser = children.length < 2
+            ? null
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final c in children)
+                    ChoiceChip(
+                      avatar: CircleAvatar(child: Text(c.name.isEmpty ? '?' : c.name.characters.first)),
+                      label: Text(c.name),
+                      selected: c.id == child.id,
+                      onSelected: (_) => setState(() => _chosen = c.id),
+                    ),
+                ]),
+              );
+        return ChildHubPage(key: ValueKey(child.id), child: child, embedded: true, top: chooser);
+      },
     );
+  }
+}
+
+/// The teachers' home: the same coloured tiles, each opening one page of the teacher area.
+class TeacherTilesHome extends StatelessWidget {
+  const TeacherTilesHome({super.key, required this.goTo});
+  final void Function(String id) goTo;
+  @override
+  Widget build(BuildContext context) {
+    final session = SessionScope.of(context);
+    final tiles = [
+      (_t(context, 'أطفالي', 'Meine Kinder', 'My children'), Icons.child_care_rounded, const [Color(0xFF7FB3F0), Color(0xFF4F8EDC)], 'children'),
+      (_t(context, 'التقارير اليومية', 'Tagesberichte', 'Daily reports'), Icons.description_rounded, const [Color(0xFF6FB7A8), Color(0xFF3E9483)], 'reports'),
+      (_t(context, 'الحضور', 'Anwesenheit', 'Attendance'), Icons.how_to_reg_rounded, const [Color(0xFFE57E6E), Color(0xFFCF5443)], 'attendance'),
+      (_t(context, 'ملاحظات وثناء', 'Lob & Notizen', 'Notes and praise'), Icons.star_rounded, const [Color(0xFF8CC47A), Color(0xFF5FA34C)], 'notes'),
+      (_t(context, 'أحضِر معك', 'Bitte mitbringen', 'Please bring'), Icons.backpack_rounded, const [Color(0xFFF2B65A), Color(0xFFE5952B)], 'bring'),
+      (_t(context, 'برنامج الأسبوع', 'Wochenplan', 'Week plan'), Icons.calendar_view_week_rounded, const [Color(0xFF8EB6F2), Color(0xFF5C8FE0)], 'plan'),
+      (_t(context, 'دردشة الأهالي', 'Nachrichten der Eltern', 'Messages'), Icons.chat_rounded, const [Color(0xFF5FB3A6), Color(0xFF368F81)], 'messages'),
+      (_t(context, 'المنشورات', 'Beiträge', 'Posts'), Icons.campaign_rounded, const [Color(0xFFB07CCB), Color(0xFF8E52B0)], 'posts'),
+      (_t(context, 'المواد التعليمية', 'Materialien', 'Materials'), Icons.folder_rounded, const [Color(0xFFAEB4BC), Color(0xFF858D97)], 'files'),
+    ];
+    return CustomScrollView(slivers: [
+      SliverToBoxAdapter(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFDCEBFB), Color(0xFFF4F7FB)]), borderRadius: BorderRadius.circular(24)),
+          child: Row(children: [
+            AvatarInitials(session.username ?? '?', size: 54),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${_t(context, 'أهلاً', 'Hallo', 'Hello')} ${session.username ?? ''}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text('${_weekdayName(context, _day(DateTime.now()))} · ${_day(DateTime.now())}', style: const TextStyle(color: _muted)),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        sliver: SliverLayoutBuilder(builder: (context, constraints) {
+          final cols = (constraints.crossAxisExtent / 200).floor().clamp(2, 5);
+          return SliverGrid.count(
+            crossAxisCount: cols,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 1.05,
+            children: [
+              for (final (label, icon, colors, id) in tiles) _TileCard(_Tile(label, icon, colors, () => const SizedBox()), onTap: () => goTo(id)),
+            ],
+          );
+        }),
+      ),
+    ]);
   }
 }
 

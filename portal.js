@@ -832,6 +832,8 @@
     var data = {children: [], reports: {}};
     var home = views.panes.home;
     renderDashboardWelcome(home);
+    var hubBox = element("div");
+    home.appendChild(hubBox);
     var stats = element("div", "p-stats");
     var tiles = {
       children: statTile(t("statChildren"), "children", views.show),
@@ -956,6 +958,8 @@
     }).then(function () {
       [childPane, reportPane, guardPane].forEach(function (pane) { pane.innerHTML = ""; });
       drawHome(); drawChildren(); drawReports(); drawGuardians();
+      var ev = everyday();
+      if (ev && data.children.length) ev.parentHome(hubBox, data.children);
     }).catch(function (error) {
       [childPane, reportPane, guardPane, recentCard].forEach(function (pane) { pane.innerHTML = ""; showError(pane, error); });
       tiles.children.number.textContent = tiles.reports.number.textContent = "–";
@@ -1083,8 +1087,9 @@
     if (window.ZMEveryday) defs.push(["everyday", "navEveryday"]);
     defs.push(["notifications", "navNotifications"], ["profile", "navProfile"]);
     var views = viewShell(shellMain, defs);
-    if (views.panes.everyday) everyday().staffPane(views.panes.everyday);
+    var staffEveryday = views.panes.everyday ? everyday().staffPane(views.panes.everyday) : null;
     renderDashboardWelcome(views.panes.home);
+    if (window.ZMEveryday) everyday().teacherTiles(views.panes.home, defs.map(function (d) { return d[0]; }), views.show, staffEveryday ? staffEveryday.show : null);
     var stats = element("div", "p-stats");
     views.panes.home.appendChild(stats);
     renderAnnouncements(views.panes.home);

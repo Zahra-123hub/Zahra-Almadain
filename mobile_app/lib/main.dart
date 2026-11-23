@@ -101,7 +101,7 @@ class ParentShell extends StatelessWidget {
     return AdaptiveShell(
       roleLabel: s.get('parentArea'),
       items: [
-        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => ParentHome(goTo: go)),
+        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (_) => const ParentTilesHome()),
         ShellItem(id: 'children', icon: Icons.child_care_outlined, activeIcon: Icons.child_care, label: s.get('myChildren'), page: (_) => const ParentChildren()),
         ShellItem(id: 'reports', icon: Icons.description_outlined, activeIcon: Icons.description, label: s.get('reports'), page: (_) => const ParentReports()),
         ShellItem(id: 'learning', icon: Icons.menu_book_outlined, activeIcon: Icons.menu_book, label: s.get('learning'), page: (_) => const ParentLearning()),
@@ -124,7 +124,7 @@ class TeacherShell extends StatelessWidget {
     return AdaptiveShell(
       roleLabel: s.get('teacherArea'),
       items: [
-        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => TeacherHome(goTo: go)),
+        ShellItem(id: 'home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: s.get('home'), page: (go) => TeacherTilesHome(goTo: go)),
         ShellItem(id: 'children', icon: Icons.child_care_outlined, activeIcon: Icons.child_care, label: s.get('myChildren'), page: (_) => const TeacherChildren()),
         ShellItem(id: 'reports', icon: Icons.description_outlined, activeIcon: Icons.description, label: s.get('reports'), page: (_) => const TeacherReports()),
         ShellItem(id: 'attendance', icon: Icons.how_to_reg_outlined, activeIcon: Icons.how_to_reg, label: t('الحضور', 'Anwesenheit', 'Attendance'), page: (_) => const StaffAttendancePage()),

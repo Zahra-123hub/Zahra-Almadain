@@ -22,7 +22,8 @@
       addNote: "إرسال للأهل", what: "ماذا يُحضَر؟", details: "تفاصيل (اختياري)", forWhom: "لمن؟", groupWord: "مجموعة", childWord: "طفل",
       sendParents: "إرسال للأهل", remove: "حذف", activity: "النشاط", addActivity: "+ نشاط", savePlan: "حفظ البرنامج", planHint: "برنامج ثابت لكل مجموعة (الأحد إلى الخميس). يراه أهل أطفال المجموعة.",
       conversations: "المحادثات", newMessage: "رسالة جديدة", chooseParent: "اختر الطفل وولي الأمر", noConversations: "لا توجد محادثات بعد.",
-      noChildren: "لا يوجد أطفال.", sure: "اضغط مرة أخرى للتأكيد"
+      noChildren: "لا يوجد أطفال.", sure: "اضغط مرة أخرى للتأكيد",
+      tReports: "التقارير اليومية", tPosts: "المنشورات", tMaterial: "المواد التعليمية", tReview: "مراجعة التقارير", tEveryday: "الحياة اليومية"
     },
     en: {
       openChild: "Child's page", back: "Back", profile: "Child details", notes: "Notes", bring: "Please bring", plan: "Week plan",
@@ -39,7 +40,8 @@
       addNote: "Send to the parents", what: "What to bring?", details: "Details (optional)", forWhom: "For whom?", groupWord: "Group", childWord: "Child",
       sendParents: "Send to the parents", remove: "Delete", activity: "Activity", addActivity: "+ Activity", savePlan: "Save the plan", planHint: "A fixed plan per group (Sunday to Thursday). The parents of the group see it.",
       conversations: "Conversations", newMessage: "New message", chooseParent: "Choose the child and the parent", noConversations: "No conversations yet.",
-      noChildren: "No children.", sure: "Click again to confirm"
+      noChildren: "No children.", sure: "Click again to confirm",
+      tReports: "Daily reports", tPosts: "Posts", tMaterial: "Materials", tReview: "Review reports", tEveryday: "Everyday"
     }
   };
 
@@ -152,6 +154,37 @@
     }
 
     /* ======================================================================================== parents */
+    /* The parents' home: the tiles of the child at once; with several children a choice on top. */
+    function parentHome(container, children) {
+      var chosen = children[0];
+      var chooser = el("div", "ev-subnav"), hubBox = el("div");
+      container.appendChild(chooser); container.appendChild(hubBox);
+      function draw() {
+        chooser.innerHTML = "";
+        if (children.length > 1) children.forEach(function (c) {
+          var b = el("button", "ev-chip", c.display_name); b.type = "button"; b.setAttribute("aria-pressed", String(c.id === chosen.id));
+          b.addEventListener("click", function () { chosen = c; draw(); });
+          chooser.appendChild(b);
+        });
+        parentHub(hubBox, chosen, null);
+      }
+      draw();
+    }
+
+    /* Coloured tiles that open the views of a portal (the teachers' home). items: [key of the view, label, icon, colours]. */
+    function viewTiles(container, items, show) {
+      var grid = el("div", "ev-tiles");
+      grid.style.marginBottom = "18px";
+      items.forEach(function (item) {
+        var b = el("button", "ev-tile"); b.type = "button";
+        b.style.background = "linear-gradient(135deg," + item[3] + ")";
+        b.appendChild(el("span", "ev-ico", item[2])); b.appendChild(el("span", "", item[1]));
+        b.addEventListener("click", function () { show(item[0]); window.scrollTo(0, 0); });
+        grid.appendChild(b);
+      });
+      container.appendChild(grid);
+    }
+
     function parentHub(container, child, onBack) {
       var base = "/api/platform/parent/children/" + encodeURIComponent(child.id);
       function home() {
@@ -250,6 +283,20 @@
     }
 
     /* ======================================================================================== kindergarten */
+    function teacherTiles(container, available, show, openEveryday) {
+      var items = [
+        ["reports", x("tReports"), "📄", "#6fb7a8,#3e9483"], ["everyday:attendance", x("attendance"), "✅", "#e57e6e,#cf5443"],
+        ["everyday:notes", x("notes"), "⭐", "#8cc47a,#5fa34c"], ["everyday:bring", x("bring"), "🎒", "#f2b65a,#e5952b"],
+        ["everyday:plan", x("plan"), "🗓️", "#8eb6f2,#5c8fe0"], ["everyday:messages", x("messages"), "💬", "#5fb3a6,#368f81"],
+        ["posts", x("tPosts"), "📣", "#b07ccb,#8e52b0"], ["material", x("tMaterial"), "📁", "#aeb4bc,#858d97"], ["review", x("tReview"), "🔎", "#7fb3f0,#4f8edc"]
+      ].filter(function (item) { return available.indexOf(item[0].split(":")[0]) !== -1; });
+      viewTiles(container, items, function (key) {
+        var parts = key.split(":");
+        show(parts[0]);
+        if (parts[1] && openEveryday) openEveryday(parts[1]);
+      });
+    }
+
     function staffPane(container) {
       var sections = [["attendance", attendanceStaff], ["notes", notesStaff], ["bring", bringStaff], ["plan", planStaff], ["messages", messagesStaff]];
       var nav = el("div", "ev-subnav"), body = el("div");
@@ -426,8 +473,9 @@
       }
 
       show("attendance");
+      return {show: show};
     }
 
-    return {parentHub: parentHub, staffPane: staffPane, text: x};
+    return {parentHub: parentHub, parentHome: parentHome, staffPane: staffPane, teacherTiles: teacherTiles, viewTiles: viewTiles, text: x};
   };
 }());
