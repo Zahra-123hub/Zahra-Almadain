@@ -61,6 +61,20 @@ function mnProfitTile(code, value, income, expense){
   return tile;
 }
 
+/* the whole result in both currencies at once (every entry at the rate stored with it): one verdict, dollars and pounds side by side */
+function mnOverallTile(pair){
+  var n = Number(pair.usd) !== 0 ? Number(pair.usd) : Number(pair.syp);
+  var word = n > 0 ? ["ربح", "Profit"] : n < 0 ? ["خسارة", "Loss"] : ["لا ربح ولا خسارة", "No profit, no loss"];
+  var tile = mnTile(uiT(word), "USD " + uiNum(String(pair.usd).replace("-", "")) + "   ·   SYP " + uiNum(String(pair.syp).replace("-", "")),
+    uiT(["كل الحركات محوّلة بسعر الصرف المحفوظ مع كل حركة", "Every entry converted at the rate stored with it"]), n < 0 ? "bad" : n > 0 ? "good" : "");
+  var label = tile.querySelector("small");
+  label.className = "mn-verdict";
+  label.textContent = (n > 0 ? "▲ " : n < 0 ? "▼ " : "") + uiT(word);
+  tile.insertBefore(h("small", {text:uiT(["النتيجة الإجمالية بالدولار والليرة معاً", "Overall result in dollars and pounds together"])}), tile.children[1]);
+  tile.style.gridColumn = "1 / -1";
+  return tile;
+}
+
 /* the card of a form: a title, a close button, the fields in a grid that wraps on small screens */
 function mnFormCard(title, fields, footer, onClose){
   return h("div", {class:"a-card mn-form"}, [
@@ -516,6 +530,7 @@ function tabSummary(){
         h("div", {class:"mn-tiles"}, [
           mnProfitTile("USD", d.surplus.usd, d.income.usd, d.expense.usd),
           mnProfitTile("SYP", d.surplus.syp, d.income.syp, d.expense.syp),
+          mnOverallTile(d.converted.surplus),
           mnTile(uiT(["الرواتب", "Salaries"]), "SYP " + uiNum(d.salaries.syp), "USD " + uiNum(d.salaries.usd)),
           mnTile(uiT(["فواتير غير مسددة", "Unpaid invoices"]), String(d.invoices.open + d.invoices.partial), "USD " + uiNum(d.invoices.open_amount.usd) + " · SYP " + uiNum(d.invoices.open_amount.syp), d.invoices.open + d.invoices.partial ? "warn" : "")
         ]),

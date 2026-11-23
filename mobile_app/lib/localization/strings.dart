@@ -191,6 +191,8 @@ class S {
     'mnAction_expense_mark_test': {'ar': 'تغيّرت علامة التجريب', 'de': 'Testmarkierung geändert', 'en': 'test mark changed'},
     'mnBetterThanBefore': {'ar': 'أفضل من الشهر السابق بمقدار', 'de': 'Besser als im Vormonat um', 'en': 'Better than last month by'},
     'mnWorseThanBefore': {'ar': 'أسوأ من الشهر السابق بمقدار', 'de': 'Schlechter als im Vormonat um', 'en': 'Worse than last month by'},
+    'mnOverallBoth': {'ar': 'النتيجة الإجمالية بالدولار والليرة معاً', 'de': 'Gesamtergebnis in Dollar und Lira zugleich', 'en': 'Overall result in dollars and pounds together'},
+    'mnOverallNote': {'ar': 'كل الحركات محوّلة بسعر الصرف المحفوظ مع كل حركة.', 'de': 'Alle Einträge umgerechnet mit dem bei jedem Eintrag gespeicherten Kurs.', 'en': 'Every entry converted at the rate stored with it.'},
     'mnTestTag': {'ar': 'تجريبي', 'de': 'Test', 'en': 'Test'},
     'mnTestEntry': {'ar': 'إدخال تجريبي (يمكن حذفه لاحقاً نهائياً)', 'de': 'Testeintrag (lässt sich später endgültig löschen)', 'en': 'Test entry (can be deleted for good later)'},
     'mnTestData': {'ar': 'بيانات تجريبية', 'de': 'Testdaten', 'en': 'Test data'},

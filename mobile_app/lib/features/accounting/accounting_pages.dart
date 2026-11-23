@@ -895,6 +895,47 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
       );
     }
 
+    // everything valued in both currencies at once (each entry at the rate stored with it): one verdict, dollars and pounds side by side
+    final both = _map(_map(d['converted'])['surplus']);
+    final bothSign = _zero(both['usd'] as String?) ? both['syp'] as String? : both['usd'] as String?;
+    final bothTone = _zero(bothSign) ? _muted : (_negative(bothSign) ? _bad : _good);
+    final overall = Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: bothTone.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(14), border: Border.all(color: bothTone.withValues(alpha: 0.35))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: bothTone, borderRadius: BorderRadius.circular(20)),
+                child: Text(
+                  _zero(bothSign) ? s.get('mnNoProfitLoss') : s.get(_negative(bothSign) ? 'mnLoss' : 'mnProfit'),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+                ),
+              ),
+              Text(s.get('mnOverallBoth'), style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _muted)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 28,
+            runSpacing: 6,
+            children: [
+              Money('USD', (both['usd'] as String?)?.replaceFirst('-', ''), size: 24, weight: FontWeight.w900, color: bothTone),
+              Money('SYP', (both['syp'] as String?)?.replaceFirst('-', ''), size: 24, weight: FontWeight.w900, color: bothTone),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(s.get('mnOverallNote'), style: const TextStyle(fontSize: 12, color: _muted)),
+        ],
+      ),
+    );
+
     final surplus = _map(d['surplus']);
     final hero = Card(
       margin: const EdgeInsets.only(bottom: 14),
@@ -945,6 +986,8 @@ class _MoneySummaryPageState extends State<MoneySummaryPage> {
                   ),
               ],
             ),
+            const SizedBox(height: 12),
+            overall,
           ],
         ),
       ),
