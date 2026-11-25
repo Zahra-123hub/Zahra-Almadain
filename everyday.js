@@ -31,7 +31,7 @@
       noticeOffice: "محادثتك مع إدارة الروضة حول {0}.", noticeTeacher: "محادثتك مع {0} حول {1}. إدارة الروضة تستطيع الاطلاع عليها.",
       noticeStaff: "محادثتك مع أهل {0}. إدارة الروضة تستطيع الاطلاع عليها.", noticeBossOffice: "محادثة إدارة الروضة مع أهل {0}.",
       noticeBossTeacher: "محادثة معلمة مع أهل {0}. ما تكتبه هنا يظهر باسمك.", fAll: "الكل", fUnread: "غير مقروءة", fOffice: "الإدارة",
-      fTeachers: "المعلمات", withTeacher: "مع المعلمة", newChat: "محادثة جديدة", noResults: "لا توجد نتائج.", pickChat: "اختر محادثة من القائمة أو ابدأ محادثة جديدة."
+      fTeachers: "المعلمات", withTeacher: "مع المعلمة", newChat: "محادثة جديدة", noResults: "لا توجد نتائج.", pickChat: "اختر محادثة من القائمة أو ابدأ محادثة جديدة.", pickContact: "اختر محادثة من القائمة."
     },
     en: {
       openChild: "Child's page", back: "Back", profile: "Child details", notes: "Notes", bring: "Please bring", plan: "Week plan",
@@ -57,7 +57,7 @@
       noticeOffice: "Your chat with the management about {0}.", noticeTeacher: "Your chat with {0} about {1}. The management can see it.",
       noticeStaff: "Your chat with the parents of {0}. The management can see it.", noticeBossOffice: "The management's chat with the parents of {0}.",
       noticeBossTeacher: "A teacher's chat with the parents of {0}. What you write here shows your name.", fAll: "All", fUnread: "Unread", fOffice: "Management",
-      fTeachers: "Teachers", withTeacher: "with teacher", newChat: "New chat", noResults: "Nothing found.", pickChat: "Choose a chat from the list or start a new one."
+      fTeachers: "Teachers", withTeacher: "with teacher", newChat: "New chat", noResults: "Nothing found.", pickChat: "Choose a chat from the list or start a new one.", pickContact: "Choose a chat from the list."
     }
   };
 
@@ -79,49 +79,56 @@
     ".ev-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.ev-chip{border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:#fff;cursor:pointer;font:inherit}",
     ".ev-chip[aria-pressed=true]{background:var(--navy);color:#fff;border-color:var(--navy)}",
     ".ev-subnav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}",
-    ".ev-wa{border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#efeae2 radial-gradient(#00000009 1.2px,transparent 1.3px) 0 0/22px 22px;display:flex;flex-direction:column;height:min(74vh,760px);margin-top:10px;color:#111b21;box-shadow:0 8px 24px #0000001f}",
-    ".ev-wa-head{background:#008069;color:#fff;display:flex;align-items:center;gap:10px;padding:10px 14px}.ev-wa-head b{display:block;font-size:1.05rem}.ev-wa-head small{opacity:.8}",
-    ".ev-wa-body{flex:1;overflow:auto;padding:10px 14px;display:flex;flex-direction:column;gap:2px}",
-    ".ev-wa-note{align-self:center;background:#ffeecd;color:#54656f;border-radius:8px;padding:6px 12px;font-size:.8rem;margin:6px 0;text-align:center;max-width:90%}",
-    ".ev-wa-day{align-self:center;background:#fff;color:#54656f;border-radius:8px;padding:4px 12px;font-size:.8rem;font-weight:600;margin:8px 0;box-shadow:0 1px 2px #0001}",
-    ".ev-wa-msg{max-width:78%;background:#fff;border-radius:12px;padding:6px 10px 4px;box-shadow:0 1px 1.5px #0002;align-self:flex-start;color:#111b21}",
-    ".ev-wa-msg.ours{align-self:flex-end;background:#d9fdd3}.ev-wa-msg.first{margin-top:6px}",
-    ".ev-wa-msg.first:not(.ours){border-start-start-radius:2px}.ev-wa-msg.first.ours{border-start-end-radius:2px}",
-    ".ev-wa-name{display:block;font-size:.8rem;font-weight:800;margin-bottom:2px}.ev-wa-body-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}",
-    ".ev-wa-meta{display:block;text-align:end;font-size:.72rem;color:#667781;margin-top:2px}",
-    ".ev-wa-tick{color:#667781;letter-spacing:-3px;font-weight:700}.ev-wa-tick.read{color:#53bdeb}",
-    ".ev-wa-input{display:flex;gap:8px;padding:8px 10px;align-items:flex-end;background:#f0f2f5}",
-    ".ev-wa-input textarea{flex:1;min-height:46px;box-sizing:border-box;border:0;border-radius:22px;padding:11px 16px;resize:none;font:inherit;line-height:1.4;max-height:130px;outline:none;background:#fff;color:#111b21}",
-    ".ev-wa-input textarea::placeholder{color:#8696a0}",
-    ".ev-wa-send{width:46px;height:46px;border-radius:50%;border:0;background:#00a884;color:#fff;font-size:1.15rem;cursor:pointer;flex:none}.ev-wa-send:disabled{background:#8fcfc0;cursor:default}",
-    ".ev-wa-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;color:#111b21}",
-    ".ev-wa-row{display:flex;gap:12px;align-items:center;padding:10px 14px;border:0;border-bottom:1px solid #eef0f2;background:#fff;width:100%;text-align:start;cursor:pointer;font:inherit;color:#111b21}",
-    ".ev-wa-row:hover{background:#f5f6f6}.ev-wa-row.active{background:#f0f2f5}",
+    /* chats: the layout of WhatsApp in the kindergarten colours (blue and yellow); one frame with the list beside the open chat */
+    ".ev-wf,.ev-wa{--c-bg:#eef3fa;--c-dots:#17408f12;--c-in:#fff;--c-out:#d9e8ff;--c-ink:#12285c;--c-meta:#6b7c9b;--c-panel:#fff;--c-line:#e3ebf5;--c-hover:#f4f8fd;--c-active:#e5eefc;--c-bar:#f6f9fd;--c-field:#fff;--c-note:#fff6dc;--c-noteink:#7a5a00;--c-read:#2f8df5}",
+    ".ev-wf{display:grid;grid-template-columns:minmax(260px,360px) 1fr;height:min(78vh,780px);border:1px solid var(--line);border-radius:20px;overflow:hidden;background:var(--c-panel);color:var(--c-ink);box-shadow:0 12px 32px #0b17301f;margin-top:10px}",
+    ".ev-wf-side{display:flex;flex-direction:column;min-width:0;min-height:0;border-inline-end:1px solid var(--c-line);background:var(--c-panel)}",
+    ".ev-wf-bar{display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,#17408f,#2b63c9);color:#fff;min-height:68px;box-sizing:border-box}",
+    ".ev-wf-bar b{display:block;font-size:1.1rem}.ev-wf-bar small{display:block;opacity:.85;font-weight:600}",
+    ".ev-wf-tools{padding:10px 12px 6px;display:flex;flex-direction:column;gap:8px}.ev-wf-tools .ev-subnav{margin:0}.ev-wf-tools .ev-row select{flex:1;min-width:0}",
+    ".ev-wf-side .ev-wa-list{flex:1;overflow:auto;border:0;border-radius:0}",
+    ".ev-wf-main{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--c-bg) radial-gradient(var(--c-dots) 1.2px,transparent 1.3px) 0 0/20px 20px}",
+    ".ev-wf-main .ev-wa{flex:1;height:auto;min-height:0;border:0;border-radius:0;margin:0;box-shadow:none}",
+    ".ev-wf-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;color:var(--c-meta);padding:24px}",
+    ".ev-wf-empty span{width:92px;height:92px;border-radius:50%;display:grid;place-items:center;font-size:2.6rem;background:var(--c-panel);box-shadow:0 6px 18px #17408f1f}",
+    ".ev-wa{border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--c-bg) radial-gradient(var(--c-dots) 1.2px,transparent 1.3px) 0 0/20px 20px;display:flex;flex-direction:column;height:min(78vh,780px);margin-top:10px;color:var(--c-ink);box-shadow:0 12px 32px #0b17301f}",
+    ".ev-wa-head{background:linear-gradient(135deg,#17408f,#2b63c9);color:#fff;display:flex;align-items:center;gap:12px;padding:10px 16px;min-height:68px;box-sizing:border-box}",
+    ".ev-wa-head b{display:block;font-size:1.05rem;line-height:1.3}.ev-wa-head small{display:block;opacity:.85;font-size:.82rem}",
+    ".ev-wa-body{flex:1;overflow:auto;padding:12px 6%;display:flex;flex-direction:column;gap:3px}",
+    ".ev-wa-note{align-self:center;background:var(--c-note);color:var(--c-noteink);border-radius:10px;padding:6px 14px;font-size:.8rem;margin:6px 0 10px;text-align:center;max-width:90%;line-height:1.5}",
+    ".ev-wa-day{align-self:center;background:var(--c-panel);color:var(--c-meta);border-radius:999px;padding:3px 14px;font-size:.78rem;font-weight:700;margin:10px 0 6px;box-shadow:0 1px 3px #17408f14}",
+    ".ev-wa-msg{max-width:min(72%,560px);background:var(--c-in);border-radius:16px;padding:7px 12px 5px;box-shadow:0 1px 2px #17408f1a;align-self:flex-start;color:var(--c-ink)}",
+    ".ev-wa-msg.ours{align-self:flex-end;background:var(--c-out)}.ev-wa-msg.first{margin-top:8px}",
+    ".ev-wa-msg.first:not(.ours){border-start-start-radius:4px}.ev-wa-msg.first.ours{border-start-end-radius:4px}",
+    ".ev-wa-name{display:block;font-size:.8rem;font-weight:800;margin-bottom:2px}",
+    ".ev-wa-body-text{display:block;text-align:start;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;font-size:.97rem}",
+    ".ev-wa-meta{display:flex;justify-content:flex-end;align-items:center;gap:4px;font-size:.7rem;color:var(--c-meta);margin-top:1px;direction:ltr}",
+    ".ev-wa-tick{color:var(--c-meta);letter-spacing:-3px;font-weight:700}.ev-wa-tick.read{color:var(--c-read)}",
+    ".ev-wa-input{display:flex;gap:10px;padding:10px 12px;align-items:flex-end;background:var(--c-bar);border-top:1px solid var(--c-line)}",
+    ".ev-wa-input textarea{flex:1;min-height:46px;box-sizing:border-box;border:1px solid var(--c-line);border-radius:24px;padding:11px 18px;resize:none;font:inherit;line-height:1.4;max-height:130px;outline:none;background:var(--c-field);color:var(--c-ink);transition:border-color .15s,box-shadow .15s}",
+    ".ev-wa-input textarea:focus{border-color:#2b63c9;box-shadow:0 0 0 3px #2b63c926}.ev-wa-input textarea::placeholder{color:var(--c-meta)}",
+    ".ev-wa-send{width:46px;height:46px;border-radius:50%;border:0;background:#fdb913;color:#1b2a55;font-size:1.15rem;cursor:pointer;flex:none;box-shadow:0 4px 10px #fdb91355;transition:transform .12s,opacity .15s}",
+    ".ev-wa-send:hover:not(:disabled){transform:scale(1.06)}.ev-wa-send:disabled{opacity:.45;box-shadow:none;cursor:default}",
+    ".ev-wa-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;color:#12285c}",
+    ".ev-wa-row{display:flex;gap:12px;align-items:center;padding:11px 14px;border:0;border-bottom:1px solid var(--c-line,#e3ebf5);background:transparent;width:100%;text-align:start;cursor:pointer;font:inherit;color:inherit;transition:background .12s}",
+    ".ev-wa-row:hover{background:var(--c-hover,#f4f8fd)}.ev-wa-row.active{background:var(--c-active,#e5eefc);box-shadow:inset 4px 0 0 #fdb913}",
+    "[dir=rtl] .ev-wa-row.active{box-shadow:inset -4px 0 0 #fdb913}",
     ".ev-wa-av{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:1.2rem;flex:none}",
-    ".ev-wa-head .ev-wa-av{width:40px;height:40px;font-size:1rem}",
-    ".ev-wa-back{background:none;border:0;color:inherit;font-size:1.4rem;line-height:1;cursor:pointer;padding:4px 6px;border-radius:50%}.ev-wa-back:hover{background:#ffffff1f}",
-    ".ev-wa-body-text{display:block;text-align:start}",
+    ".ev-wa-head .ev-wa-av{width:42px;height:42px;font-size:1rem;box-shadow:0 0 0 2px #ffffff55}",
+    ".ev-wa-back{background:#ffffff1f;border:0;color:inherit;font-size:1.2rem;line-height:1;cursor:pointer;width:36px;height:36px;border-radius:50%;flex:none}.ev-wa-back:hover{background:#ffffff38}",
     ".ev-wa-main{flex:1;min-width:0;display:block}.ev-wa-top{display:flex;gap:8px;align-items:baseline}",
-    ".ev-wa-top b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev-wa-time{font-size:.75rem;color:#667781}.ev-wa-time.new{color:#00a884;font-weight:800}",
-    ".ev-wa-tag{display:block;font-size:.78rem;color:#008069;font-weight:700}",
-    ".ev-wa-prev{display:flex;gap:6px;align-items:center;color:#667781;font-size:.9rem;margin-top:2px}.ev-wa-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-    ".ev-wa-badge{background:#00a884;color:#fff;border-radius:999px;min-width:22px;padding:1px 6px;font-size:.75rem;font-weight:800;text-align:center}",
-    ".ev-wa-search{width:100%;box-sizing:border-box;border-radius:22px;border:0;background:#f0f2f5;padding:9px 14px;margin:8px 0;font:inherit}",
-    ".ev-wa-split{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:14px;align-items:start}.ev-wa-split>div:last-child .ev-wa{margin-top:0}",
-    ".ev-wa-empty{border:1px dashed var(--line);border-radius:16px;padding:40px 16px;text-align:center;color:#667781;background:#f8f9fa}",
-    "@media (max-width:820px){.ev-wa-split{grid-template-columns:1fr}}",
-    /* dark pages get WhatsApp's dark look instead of a bright box with pale text */
+    ".ev-wa-top b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev-wa-time{font-size:.74rem;color:var(--c-meta,#6b7c9b)}.ev-wa-time.new{color:#2b63c9;font-weight:800}",
+    ".ev-wa-tag{display:block;font-size:.76rem;color:#2b63c9;font-weight:700}",
+    ".ev-wa-prev{display:flex;gap:6px;align-items:center;color:var(--c-meta,#6b7c9b);font-size:.88rem;margin-top:2px}.ev-wa-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".ev-wa-badge{background:#fdb913;color:#1b2a55;border-radius:999px;min-width:22px;padding:1px 6px;font-size:.74rem;font-weight:800;text-align:center}",
+    ".ev-wa-search{width:100%;box-sizing:border-box;border-radius:22px;border:1px solid var(--c-line,#e3ebf5);background:var(--c-bar,#f6f9fd);color:inherit;padding:9px 16px;font:inherit;outline:none}.ev-wa-search:focus{border-color:#2b63c9}",
+    ".ev-wf .ev-wa-list .p-muted{padding:16px;text-align:center}",
+    "@media (min-width:821px){.ev-wf .ev-wa-back{display:none}}",
+    "@media (max-width:820px){.ev-wf{grid-template-columns:1fr;height:min(82vh,760px)}.ev-wf.open .ev-wf-side{display:none}.ev-wf:not(.open) .ev-wf-main{display:none}.ev-wf-side{border:0}.ev-wa-body{padding:10px}.ev-wa-msg{max-width:85%}}",
     "@media (prefers-color-scheme:dark){",
-    ".ev-wa{background:#0b141a radial-gradient(#ffffff0a 1.2px,transparent 1.3px) 0 0/22px 22px;color:#e9edef;border-color:#222d34}",
-    ".ev-wa-head{background:#202c33;color:#e9edef}.ev-wa-head small{color:#8696a0;opacity:1}",
-    ".ev-wa-note{background:#182229;color:#ffd279}.ev-wa-day{background:#182229;color:#8696a0;box-shadow:none}",
-    ".ev-wa-msg{background:#202c33;color:#e9edef;box-shadow:none}.ev-wa-msg.ours{background:#005c4b}",
-    ".ev-wa-meta,.ev-wa-tick{color:#ffffff99}.ev-wa-tick.read{color:#53bdeb}",
-    ".ev-wa-input{background:#202c33}.ev-wa-input textarea{background:#2a3942;color:#e9edef}.ev-wa-send:disabled{background:#2f5f55;color:#ffffff80}",
-    ".ev-wa-list{background:#111b21;color:#e9edef;border-color:#222d34}",
-    ".ev-wa-row{background:#111b21;color:#e9edef;border-bottom-color:#222d34}.ev-wa-row:hover{background:#202c33}.ev-wa-row.active{background:#2a3942}",
-    ".ev-wa-time,.ev-wa-prev{color:#8696a0}.ev-wa-tag{color:#00a884}",
-    ".ev-wa-search{background:#202c33;color:#e9edef}.ev-wa-empty{background:#111b21;color:#8696a0;border-color:#222d34}",
+    ".ev-wf,.ev-wa{--c-bg:#0b1730;--c-dots:#ffffff0b;--c-in:#16294f;--c-out:#24508f;--c-ink:#eaf1ff;--c-meta:#9fb2d8;--c-panel:#0f1f42;--c-line:#213a6e;--c-hover:#142a55;--c-active:#1b3570;--c-bar:#0f1f42;--c-field:#0b1730;--c-note:#2a2410;--c-noteink:#ffd777;--c-read:#6cb6ff}",
+    ".ev-wf-bar,.ev-wa-head{background:linear-gradient(135deg,#132652,#1d3d80)}",
+    ".ev-wa-list{background:#0f1f42;color:#eaf1ff}.ev-wa-time.new,.ev-wa-tag{color:#8fb8ff}.ev-wf-empty span{box-shadow:none}",
     "}"
   ].join("");
 
@@ -185,7 +192,7 @@
     var COLORS = ["#4f8edc", "#3e9483", "#cf5443", "#8e52b0", "#e5952b", "#5fa34c", "#368f81", "#b0527a"];
     function colorOf(name) { var s = 0; for (var i = 0; i < (name || "").length; i++) s += name.charCodeAt(i); return COLORS[s % COLORS.length]; }
     function fill(text) { var args = arguments; return text.replace(/\{(\d)\}/g, function (_, i) { return args[Number(i) + 1]; }); }
-    function avatar(name, glyph) { var a = el("span", "ev-wa-av", glyph || (name || "?").charAt(0).toUpperCase()); a.style.background = glyph ? "#008069" : colorOf(name); return a; }
+    function avatar(name, glyph) { var a = el("span", "ev-wa-av", glyph || (name || "?").charAt(0).toUpperCase()); a.style.background = glyph ? "#17408f" : colorOf(name); return a; }
     function localDate(value) { return value ? new Date(/Z|[+-]\d\d:?\d\d$/.test(value) ? value : value + "Z") : null; }
     function clock(d) { return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
     function dayLabel(d) {
@@ -287,38 +294,62 @@
       load(true).then(function () { if (o.onChange) o.onChange(); });
       input.focus();
     }
+    /* one window like WhatsApp Web: the list of chats on one side, the open chat on the other (on a phone one after the other) */
+    function chatFrame(container, title, subtitle, emptyText) {
+      var f = el("div", "ev-wf"), side = el("div", "ev-wf-side"), main = el("div", "ev-wf-main");
+      var bar = el("div", "ev-wf-bar"), names = el("div");
+      names.appendChild(el("b", "", title)); if (subtitle) names.appendChild(el("small", "", subtitle));
+      bar.appendChild(names);
+      var tools = el("div", "ev-wf-tools"), list = el("div", "ev-wa-list");
+      side.appendChild(bar); side.appendChild(tools); side.appendChild(list);
+      f.appendChild(side); f.appendChild(main); container.appendChild(f);
+      function empty() {
+        main.innerHTML = "";
+        var e = el("div", "ev-wf-empty"); e.appendChild(el("span", "", "💬")); e.appendChild(el("p", "", emptyText)); main.appendChild(e);
+      }
+      empty();
+      return {
+        tools: tools, list: list,
+        open: function () { f.classList.add("open"); main.innerHTML = ""; return main; },
+        close: function () { f.classList.remove("open"); empty(); },
+        wide: function () { return window.innerWidth > 820; }
+      };
+    }
     /* the parents: whom to write to about this child (the teachers and the management) */
     function parentChats(c, base, childName) {
       c.innerHTML = "";
-      c.appendChild(el("h2", "", x("messages")));
       c.appendChild(el("p", "p-muted", x("chatHint")));
+      var fr = chatFrame(c, x("allChats"), childName, x("pickContact"));
       var search = el("input", "ev-wa-search"); search.type = "search"; search.placeholder = x("search");
-      var list = el("div", "ev-wa-list");
-      c.appendChild(search); c.appendChild(list);
-      var rows = [];
+      fr.tools.appendChild(search);
+      var rows = [], openWith = "";
       function name(r) { return r.role === "office" ? x("rOffice") : r.name; }
       function drawList() {
-        list.innerHTML = "";
+        fr.list.innerHTML = "";
         var q = search.value.trim().toLowerCase();
         rows.filter(function (r) { return !q || name(r).toLowerCase().indexOf(q) !== -1 || (r.last && r.last.body.toLowerCase().indexOf(q) !== -1); })
           .forEach(function (r) {
-            list.appendChild(chatRow({title: name(r), tag: r.role === "office" ? "" : x("rTeacher") + (r.gone ? " · " + x("gone") : ""), glyph: r.role === "office" ? "🏫" : "",
-              last: r.last, ours: r.last && r.last.from_parent, unread: r.unread, empty: x("tapToStart"), onClick: function () { openChat(r); }}));
+            fr.list.appendChild(chatRow({title: name(r), tag: r.role === "office" ? "" : x("rTeacher") + (r.gone ? " · " + x("gone") : ""), glyph: r.role === "office" ? "🏫" : "",
+              last: r.last, ours: r.last && r.last.from_parent, unread: r.unread, empty: x("tapToStart"), active: r.with === openWith, onClick: function () { openChat(r); }}));
           });
       }
       function openChat(r) {
         var office = r.role === "office";
-        c.innerHTML = "";
-        chat(c, {onBack: function () { parentChats(c, base, childName); }, title: name(r), subtitle: (office ? "" : x("rTeacher") + " · ") + childName, glyph: office ? "🏫" : "",
+        openWith = r.with; drawList();
+        chat(fr.open(), {onBack: function () { openWith = ""; fr.close(); drawList(); }, title: name(r), subtitle: (office ? "" : x("rTeacher") + " · ") + childName, glyph: office ? "🏫" : "",
           notice: office ? fill(x("noticeOffice"), childName) : fill(x("noticeTeacher"), name(r), childName),
           listPath: base + "/messages?to=" + encodeURIComponent(r.with), sendPath: base + "/messages",
-          sendBody: function (text) { return {body: text, to: r.with}; }, staffSide: false});
+          sendBody: function (text) { return {body: text, to: r.with}; }, staffSide: false, onChange: load});
+      }
+      function load() {
+        /* a server without the list of contacts yet: the conversation with the kindergarten, as before */
+        return request(base + "/contacts")
+          .catch(function (error) { if (error.message === "Not Found") return [{with: "office", role: "office", name: "", last: null, unread: 0}]; throw error; })
+          .then(function (r) { rows = r; drawList(); }).catch(fail(fr.list));
       }
       search.addEventListener("input", drawList);
-      /* a server without the list of contacts yet: the conversation with the kindergarten, as before */
-      request(base + "/contacts")
-        .catch(function (error) { if (error.message === "Not Found") return [{with: "office", role: "office", name: "", last: null, unread: 0}]; throw error; })
-        .then(function (r) { rows = r; drawList(); }).catch(fail(list));
+      /* on a wide screen the latest chat is open right away */
+      load().then(function () { if (fr.wide() && rows.length) openChat(rows[0]); });
     }
 
     /* ======================================================================================== parents */
@@ -645,12 +676,10 @@
           openThread({child_id: p[0], parent_id: p[1], with: "", child: label.child, parent: label.parent});
         });
         bar.appendChild(pick); bar.appendChild(start); c.appendChild(bar);
-        var split = el("div", "ev-wa-split"), left = el("div"), right = el("div");
+        var fr = chatFrame(c, x("allChats"), "", x("pickChat"));
         var search = el("input", "ev-wa-search"); search.type = "search"; search.placeholder = x("search");
-        var chips = el("div", "ev-subnav"), list = el("div", "ev-wa-list");
-        left.appendChild(search); left.appendChild(chips); left.appendChild(list);
-        right.appendChild(el("div", "ev-wa-empty", "💬 " + x("pickChat")));
-        split.appendChild(left); split.appendChild(right); c.appendChild(split);
+        var chips = el("div", "ev-subnav"), list = fr.list;
+        fr.tools.appendChild(search); fr.tools.appendChild(chips);
         children().then(function (d) {
           d.children.forEach(function (ch) {
             (ch.parents || []).forEach(function (p) {
@@ -686,13 +715,11 @@
         function openThread(r) {
           var isBoss = boss(), to = r.with || "";
           openKey = to ? keyOf(r) : "";
-          right.innerHTML = "";
           var notice = !isBoss ? fill(x("noticeStaff"), r.child) : (to === "office" || to === "") ? fill(x("noticeBossOffice"), r.child) : fill(x("noticeBossTeacher"), r.child);
-          chat(right, {title: r.parent + " · " + r.child, subtitle: isBoss && to && to !== "office" ? x("withTeacher") + " " + (r.staff || "") : x("rParent"),
+          chat(fr.open(), {onBack: function () { openKey = ""; fr.close(); drawList(); }, title: r.parent + " · " + r.child, subtitle: isBoss && to && to !== "office" ? x("withTeacher") + " " + (r.staff || "") : x("rParent"),
             notice: notice, listPath: "/api/platform/staff/conversations/" + r.child_id + "/" + r.parent_id + "?to=" + encodeURIComponent(to),
             sendPath: "/api/platform/staff/messages", sendBody: function (text) { return {child_id: r.child_id, parent_id: r.parent_id, body: text, to: to}; },
             staffSide: true, onChange: load});
-          if (window.innerWidth <= 820) right.scrollIntoView({behavior: "smooth", block: "start"});
           drawList();
         }
         function load() {
