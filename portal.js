@@ -878,6 +878,11 @@
       appendReportDetails(item, entry.report);
       return item;
     }
+    /* the tiles "daily reports" and "news" open the portal's own pages */
+    function goView(view, child) {
+      if (view === "reports") { filterId = child ? child.id : ""; drawReports(); }
+      views.show(view); window.scrollTo(0, 0);
+    }
     function drawHome() {
       recentCard.innerHTML = "";
       recentCard.appendChild(element("h2", "", t("recentReports")));
@@ -901,7 +906,7 @@
         card.appendChild(element("p", "p-muted", t("latestReport")));
         card.appendChild(element("p", "", list.length ? list[0].title + " · " + dateLabel(list[0].published_at || list[0].created_at) : t("noReportsYet")));
         var ev = everyday();
-        if (ev) card.appendChild(button(ev.text("openChild"), "sun", function () { ev.parentHub(childPane, child, drawChildren); window.scrollTo(0, 0); }));
+        if (ev) card.appendChild(button(ev.text("openChild"), "sun", function () { ev.parentHub(childPane, child, drawChildren, goView); window.scrollTo(0, 0); }));
         card.appendChild(button(t("showReports"), "outline", function () { filterId = child.id; drawReports(); views.show("reports"); window.scrollTo(0, 0); }));
         grid.appendChild(card);
       });
@@ -959,7 +964,7 @@
       [childPane, reportPane, guardPane].forEach(function (pane) { pane.innerHTML = ""; });
       drawHome(); drawChildren(); drawReports(); drawGuardians();
       var ev = everyday();
-      if (ev && data.children.length) ev.parentHome(hubBox, data.children);
+      if (ev) ev.parentHome(hubBox, data.children, goView);
     }).catch(function (error) {
       [childPane, reportPane, guardPane, recentCard].forEach(function (pane) { pane.innerHTML = ""; showError(pane, error); });
       tiles.children.number.textContent = tiles.reports.number.textContent = "–";

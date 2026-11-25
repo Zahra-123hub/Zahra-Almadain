@@ -23,7 +23,15 @@
       sendParents: "إرسال للأهل", remove: "حذف", activity: "النشاط", addActivity: "+ نشاط", savePlan: "حفظ البرنامج", planHint: "برنامج ثابت لكل مجموعة (الأحد إلى الخميس). يراه أهل أطفال المجموعة.",
       conversations: "المحادثات", newMessage: "رسالة جديدة", chooseParent: "اختر الطفل وولي الأمر", noConversations: "لا توجد محادثات بعد.",
       noChildren: "لا يوجد أطفال.", sure: "اضغط مرة أخرى للتأكيد",
-      tReports: "التقارير اليومية", tPosts: "المنشورات", tMaterial: "المواد التعليمية", tReview: "مراجعة التقارير", tEveryday: "الحياة اليومية"
+      tReports: "التقارير اليومية", tPosts: "المنشورات", tMaterial: "المواد التعليمية", tReview: "مراجعة التقارير", tEveryday: "الحياة اليومية", news: "الأخبار",
+      notLinked: "لم يُربط حسابك بطفل بعد. تربطه الروضة بعد الموافقة.",
+      search: "بحث...", chatHint: "اكتب لمعلمة طفلك أو لإدارة الروضة. الإدارة تستطيع الاطلاع على كل المحادثات.", tapToStart: "اضغط لبدء المحادثة",
+      gone: "لم تعد في الروضة", rTeacher: "معلمة", rOffice: "إدارة الروضة", rParent: "وليّ الأمر", yesterday: "أمس", allChats: "كل المحادثات",
+      weekdays: ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"],
+      noticeOffice: "محادثتك مع إدارة الروضة حول {0}.", noticeTeacher: "محادثتك مع {0} حول {1}. إدارة الروضة تستطيع الاطلاع عليها.",
+      noticeStaff: "محادثتك مع أهل {0}. إدارة الروضة تستطيع الاطلاع عليها.", noticeBossOffice: "محادثة إدارة الروضة مع أهل {0}.",
+      noticeBossTeacher: "محادثة معلمة مع أهل {0}. ما تكتبه هنا يظهر باسمك.", fAll: "الكل", fUnread: "غير مقروءة", fOffice: "الإدارة",
+      fTeachers: "المعلمات", withTeacher: "مع المعلمة", newChat: "محادثة جديدة", noResults: "لا توجد نتائج.", pickChat: "اختر محادثة من القائمة أو ابدأ محادثة جديدة."
     },
     en: {
       openChild: "Child's page", back: "Back", profile: "Child details", notes: "Notes", bring: "Please bring", plan: "Week plan",
@@ -41,7 +49,15 @@
       sendParents: "Send to the parents", remove: "Delete", activity: "Activity", addActivity: "+ Activity", savePlan: "Save the plan", planHint: "A fixed plan per group (Sunday to Thursday). The parents of the group see it.",
       conversations: "Conversations", newMessage: "New message", chooseParent: "Choose the child and the parent", noConversations: "No conversations yet.",
       noChildren: "No children.", sure: "Click again to confirm",
-      tReports: "Daily reports", tPosts: "Posts", tMaterial: "Materials", tReview: "Review reports", tEveryday: "Everyday"
+      tReports: "Daily reports", tPosts: "Posts", tMaterial: "Materials", tReview: "Review reports", tEveryday: "Everyday", news: "News",
+      notLinked: "Your account is not linked to a child yet. The kindergarten does that.",
+      search: "Search...", chatHint: "Write to a teacher or to the management. The management can see every chat.", tapToStart: "Tap to start a chat",
+      gone: "has left", rTeacher: "Teacher", rOffice: "Management", rParent: "Parent", yesterday: "Yesterday", allChats: "All chats",
+      weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+      noticeOffice: "Your chat with the management about {0}.", noticeTeacher: "Your chat with {0} about {1}. The management can see it.",
+      noticeStaff: "Your chat with the parents of {0}. The management can see it.", noticeBossOffice: "The management's chat with the parents of {0}.",
+      noticeBossTeacher: "A teacher's chat with the parents of {0}. What you write here shows your name.", fAll: "All", fUnread: "Unread", fOffice: "Management",
+      fTeachers: "Teachers", withTeacher: "with teacher", newChat: "New chat", noResults: "Nothing found.", pickChat: "Choose a chat from the list or start a new one."
     }
   };
 
@@ -65,7 +81,35 @@
     ".ev-msg:not(.mine){align-self:flex-end}.ev-msg b{font-size:.8rem;color:#16406f}.ev-msg small{display:block;opacity:.7;font-size:.75rem;direction:ltr}",
     ".ev-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.ev-chip{border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:#fff;cursor:pointer;font:inherit}",
     ".ev-chip[aria-pressed=true]{background:var(--navy);color:#fff;border-color:var(--navy)}",
-    ".ev-subnav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}"
+    ".ev-subnav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}",
+    ".ev-wa{border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#efe7de;display:flex;flex-direction:column;height:min(74vh,760px);margin-top:10px}",
+    ".ev-wa-head{background:#008069;color:#fff;display:flex;align-items:center;gap:10px;padding:10px 14px}.ev-wa-head b{display:block;font-size:1.05rem}.ev-wa-head small{opacity:.8}",
+    ".ev-wa-body{flex:1;overflow:auto;padding:10px 14px;display:flex;flex-direction:column;gap:2px}",
+    ".ev-wa-note{align-self:center;background:#ffeecd;color:#54656f;border-radius:8px;padding:6px 12px;font-size:.8rem;margin:6px 0;text-align:center;max-width:90%}",
+    ".ev-wa-day{align-self:center;background:#fff;color:#54656f;border-radius:8px;padding:4px 12px;font-size:.8rem;font-weight:600;margin:8px 0;box-shadow:0 1px 2px #0001}",
+    ".ev-wa-msg{max-width:78%;background:#fff;border-radius:12px;padding:6px 10px 4px;box-shadow:0 1px 1.5px #0002;align-self:flex-start;color:#111b21}",
+    ".ev-wa-msg.ours{align-self:flex-end;background:#d9fdd3}.ev-wa-msg.first{margin-top:6px}",
+    ".ev-wa-msg.first:not(.ours){border-start-start-radius:2px}.ev-wa-msg.first.ours{border-start-end-radius:2px}",
+    ".ev-wa-name{display:block;font-size:.8rem;font-weight:800;margin-bottom:2px}.ev-wa-body-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}",
+    ".ev-wa-meta{display:block;text-align:end;font-size:.72rem;color:#667781;margin-top:2px}",
+    ".ev-wa-tick{color:#667781;letter-spacing:-3px;font-weight:700}.ev-wa-tick.read{color:#53bdeb}",
+    ".ev-wa-input{display:flex;gap:8px;padding:8px;align-items:flex-end}",
+    ".ev-wa-input textarea{flex:1;border:0;border-radius:22px;padding:11px 16px;resize:none;font:inherit;max-height:130px;box-shadow:0 1px 2px #0001;outline:none}",
+    ".ev-wa-send{width:46px;height:46px;border-radius:50%;border:0;background:#00a884;color:#fff;font-size:1.15rem;cursor:pointer;flex:none}.ev-wa-send:disabled{background:#8fcfc0;cursor:default}",
+    ".ev-wa-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}",
+    ".ev-wa-row{display:flex;gap:12px;align-items:center;padding:10px 14px;border:0;border-bottom:1px solid #eef0f2;background:#fff;width:100%;text-align:start;cursor:pointer;font:inherit;color:inherit}",
+    ".ev-wa-row:hover{background:#f5f6f6}.ev-wa-row.active{background:#f0f2f5}",
+    ".ev-wa-av{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:1.2rem;flex:none}",
+    ".ev-wa-head .ev-wa-av{width:40px;height:40px;font-size:1rem}",
+    ".ev-wa-main{flex:1;min-width:0;display:block}.ev-wa-top{display:flex;gap:8px;align-items:baseline}",
+    ".ev-wa-top b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev-wa-time{font-size:.75rem;color:#667781}.ev-wa-time.new{color:#00a884;font-weight:800}",
+    ".ev-wa-tag{display:block;font-size:.78rem;color:#008069;font-weight:700}",
+    ".ev-wa-prev{display:flex;gap:6px;align-items:center;color:#667781;font-size:.9rem;margin-top:2px}.ev-wa-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".ev-wa-badge{background:#00a884;color:#fff;border-radius:999px;min-width:22px;padding:1px 6px;font-size:.75rem;font-weight:800;text-align:center}",
+    ".ev-wa-search{width:100%;box-sizing:border-box;border-radius:22px;border:0;background:#f0f2f5;padding:9px 14px;margin:8px 0;font:inherit}",
+    ".ev-wa-split{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:14px;align-items:start}.ev-wa-split>div:last-child .ev-wa{margin-top:0}",
+    ".ev-wa-empty{border:1px dashed var(--line);border-radius:16px;padding:40px 16px;text-align:center;color:#667781;background:#f8f9fa}",
+    "@media (max-width:820px){.ev-wa-split{grid-template-columns:1fr}}"
   ].join("");
 
   window.ZMEveryday = function (api) {
@@ -124,38 +168,161 @@
         container.appendChild(box);
       });
     }
-    function chat(container, listPath, sendBody, mine) {
-      var box = el("div", "ev-chat"), form = el("form", "ev-row"), input = el("textarea"), send = el("button", "p-button sun", x("send"));
-      input.rows = 2; input.maxLength = 2000; input.placeholder = x("write"); input.style.flex = "1"; send.type = "submit";
+    /* ---- chats, like WhatsApp: one conversation = one child, one parent account, one teacher (or the management) ---- */
+    var COLORS = ["#4f8edc", "#3e9483", "#cf5443", "#8e52b0", "#e5952b", "#5fa34c", "#368f81", "#b0527a"];
+    function colorOf(name) { var s = 0; for (var i = 0; i < (name || "").length; i++) s += name.charCodeAt(i); return COLORS[s % COLORS.length]; }
+    function fill(text) { var args = arguments; return text.replace(/\{(\d)\}/g, function (_, i) { return args[Number(i) + 1]; }); }
+    function avatar(name, glyph) { var a = el("span", "ev-wa-av", glyph || (name || "?").charAt(0).toUpperCase()); a.style.background = glyph ? "#008069" : colorOf(name); return a; }
+    function localDate(value) { return value ? new Date(/Z|[+-]\d\d:?\d\d$/.test(value) ? value : value + "Z") : null; }
+    function clock(d) { return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
+    function dayLabel(d) {
+      var now = new Date(), a = new Date(now.getFullYear(), now.getMonth(), now.getDate()), b = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      var diff = Math.round((a - b) / 86400000);
+      if (diff === 0) return x("today");
+      if (diff === 1) return x("yesterday");
+      if (diff > 1 && diff < 7) return x("weekdays")[d.getDay()];
+      return iso(d);
+    }
+    function listTime(value) { var d = localDate(value); if (!d) return ""; return iso(d) === iso(new Date()) ? clock(d) : dayLabel(d); }
+    function roleWord(role) { return role === "teacher" ? x("rTeacher") : (role === "manager" || role === "admin" || role === "office") ? x("rOffice") : role === "parent" ? x("rParent") : ""; }
+    function tick(m) { return el("span", "ev-wa-tick" + (m.read ? " read" : ""), m.pending ? "🕓" : (m.read ? "✓✓" : "✓")); }
+    /* one line of a list of chats. o: {title, tag, glyph, last, ours, unread, empty, active, onClick} */
+    function chatRow(o) {
+      var b = el("button", "ev-wa-row" + (o.active ? " active" : "")); b.type = "button";
+      b.appendChild(avatar(o.title, o.glyph));
+      var main = el("span", "ev-wa-main"), top = el("span", "ev-wa-top"), prev = el("span", "ev-wa-prev");
+      top.appendChild(el("b", "", o.title));
+      if (o.last) top.appendChild(el("span", "ev-wa-time" + (o.unread ? " new" : ""), listTime(o.last.created_at)));
+      main.appendChild(top);
+      if (o.tag) main.appendChild(el("span", "ev-wa-tag", o.tag));
+      if (o.last && o.ours) prev.appendChild(tick(o.last));
+      prev.appendChild(el("span", "ev-wa-text", o.last ? o.last.body.replace(/\n/g, " ") : (o.empty || "")));
+      if (o.unread) prev.appendChild(el("span", "ev-wa-badge", String(o.unread)));
+      main.appendChild(prev); b.appendChild(main);
+      b.addEventListener("click", o.onClick);
+      return b;
+    }
+    /* one conversation. o: {title, subtitle, glyph, notice, listPath, sendPath, sendBody(text), staffSide, onChange} */
+    function chat(container, o) {
+      var box = el("div", "ev-wa"), head = el("div", "ev-wa-head"), body = el("div", "ev-wa-body");
+      head.appendChild(avatar(o.title, o.glyph));
+      var names = el("div"); names.appendChild(el("b", "", o.title)); if (o.subtitle) names.appendChild(el("small", "", o.subtitle)); head.appendChild(names);
+      var form = el("form", "ev-wa-input"), input = el("textarea"), send = el("button", "ev-wa-send", "➤");
+      input.rows = 1; input.maxLength = 2000; input.placeholder = x("write"); send.type = "submit"; send.disabled = true; send.title = x("send");
+      if (document.documentElement.dir === "rtl") send.style.transform = "scaleX(-1)";
       form.appendChild(input); form.appendChild(send);
-      container.appendChild(box); container.appendChild(form);
-      function load() {
-        request(listPath).then(function (list) {
-          box.innerHTML = "";
-          if (!list.length) box.appendChild(el("p", "p-muted", x("noMessages")));
-          list.forEach(function (m) {
-            var b = el("div", "ev-msg" + (mine(m) ? " mine" : ""));
-            b.appendChild(el("b", "", mine(m) ? x("you") : m.sender));
-            b.appendChild(el("div", "", m.body));
-            b.appendChild(el("small", "", when(m.created_at) + (mine(m) ? (m.read ? " ✓✓" : " ✓") : "")));
-            box.appendChild(b);
-          });
-          box.scrollTop = box.scrollHeight;
-        }).catch(fail(container));
+      box.appendChild(head); box.appendChild(body); box.appendChild(form); container.appendChild(box);
+      var messages = [], pending = [], lastKey = "";
+      function ours(m) { return o.staffSide ? !m.from_parent : !!m.from_parent; }
+      function draw(force) {
+        var atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+        body.innerHTML = "";
+        body.appendChild(el("div", "ev-wa-note", "🔒 " + o.notice));
+        var all = messages.concat(pending);
+        if (!all.length) body.appendChild(el("div", "ev-wa-day", x("noMessages") + " 👋"));
+        var lastDay = null, prev = null;
+        all.forEach(function (m) {
+          var d = localDate(m.created_at) || new Date(), day = iso(d);
+          if (day !== lastDay) { body.appendChild(el("div", "ev-wa-day", dayLabel(d))); lastDay = day; prev = null; }
+          var first = !prev || ours(prev) !== ours(m) || prev.sender !== m.sender;
+          var b = el("div", "ev-wa-msg" + (ours(m) ? " ours" : "") + (first ? " first" : ""));
+          /* who wrote it: for the parents every kindergarten message; for the kindergarten a colleague's message */
+          var showName = first && (o.staffSide ? (ours(m) && !m.mine && !m.pending) : !ours(m));
+          if (showName && m.sender) {
+            var n = el("span", "ev-wa-name", m.sender + (roleWord(m.sender_role) ? " · " + roleWord(m.sender_role) : ""));
+            n.style.color = colorOf(m.sender); b.appendChild(n);
+          }
+          b.appendChild(el("span", "ev-wa-body-text", m.body));
+          var meta = el("span", "ev-wa-meta", clock(d));
+          if (ours(m)) { meta.appendChild(document.createTextNode(" ")); meta.appendChild(tick(m)); }
+          b.appendChild(meta);
+          body.appendChild(b); prev = m;
+        });
+        if (force || atBottom) body.scrollTop = body.scrollHeight;
       }
-      form.addEventListener("submit", function (event) {
-        event.preventDefault();
+      function load(force) {
+        return request(o.listPath).then(function (list) {
+          var key = JSON.stringify(list.map(function (m) { return [m.id, m.read]; }));
+          if (force || key !== lastKey) { messages = list; lastKey = key; draw(force); }
+        }).catch(function (error) { if (!messages.length) fail(body)(error); });
+      }
+      function submit() {
         var text = input.value.trim(); if (!text) return;
-        send.disabled = true;
-        request(sendBody.path, {method: "POST", body: JSON.stringify(sendBody.body(text))}).then(function () { input.value = ""; load(); })
-          .catch(fail(container)).finally(function () { send.disabled = false; });
+        var draft = {body: text, from_parent: !o.staffSide, mine: true, pending: true, created_at: new Date().toISOString()};
+        pending.push(draft); input.value = ""; send.disabled = true; input.style.height = "";
+        draw(true);
+        request(o.sendPath, {method: "POST", body: JSON.stringify(o.sendBody(text))})
+          .then(function () { pending.splice(pending.indexOf(draft), 1); if (o.onChange) o.onChange(); return load(true); })
+          .catch(function (error) { pending.splice(pending.indexOf(draft), 1); input.value = text; send.disabled = false; draw(true); api.showError(container, error); });
+        input.focus();
+      }
+      input.addEventListener("input", function () {
+        send.disabled = !input.value.trim();
+        input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 130) + "px";
       });
-      load();
+      input.addEventListener("keydown", function (event) { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } });
+      form.addEventListener("submit", function (event) { event.preventDefault(); submit(); });
+      /* new messages come in by themselves while the chat is on the screen */
+      var timer = setInterval(function () {
+        if (!document.body.contains(box)) { clearInterval(timer); return; }
+        if (!document.hidden) load(false);
+      }, 6000);
+      load(true).then(function () { if (o.onChange) o.onChange(); });
+      input.focus();
+    }
+    /* the parents: whom to write to about this child (the teachers and the management) */
+    function parentChats(c, base, childName) {
+      c.innerHTML = "";
+      c.appendChild(el("h2", "", x("messages")));
+      c.appendChild(el("p", "p-muted", x("chatHint")));
+      var search = el("input", "ev-wa-search"); search.type = "search"; search.placeholder = x("search");
+      var list = el("div", "ev-wa-list");
+      c.appendChild(search); c.appendChild(list);
+      var rows = [];
+      function name(r) { return r.role === "office" ? x("rOffice") : r.name; }
+      function drawList() {
+        list.innerHTML = "";
+        var q = search.value.trim().toLowerCase();
+        rows.filter(function (r) { return !q || name(r).toLowerCase().indexOf(q) !== -1 || (r.last && r.last.body.toLowerCase().indexOf(q) !== -1); })
+          .forEach(function (r) {
+            list.appendChild(chatRow({title: name(r), tag: r.role === "office" ? "" : x("rTeacher") + (r.gone ? " · " + x("gone") : ""), glyph: r.role === "office" ? "🏫" : "",
+              last: r.last, ours: r.last && r.last.from_parent, unread: r.unread, empty: x("tapToStart"), onClick: function () { openChat(r); }}));
+          });
+      }
+      function openChat(r) {
+        var office = r.role === "office";
+        c.innerHTML = "";
+        c.appendChild(api.button("← " + x("allChats"), "outline", function () { parentChats(c, base, childName); }));
+        chat(c, {title: name(r), subtitle: (office ? "" : x("rTeacher") + " · ") + childName, glyph: office ? "🏫" : "",
+          notice: office ? fill(x("noticeOffice"), childName) : fill(x("noticeTeacher"), name(r), childName),
+          listPath: base + "/messages?to=" + encodeURIComponent(r.with), sendPath: base + "/messages",
+          sendBody: function (text) { return {body: text, to: r.with}; }, staffSide: false});
+      }
+      search.addEventListener("input", drawList);
+      request(base + "/contacts").then(function (r) { rows = r; drawList(); }).catch(fail(list));
     }
 
     /* ======================================================================================== parents */
     /* The parents' home: the tiles of the child at once; with several children a choice on top. */
-    function parentHome(container, children) {
+    function parentHome(container, children, goView) {
+      container.innerHTML = "";
+      if (!children.length) {
+        var hint = el("div", "ev-hub-head");
+        hint.appendChild(el("span", "ev-avatar", "i"));
+        hint.appendChild(el("p", "", x("notLinked")));
+        container.appendChild(hint);
+        var grid = el("div", "ev-tiles");
+        parentTileList({}).forEach(function (tile) {
+          var b = tileButton(tile);
+          b.addEventListener("click", function () {
+            if (tile[0] === "news" && goView) goView("posts");
+            else alert(x("notLinked"));
+          });
+          grid.appendChild(b);
+        });
+        container.appendChild(grid);
+        return;
+      }
       var chosen = children[0];
       var chooser = el("div", "ev-subnav"), hubBox = el("div");
       container.appendChild(chooser); container.appendChild(hubBox);
@@ -166,7 +333,7 @@
           b.addEventListener("click", function () { chosen = c; draw(); });
           chooser.appendChild(b);
         });
-        parentHub(hubBox, chosen, null);
+        parentHub(hubBox, chosen, null, goView);
       }
       draw();
     }
@@ -185,7 +352,22 @@
       container.appendChild(grid);
     }
 
-    function parentHub(container, child, onBack) {
+    function parentTileList(c) {
+      return [
+        ["profile", "🧒", "#7fb3f0,#4f8edc", 0], ["reports", "📄", "#6fb7a8,#3e9483", 0], ["notes", "⭐", "#8cc47a,#5fa34c", c.notes_new],
+        ["bring", "🎒", "#f2b65a,#e5952b", c.bring_open], ["plan", "🗓️", "#8eb6f2,#5c8fe0", 0], ["attendance", "✅", "#e57e6e,#cf5443", 0],
+        ["news", "📣", "#b07ccb,#8e52b0", 0], ["messages", "💬", "#5fb3a6,#368f81", c.messages_unread], ["fees", "🧾", "#aeb4bc,#858d97", c.invoices_open]
+      ];
+    }
+    function tileButton(tile) {
+      var b = el("button", "ev-tile"); b.type = "button";
+      b.style.background = "linear-gradient(135deg," + tile[2] + ")";
+      b.appendChild(el("span", "ev-ico", tile[1])); b.appendChild(el("span", "", x(tile[0] === "reports" ? "tReports" : tile[0])));
+      if (tile[3] > 0) b.appendChild(el("span", "ev-badge", String(tile[3])));
+      return b;
+    }
+
+    function parentHub(container, child, onBack, goView) {
       var base = "/api/platform/parent/children/" + encodeURIComponent(child.id);
       function home() {
         container.innerHTML = "";
@@ -198,19 +380,15 @@
           if (d.class_name) pills.appendChild(el("span", "ev-pill", d.class_name));
           if (d.today && d.today.attendance) pills.appendChild(el("span", "ev-pill", x("today") + ": " + statusText(d.today.attendance)));
           text.appendChild(pills); head.appendChild(text); container.appendChild(head);
-          var c = d.counts || {};
-          var tiles = [
-            ["profile", "🧒", "#7fb3f0,#4f8edc", 0], ["notes", "⭐", "#8cc47a,#5fa34c", c.notes_new], ["bring", "🎒", "#f2b65a,#e5952b", c.bring_open],
-            ["plan", "🗓️", "#8eb6f2,#5c8fe0", 0], ["attendance", "✅", "#e57e6e,#cf5443", 0], ["messages", "💬", "#5fb3a6,#368f81", c.messages_unread],
-            ["fees", "🧾", "#aeb4bc,#858d97", c.invoices_open]
-          ];
+          var tiles = parentTileList(d.counts || {}).filter(function (tile) { return goView || (tile[0] !== "reports" && tile[0] !== "news"); });
           var grid = el("div", "ev-tiles");
           tiles.forEach(function (tile) {
-            var b = el("button", "ev-tile"); b.type = "button";
-            b.style.background = "linear-gradient(135deg," + tile[2] + ")";
-            b.appendChild(el("span", "ev-ico", tile[1])); b.appendChild(el("span", "", x(tile[0])));
-            if (tile[3] > 0) b.appendChild(el("span", "ev-badge", String(tile[3])));
-            b.addEventListener("click", function () { open(tile[0], d); });
+            var b = tileButton(tile);
+            b.addEventListener("click", function () {
+              if (tile[0] === "reports") goView("reports", child);
+              else if (tile[0] === "news") goView("posts");
+              else open(tile[0], d);
+            });
             grid.appendChild(b);
           });
           container.appendChild(grid);
@@ -235,7 +413,7 @@
         } else if (kind === "attendance") {
           attendanceParent(c);
         } else if (kind === "messages") {
-          chat(c, base + "/messages", {path: base + "/messages", body: function (text) { return {body: text}; }}, function (m) { return m.from_parent; });
+          parentChats(c, base, d.name);
         } else if (kind === "fees") {
           request(base + "/fees").then(function (data) {
             if (!data.invoices.length) c.appendChild(el("p", "p-muted", x("noFees")));
@@ -297,7 +475,7 @@
       });
     }
 
-    function staffPane(container) {
+    function staffPane(container, opts) {
       var sections = [["attendance", attendanceStaff], ["notes", notesStaff], ["bring", bringStaff], ["plan", planStaff], ["messages", messagesStaff]];
       var nav = el("div", "ev-subnav"), body = el("div");
       container.appendChild(nav); container.appendChild(body);
@@ -438,37 +616,71 @@
         children().then(function (d) { d.groups.forEach(function (g) { group.appendChild(new Option(g || x("noGroup"), g)); }); load(); }).catch(fail(c));
       }
 
+      /* the kindergarten's chats with the parents: a teacher her own, the management every one (its own and the teachers') */
       function messagesStaff(box) {
         var c = card(x("conversations")); box.appendChild(c);
-        var pick = el("select"), list = el("div"), thread = el("div");
+        var bar = el("div", "ev-row"), pick = el("select");
         pick.appendChild(new Option("— " + x("chooseParent") + " —", ""));
-        var start = api.button(x("newMessage"), "sun", function () { if (pick.value) { var p = pick.value.split("|"); openThread(p[0], p[1], pick.options[pick.selectedIndex].text); } });
-        var bar = el("div", "ev-row"); bar.appendChild(pick); bar.appendChild(start);
-        c.appendChild(bar); c.appendChild(list); box.appendChild(thread);
-        children().then(function (d) { d.children.forEach(function (ch) { (ch.parents || []).forEach(function (p) { pick.appendChild(new Option(ch.name + " · " + p.username, ch.id + "|" + p.id)); }); }); });
-        function openThread(childId, parentId, title) {
-          thread.innerHTML = "";
-          var t = card(title); thread.appendChild(t);
-          chat(t, "/api/platform/staff/conversations/" + childId + "/" + parentId,
-            {path: "/api/platform/staff/messages", body: function (text) { return {child_id: childId, parent_id: parentId, body: text}; }},
-            function (m) { return !m.from_parent; });
-          thread.scrollIntoView({behavior: "smooth", block: "start"});
-          load();
+        var start = api.button("💬 " + x("newChat"), "sun", function () {
+          if (!pick.value) return;
+          var p = pick.value.split("|"), label = pick.options[pick.selectedIndex].dataset;
+          openThread({child_id: p[0], parent_id: p[1], with: "", child: label.child, parent: label.parent});
+        });
+        bar.appendChild(pick); bar.appendChild(start); c.appendChild(bar);
+        var split = el("div", "ev-wa-split"), left = el("div"), right = el("div");
+        var search = el("input", "ev-wa-search"); search.type = "search"; search.placeholder = x("search");
+        var chips = el("div", "ev-subnav"), list = el("div", "ev-wa-list");
+        left.appendChild(search); left.appendChild(chips); left.appendChild(list);
+        right.appendChild(el("div", "ev-wa-empty", "💬 " + x("pickChat")));
+        split.appendChild(left); split.appendChild(right); c.appendChild(split);
+        children().then(function (d) {
+          d.children.forEach(function (ch) {
+            (ch.parents || []).forEach(function (p) {
+              var o = new Option(p.username + " · " + ch.name, ch.id + "|" + p.id); o.dataset.child = ch.name; o.dataset.parent = p.username; pick.appendChild(o);
+            });
+          });
+        });
+        var rows = [], filter = "all", openKey = "";
+        function boss() { return (opts && opts.boss) || rows.some(function (r) { return r.with === "office" || !r.mine; }); }
+        function keyOf(r) { return r.child_id + "|" + r.parent_id + "|" + r.with; }
+        function drawChips() {
+          chips.innerHTML = "";
+          [["all", "fAll"], ["unread", "fUnread"]].concat(boss() ? [["office", "fOffice"], ["teachers", "fTeachers"]] : []).forEach(function (f) {
+            var b = el("button", "ev-chip", x(f[1])); b.type = "button"; b.setAttribute("aria-pressed", String(filter === f[0]));
+            b.addEventListener("click", function () { filter = f[0]; drawChips(); drawList(); });
+            chips.appendChild(b);
+          });
+        }
+        function drawList() {
+          list.innerHTML = "";
+          var q = search.value.trim().toLowerCase(), isBoss = boss();
+          var shown = rows.filter(function (r) {
+            var office = r.with === "office";
+            var ok = filter === "unread" ? r.unread > 0 : filter === "office" ? office : filter === "teachers" ? !office : true;
+            return ok && (!q || [r.child, r.parent, r.staff, r.last && r.last.body].some(function (v) { return String(v || "").toLowerCase().indexOf(q) !== -1; }));
+          });
+          if (!shown.length) list.appendChild(el("p", "p-muted", rows.length ? x("noResults") : x("noConversations")));
+          shown.forEach(function (r) {
+            list.appendChild(chatRow({title: r.parent + " · " + r.child, tag: !isBoss ? "" : r.with === "office" ? x("rOffice") : x("withTeacher") + " " + r.staff,
+              last: r.last, ours: r.last && !r.last.from_parent, unread: r.unread, active: keyOf(r) === openKey, onClick: function () { openThread(r); }}));
+          });
+        }
+        function openThread(r) {
+          var isBoss = boss(), to = r.with || "";
+          openKey = to ? keyOf(r) : "";
+          right.innerHTML = "";
+          var notice = !isBoss ? fill(x("noticeStaff"), r.child) : (to === "office" || to === "") ? fill(x("noticeBossOffice"), r.child) : fill(x("noticeBossTeacher"), r.child);
+          chat(right, {title: r.parent + " · " + r.child, subtitle: isBoss && to && to !== "office" ? x("withTeacher") + " " + (r.staff || "") : x("rParent"),
+            notice: notice, listPath: "/api/platform/staff/conversations/" + r.child_id + "/" + r.parent_id + "?to=" + encodeURIComponent(to),
+            sendPath: "/api/platform/staff/messages", sendBody: function (text) { return {child_id: r.child_id, parent_id: r.parent_id, body: text, to: to}; },
+            staffSide: true, onChange: load});
+          if (window.innerWidth <= 820) right.scrollIntoView({behavior: "smooth", block: "start"});
+          drawList();
         }
         function load() {
-          list.innerHTML = "";
-          request("/api/platform/staff/conversations").then(function (rows) {
-            if (!rows.length) list.appendChild(el("p", "p-muted", x("noConversations")));
-            rows.forEach(function (r) {
-              var row = el("div", "p-content-item");
-              var text = el("div"); text.appendChild(el("strong", "", r.child + " · " + r.parent)); text.appendChild(el("small", "p-muted", r.last.body));
-              row.appendChild(text);
-              if (r.unread) row.appendChild(el("span", "p-count", String(r.unread)));
-              row.appendChild(api.button(x("messages"), "outline", function () { openThread(r.child_id, r.parent_id, r.child + " · " + r.parent); }));
-              list.appendChild(row);
-            });
-          }).catch(fail(list));
+          return request("/api/platform/staff/conversations").then(function (r) { rows = r; drawChips(); drawList(); }).catch(fail(list));
         }
+        search.addEventListener("input", drawList);
         load();
       }
 

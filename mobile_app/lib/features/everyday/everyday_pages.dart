@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../localization/strings.dart';
 import '../../models/models.dart';
 import '../../services/api.dart';
+import '../../services/session.dart';
 import '../../shared/ui.dart';
 import '../parents/parent_pages.dart';
 
@@ -112,32 +116,33 @@ class _ChildHubPageState extends State<ChildHubPage> {
         final d = _m(data);
         final counts = _m(d['counts']);
         int n(String k) => (counts[k] as num? ?? 0).toInt();
-        final tiles = [
-          _Tile(_t(context, 'بيانات الطفل', 'Daten des Kindes', 'Child details'), Icons.badge_rounded, const [Color(0xFF7FB3F0), Color(0xFF4F8EDC)], () => _ProfilePage(data: d)),
-          _Tile(_t(context, 'التقارير اليومية', 'Tagesberichte', 'Daily reports'), Icons.description_rounded, const [Color(0xFF6FB7A8), Color(0xFF3E9483)], () => ChildReportsPage(child: c)),
-          _Tile(_t(context, 'ملاحظات', 'Lob & Notizen', 'Notes'), Icons.star_rounded, const [Color(0xFF8CC47A), Color(0xFF5FA34C)], () => _ParentNotesPage(child: c), badge: n('notes_new')),
-          _Tile(_t(context, 'أحضِر معك', 'Bitte mitbringen', 'Please bring'), Icons.backpack_rounded, const [Color(0xFFF2B65A), Color(0xFFE5952B)], () => _ParentBringPage(child: c), badge: n('bring_open')),
-          _Tile(_t(context, 'برنامج الأسبوع', 'Wochenplan', 'Week plan'), Icons.calendar_view_week_rounded, const [Color(0xFF8EB6F2), Color(0xFF5C8FE0)], () => _ParentPlanPage(child: c)),
-          _Tile(_t(context, 'الحضور', 'Anwesenheit', 'Attendance'), Icons.how_to_reg_rounded, const [Color(0xFFE57E6E), Color(0xFFCF5443)], () => _ParentAttendancePage(child: c)),
-          _Tile(_t(context, 'الأخبار', 'Neuigkeiten', 'News'), Icons.campaign_rounded, const [Color(0xFFB07CCB), Color(0xFF8E52B0)], () => _page(context, _t(context, 'الأخبار', 'Neuigkeiten', 'News'), const ParentPosts())),
-          _Tile(_t(context, 'دردشة', 'Nachrichten', 'Messages'), Icons.chat_rounded, const [Color(0xFF5FB3A6), Color(0xFF368F81)], () => ChatPage.parent(child: c), badge: n('messages_unread')),
-          _Tile(_t(context, 'الرسوم', 'Gebühren', 'Fees'), Icons.receipt_long_rounded, const [Color(0xFFAEB4BC), Color(0xFF858D97)], () => _ParentFeesPage(child: c), badge: n('invoices_open')),
-        ];
+        final tiles = _parentTiles(context, c, d, n);
         final today = _s(_m(d['today'])['attendance']);
         return CustomScrollView(slivers: [
+          // on the home page: the same greeting card as the teachers' home, the child's name and today below it
+          if (widget.embedded)
+            SliverToBoxAdapter(
+              child: _greetingCard(
+                context,
+                below: Wrap(spacing: 6, runSpacing: 4, children: [
+                  Pill(_s(d['name']), icon: Icons.child_care_rounded),
+                  if (_s(d['class_name']).isNotEmpty) Pill(_s(d['class_name']), icon: Icons.groups_2_outlined),
+                  if (today.isNotEmpty) _attendancePill(context, today),
+                ]),
+              ),
+            ),
           if (widget.top != null) SliverToBoxAdapter(child: widget.top),
+          if (!widget.embedded)
           SliverToBoxAdapter(
             child: Container(
-              padding: EdgeInsets.fromLTRB(16, widget.embedded ? 16 : MediaQuery.paddingOf(context).top + 8, 16, 20),
+              padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 20),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(colors: [Color(0xFFDCEBFB), Color(0xFFF4F7FB)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
               ),
               child: Row(children: [
-                if (!widget.embedded) ...[
-                  IconButton(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.arrow_back_rounded)),
-                  const SizedBox(width: 4),
-                ],
+                IconButton(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.arrow_back_rounded)),
+                const SizedBox(width: 4),
                 AvatarInitials(_s(d['name']), size: 58),
                 const SizedBox(width: 12),
                 Expanded(
@@ -153,30 +158,62 @@ class _ChildHubPageState extends State<ChildHubPage> {
               ]),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            sliver: SliverLayoutBuilder(builder: (context, constraints) {
-              final cols = (constraints.crossAxisExtent / 200).floor().clamp(2, 5);
-              return SliverGrid.count(
-                crossAxisCount: cols,
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 1.05,
-                children: [
-                  for (final t in tiles)
-                    _TileCard(t, onTap: () async {
-                      await Navigator.push(context, MaterialPageRoute(builder: (_) => t.open()));
-                      if (mounted) setState(() => _round++);
-                    }),
-                ],
-              );
-            }),
-          ),
+          _tileGrid([
+            for (final t in tiles)
+              _TileCard(t, onTap: () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => t.open()));
+                if (mounted) setState(() => _round++);
+              }),
+          ]),
         ]);
       });
     return widget.embedded ? hub : Scaffold(body: hub);
   }
 }
+
+/// The nine tiles of a child's page. [c] is null while the parent account is not linked to a child yet.
+List<_Tile> _parentTiles(BuildContext context, Child? c, Map<String, dynamic> d, int Function(String) n) => [
+      _Tile(_t(context, 'بيانات الطفل', 'Daten des Kindes', 'Child details'), Icons.badge_rounded, const [Color(0xFF7FB3F0), Color(0xFF4F8EDC)], () => _ProfilePage(data: d)),
+      _Tile(_t(context, 'التقارير اليومية', 'Tagesberichte', 'Daily reports'), Icons.description_rounded, const [Color(0xFF6FB7A8), Color(0xFF3E9483)], () => ChildReportsPage(child: c!)),
+      _Tile(_t(context, 'ملاحظات', 'Lob & Notizen', 'Notes'), Icons.star_rounded, const [Color(0xFF8CC47A), Color(0xFF5FA34C)], () => _ParentNotesPage(child: c!), badge: n('notes_new')),
+      _Tile(_t(context, 'أحضِر معك', 'Bitte mitbringen', 'Please bring'), Icons.backpack_rounded, const [Color(0xFFF2B65A), Color(0xFFE5952B)], () => _ParentBringPage(child: c!), badge: n('bring_open')),
+      _Tile(_t(context, 'برنامج الأسبوع', 'Wochenplan', 'Week plan'), Icons.calendar_view_week_rounded, const [Color(0xFF8EB6F2), Color(0xFF5C8FE0)], () => _ParentPlanPage(child: c!)),
+      _Tile(_t(context, 'الحضور', 'Anwesenheit', 'Attendance'), Icons.how_to_reg_rounded, const [Color(0xFFE57E6E), Color(0xFFCF5443)], () => _ParentAttendancePage(child: c!)),
+      _Tile(_t(context, 'الأخبار', 'Neuigkeiten', 'News'), Icons.campaign_rounded, const [Color(0xFFB07CCB), Color(0xFF8E52B0)], () => _page(context, _t(context, 'الأخبار', 'Neuigkeiten', 'News'), const ParentPosts())),
+      _Tile(_t(context, 'دردشة', 'Nachrichten', 'Messages'), Icons.chat_rounded, const [Color(0xFF5FB3A6), Color(0xFF368F81)], () => ParentChatsPage(child: c!), badge: n('messages_unread')),
+      _Tile(_t(context, 'الرسوم', 'Gebühren', 'Fees'), Icons.receipt_long_rounded, const [Color(0xFFAEB4BC), Color(0xFF858D97)], () => _ParentFeesPage(child: c!), badge: n('invoices_open')),
+    ];
+
+/// The greeting on the home pages of parents and teachers: "Hello" with the user name, today's date and an optional line below.
+Widget _greetingCard(BuildContext context, {Widget? below}) {
+  final session = SessionScope.of(context);
+  return Container(
+    margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFDCEBFB), Color(0xFFF4F7FB)]), borderRadius: BorderRadius.circular(24)),
+    child: Row(children: [
+      AvatarInitials(session.username ?? '?', size: 54),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${_t(context, 'أهلاً', 'Hallo', 'Hello')} ${session.username ?? ''}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text('${_weekdayName(context, _day(DateTime.now()))} · ${_day(DateTime.now())}', style: const TextStyle(color: _muted)),
+          if (below != null) ...[const SizedBox(height: 8), below],
+        ]),
+      ),
+    ]),
+  );
+}
+
+/// The grid of coloured tiles, 2 to 5 per row depending on the width.
+Widget _tileGrid(List<Widget> cards) => SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      sliver: SliverLayoutBuilder(builder: (context, constraints) {
+        final cols = (constraints.crossAxisExtent / 200).floor().clamp(2, 5);
+        return SliverGrid.count(crossAxisCount: cols, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 1.05, children: cards);
+      }),
+    );
 
 /// The parents' home: the tiles of the child right away; with several children a choice on top.
 class ParentTilesHome extends StatefulWidget {
@@ -198,7 +235,34 @@ class _ParentTilesHomeState extends State<ParentTilesHome> {
       },
       builder: (context, children, reload) {
         if (children.isEmpty) {
-          return _empty(context, Icons.child_care_outlined, _t(context, 'لم يُربط حسابك بطفل بعد. تربطه الروضة بعد الموافقة.', 'Dein Konto ist noch mit keinem Kind verbunden. Das macht die Kita.', 'Your account is not linked to a child yet. The kindergarten does that.'));
+          // the same home without a child: the tiles are there, the child's pages open once the kindergarten has linked the account
+          final hint = _t(context, 'لم يُربط حسابك بطفل بعد. تربطه الروضة بعد الموافقة.', 'Dein Konto ist noch mit keinem Kind verbunden. Das macht die Kita.', 'Your account is not linked to a child yet. The kindergarten does that.');
+          final tiles = _parentTiles(context, null, const {}, (_) => 0);
+          return RefreshIndicator(
+            onRefresh: () async => reload(),
+            child: CustomScrollView(slivers: [
+              SliverToBoxAdapter(
+                child: _greetingCard(
+                  context,
+                  below: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF8A5200)),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(hint, style: const TextStyle(color: Color(0xFF8A5200), fontWeight: FontWeight.w600))),
+                  ]),
+                ),
+              ),
+              _tileGrid([
+                for (final (i, t) in tiles.indexed)
+                  _TileCard(t, onTap: () {
+                    if (i == 6) {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => t.open()));
+                    } else {
+                      toast(context, hint);
+                    }
+                  }),
+              ]),
+            ]),
+          );
         }
         final child = children.firstWhere((c) => c.id == _chosen, orElse: () => children.first);
         final chooser = children.length < 2
@@ -227,7 +291,6 @@ class TeacherTilesHome extends StatelessWidget {
   final void Function(String id) goTo;
   @override
   Widget build(BuildContext context) {
-    final session = SessionScope.of(context);
     final tiles = [
       (_t(context, 'أطفالي', 'Meine Kinder', 'My children'), Icons.child_care_rounded, const [Color(0xFF7FB3F0), Color(0xFF4F8EDC)], 'children'),
       (_t(context, 'التقارير اليومية', 'Tagesberichte', 'Daily reports'), Icons.description_rounded, const [Color(0xFF6FB7A8), Color(0xFF3E9483)], 'reports'),
@@ -240,39 +303,10 @@ class TeacherTilesHome extends StatelessWidget {
       (_t(context, 'المواد التعليمية', 'Materialien', 'Materials'), Icons.folder_rounded, const [Color(0xFFAEB4BC), Color(0xFF858D97)], 'files'),
     ];
     return CustomScrollView(slivers: [
-      SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFDCEBFB), Color(0xFFF4F7FB)]), borderRadius: BorderRadius.circular(24)),
-          child: Row(children: [
-            AvatarInitials(session.username ?? '?', size: 54),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${_t(context, 'أهلاً', 'Hallo', 'Hello')} ${session.username ?? ''}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text('${_weekdayName(context, _day(DateTime.now()))} · ${_day(DateTime.now())}', style: const TextStyle(color: _muted)),
-              ]),
-            ),
-          ]),
-        ),
-      ),
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        sliver: SliverLayoutBuilder(builder: (context, constraints) {
-          final cols = (constraints.crossAxisExtent / 200).floor().clamp(2, 5);
-          return SliverGrid.count(
-            crossAxisCount: cols,
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            childAspectRatio: 1.05,
-            children: [
-              for (final (label, icon, colors, id) in tiles) _TileCard(_Tile(label, icon, colors, () => const SizedBox()), onTap: () => goTo(id)),
-            ],
-          );
-        }),
-      ),
+      SliverToBoxAdapter(child: _greetingCard(context)),
+      _tileGrid([
+        for (final (label, icon, colors, id) in tiles) _TileCard(_Tile(label, icon, colors, () => const SizedBox()), onTap: () => goTo(id)),
+      ]),
     ]);
   }
 }
@@ -710,31 +744,182 @@ Widget _feeLine(String label, String value, {bool bold = false, Color? color}) =
     );
 
 // =================================================================================================================================
-// messages (the same page for both sides)
+// chats, like WhatsApp: one conversation = one child, one parent account and one teacher (or the kindergarten's management).
+// The management sees every conversation and may write in each; the parents are told so at the top of the chat.
 // =================================================================================================================================
-class ChatPage extends StatefulWidget {
-  const ChatPage._({required this.title, required this.listPath, required this.send, required this.mine});
+const _waHead = Color(0xFF008069);
+const _waGreen = Color(0xFF00A884);
+const _waBack = Color(0xFFEFE7DE);
+const _waMine = Color(0xFFD9FDD3);
+const _waTick = Color(0xFF53BDEB);
+const _waGrey = Color(0xFF667781);
+const _avatarColors = [Color(0xFF4F8EDC), Color(0xFF3E9483), Color(0xFFCF5443), Color(0xFF8E52B0), Color(0xFFE5952B), Color(0xFF5FA34C), Color(0xFF368F81), Color(0xFFB0527A)];
 
-  /// A parent writing to the kindergarten about one child.
-  factory ChatPage.parent({required Child child}) => ChatPage._(
-        title: child.name,
+Color _colorOf(String name) => _avatarColors[name.codeUnits.fold<int>(0, (a, b) => a + b) % _avatarColors.length];
+
+/// The local time of a server timestamp.
+DateTime? _local(Object? iso) {
+  final d = DateTime.tryParse(_s(iso));
+  if (d == null) return null;
+  return d.isUtc ? d.toLocal() : DateTime.utc(d.year, d.month, d.day, d.hour, d.minute, d.second).toLocal();
+}
+
+String _clock(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+/// "Today", "Yesterday", the weekday in the last week, else the date.
+String _dayLabel(BuildContext context, DateTime d) {
+  final now = DateTime.now();
+  final diff = DateTime(now.year, now.month, now.day).difference(DateTime(d.year, d.month, d.day)).inDays;
+  if (diff == 0) return _t(context, 'اليوم', 'Heute', 'Today');
+  if (diff == 1) return _t(context, 'أمس', 'Gestern', 'Yesterday');
+  if (diff > 1 && diff < 7) return _weekdayName(context, _day(d));
+  return _day(d);
+}
+
+/// The time shown in a list of chats: the clock today, else the day.
+String _listTime(BuildContext context, Object? iso) {
+  final d = _local(iso);
+  if (d == null) return '';
+  final now = DateTime.now();
+  return d.year == now.year && d.month == now.month && d.day == now.day ? _clock(d) : _dayLabel(context, d);
+}
+
+String _roleWord(BuildContext context, String role) => switch (role) {
+      'teacher' => _t(context, 'معلمة', 'Lehrerin', 'Teacher'),
+      'manager' || 'admin' || 'office' => _t(context, 'إدارة الروضة', 'Kitaleitung', 'Management'),
+      'parent' => _t(context, 'وليّ الأمر', 'Eltern', 'Parent'),
+      _ => '',
+    };
+
+Widget _chatAvatar(String name, {IconData? icon, double size = 50}) => CircleAvatar(
+      radius: size / 2,
+      backgroundColor: icon != null ? _waHead : _colorOf(name),
+      child: icon != null
+          ? Icon(icon, color: Colors.white, size: size * 0.5)
+          : Text(name.isEmpty ? '?' : name.characters.first.toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: size * 0.4)),
+    );
+
+Widget _ticks(Map<String, dynamic> m, {double size = 16}) => m['pending'] == true
+    ? Icon(Icons.schedule_rounded, size: size - 2, color: _waGrey)
+    : Icon(m['read'] == true ? Icons.done_all_rounded : Icons.done_rounded, size: size, color: m['read'] == true ? _waTick : _waGrey);
+
+/// One line in a list of chats: avatar, name, time, the last message (with ticks when it was ours) and the unread count.
+Widget _chatRow(
+  BuildContext context, {
+  required String title,
+  String tag = '',
+  IconData? icon,
+  Map<String, dynamic>? last,
+  required bool lastIsOurs,
+  int unread = 0,
+  String empty = '',
+  required VoidCallback onTap,
+}) {
+  final hasNew = unread > 0;
+  return InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Row(children: [
+        _chatAvatar(title, icon: icon),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w700))),
+              if (last != null) Text(_listTime(context, last['created_at']), style: TextStyle(fontSize: 12, color: hasNew ? _waGreen : _waGrey, fontWeight: hasNew ? FontWeight.w800 : FontWeight.w500)),
+            ]),
+            if (tag.isNotEmpty) Text(tag, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: _waHead, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 3),
+            Row(children: [
+              if (last != null && lastIsOurs) ...[_ticks(last), const SizedBox(width: 3)],
+              Expanded(
+                child: Text(last == null ? empty : _s(last['body']).replaceAll('\n', ' '),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: hasNew ? const Color(0xFF111B21) : _waGrey, fontWeight: hasNew ? FontWeight.w600 : FontWeight.w400)),
+              ),
+              if (hasNew)
+                Container(
+                  margin: const EdgeInsetsDirectional.only(start: 6),
+                  constraints: const BoxConstraints(minWidth: 22),
+                  height: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: _waGreen, borderRadius: BorderRadius.circular(11)),
+                  child: Text('$unread', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                ),
+            ]),
+          ]),
+        ),
+      ]),
+    ),
+  );
+}
+
+/// A search field on top of a list of chats.
+Widget _chatSearch(BuildContext context, ValueChanged<String> onChanged) => Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      child: TextField(
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          hintText: _t(context, 'بحث...', 'Suchen...', 'Search...'),
+          prefixIcon: const Icon(Icons.search_rounded),
+          isDense: true,
+          filled: true,
+          fillColor: const Color(0xFFF0F2F5),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: _waGreen)),
+        ),
+      ),
+    );
+
+// ---- one conversation ---------------------------------------------------------------------------------------------------------
+class ChatPage extends StatefulWidget {
+  const ChatPage._({
+    required this.title,
+    required this.subtitle,
+    required this.notice,
+    this.icon,
+    required this.listPath,
+    required this.query,
+    required this.send,
+    required this.staffSide,
+  });
+
+  /// A parent writing to one teacher ([to] = her account id) or to the management ([to] = "office") about one child.
+  factory ChatPage.parent({required Child child, required String to, required String title, required String subtitle, required String notice, IconData? icon}) => ChatPage._(
+        title: title,
+        subtitle: subtitle,
+        notice: notice,
+        icon: icon,
         listPath: '/api/platform/parent/children/${child.id}/messages',
-        send: (api, body) => api.post('/api/platform/parent/children/${child.id}/messages', {'body': body}),
-        mine: (m) => m['from_parent'] == true,
+        query: {'to': to},
+        send: (api, body) => api.post('/api/platform/parent/children/${child.id}/messages', {'body': body, 'to': to}),
+        staffSide: false,
       );
 
-  /// The kindergarten writing to one parent about one child.
-  factory ChatPage.staff({required String childId, required String parentId, required String title}) => ChatPage._(
+  /// The kindergarten writing to one parent about one child. [to]: empty = the writer's own conversation, "office" = the
+  /// management's, else a teacher's account id (the management looking into her conversation).
+  factory ChatPage.staff({required String childId, required String parentId, required String to, required String title, required String subtitle, required String notice}) => ChatPage._(
         title: title,
+        subtitle: subtitle,
+        notice: notice,
         listPath: '/api/platform/staff/conversations/$childId/$parentId',
-        send: (api, body) => api.post('/api/platform/staff/messages', {'child_id': childId, 'parent_id': parentId, 'body': body}),
-        mine: (m) => m['from_parent'] != true,
+        query: {'to': to},
+        send: (api, body) => api.post('/api/platform/staff/messages', {'child_id': childId, 'parent_id': parentId, 'body': body, 'to': to}),
+        staffSide: true,
       );
 
   final String title;
+  final String subtitle;
+  final String notice;
+  final IconData? icon;
   final String listPath;
+  final Map<String, String> query;
   final Future<dynamic> Function(ApiClient api, String body) send;
-  final bool Function(Map<String, dynamic>) mine;
+
+  /// true: the kindergarten's messages are "ours" (right side, green), false: the parent's.
+  final bool staffSide;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -742,19 +927,38 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final _text = TextEditingController();
+  final _focus = FocusNode();
   List<Map<String, dynamic>>? _messages;
+  final List<Map<String, dynamic>> _pending = [];
   Object? _error;
-  bool _sending = false;
+  Timer? _poll;
+  bool _hasText = false;
 
   @override
   void initState() {
     super.initState();
+    _text.addListener(() {
+      final has = _text.text.trim().isNotEmpty;
+      if (has != _hasText) setState(() => _hasText = has);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+    // new messages come in by themselves while the chat is open
+    _poll = Timer.periodic(const Duration(seconds: 6), (_) => _reload());
   }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  bool _ours(Map<String, dynamic> m) => widget.staffSide ? m['from_parent'] != true : m['from_parent'] == true;
 
   Future<void> _reload() async {
     try {
-      final list = _l(await SessionScope.of(context).api.get(widget.listPath));
+      final list = _l(await SessionScope.of(context).api.get(widget.listPath, query: widget.query));
       if (mounted) {
         setState(() {
           _messages = list;
@@ -762,93 +966,300 @@ class _ChatPageState extends State<ChatPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e);
+      if (mounted && _messages == null) setState(() => _error = e);
     }
   }
 
   Future<void> _send() async {
     final body = _text.text.trim();
     if (body.isEmpty) return;
-    setState(() => _sending = true);
-    if (await _run(context, () => widget.send(SessionScope.of(context).api, body))) {
-      _text.clear();
+    // shown at once with a clock, replaced by the saved message
+    final draft = <String, dynamic>{
+      'body': body,
+      'from_parent': !widget.staffSide,
+      'mine': true,
+      'pending': true,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    setState(() => _pending.add(draft));
+    _text.clear();
+    _focus.requestFocus();
+    try {
+      await widget.send(SessionScope.of(context).api, body);
       await _reload();
+    } on ApiException catch (e) {
+      if (mounted) {
+        toast(context, problemText(context, e));
+        if (_text.text.isEmpty) _text.text = body;
+      }
     }
-    if (mounted) setState(() => _sending = false);
+    if (mounted) setState(() => _pending.remove(draft));
+  }
+
+  Widget _dateChip(String text) => Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(8), boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 2, offset: Offset(0, 1))]),
+          child: Text(text, style: const TextStyle(fontSize: 12.5, color: Color(0xFF54656F), fontWeight: FontWeight.w600)),
+        ),
+      );
+
+  Widget _bubble(BuildContext context, Map<String, dynamic> m, {required bool firstOfGroup}) {
+    final ours = _ours(m);
+    final d = _local(m['created_at']);
+    // the name of who wrote it: on the parents' side for every kindergarten message; on the kindergarten's side when it was
+    // written by someone else of the kindergarten (the management in a teacher's chat, the teacher seen by the management)
+    final showName = firstOfGroup && (widget.staffSide ? (ours && m['mine'] != true && m['pending'] != true) : !ours);
+    final name = _s(m['sender']);
+    final role = _roleWord(context, _s(m['sender_role']));
+    final width = MediaQuery.sizeOf(context).width;
+    final radius = Radius.circular(firstOfGroup ? 2 : 12);
+    return Align(
+      alignment: ours ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart,
+      child: GestureDetector(
+        onLongPress: () async {
+          await Clipboard.setData(ClipboardData(text: _s(m['body'])));
+          if (context.mounted) toast(context, _t(context, 'تم نسخ الرسالة.', 'Nachricht kopiert.', 'Message copied.'));
+        },
+        child: Container(
+          constraints: BoxConstraints(maxWidth: (width * 0.78).clamp(220, 560)),
+          margin: EdgeInsets.only(top: firstOfGroup ? 6 : 2),
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 5),
+          decoration: BoxDecoration(
+            color: ours ? _waMine : Colors.white,
+            borderRadius: BorderRadiusDirectional.only(
+              topStart: ours ? const Radius.circular(12) : radius,
+              topEnd: ours ? radius : const Radius.circular(12),
+              bottomStart: const Radius.circular(12),
+              bottomEnd: const Radius.circular(12),
+            ),
+            boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 1.5, offset: Offset(0, 1))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            if (showName && name.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(role.isEmpty ? name : '$name · $role', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _colorOf(name))),
+              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              spacing: 10,
+              children: [
+                Text(_s(m['body']), style: const TextStyle(fontSize: 15.5, height: 1.35, color: Color(0xFF111B21))),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(d == null ? '' : _clock(d), textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 11.5, color: _waGrey)),
+                    if (ours) ...[const SizedBox(width: 3), _ticks(m)],
+                  ]),
+                ),
+              ],
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final messages = _messages;
+    final messages = [...?_messages, ..._pending];
+    // the conversation from the top, with a date chip whenever the day changes
+    final items = <Widget>[
+      Center(
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(24, 8, 24, 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(color: const Color(0xFFFFEECD), borderRadius: BorderRadius.circular(8)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.lock_outline_rounded, size: 15, color: Color(0xFF54656F)),
+            const SizedBox(width: 6),
+            Flexible(child: Text(widget.notice, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12.5, color: Color(0xFF54656F)))),
+          ]),
+        ),
+      ),
+    ];
+    String? lastDay;
+    Map<String, dynamic>? previous;
+    for (final m in messages) {
+      final d = _local(m['created_at']);
+      final day = d == null ? '' : _day(d);
+      if (day != lastDay) {
+        items.add(_dateChip(d == null ? '' : _dayLabel(context, d)));
+        lastDay = day;
+        previous = null;
+      }
+      final first = previous == null || _ours(previous) != _ours(m) || _s(previous['sender']) != _s(m['sender']);
+      items.add(_bubble(context, m, firstOfGroup: first));
+      previous = m;
+    }
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title), actions: [IconButton(onPressed: _reload, icon: const Icon(Icons.refresh_rounded))]),
+      backgroundColor: _waBack,
+      appBar: AppBar(
+        backgroundColor: _waHead,
+        foregroundColor: Colors.white,
+        titleSpacing: 0,
+        title: Row(children: [
+          _chatAvatar(widget.title, icon: widget.icon, size: 40),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)),
+              if (widget.subtitle.isNotEmpty) Text(widget.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+            ]),
+          ),
+        ]),
+      ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: 900),
           child: Column(children: [
-            Container(
-              width: double.infinity,
-              color: const Color(0xFFEAF1F8),
-              padding: const EdgeInsets.all(10),
-              child: Text(_t(context, 'الأزرق: رسائلك · الأبيض: من الطرف الآخر', 'Blau: deine Nachrichten · Weiß: von der anderen Seite', 'Blue: yours · white: the other side'), textAlign: TextAlign.center, style: const TextStyle(color: _muted, fontSize: 12.5)),
-            ),
             Expanded(
-              child: messages == null
-                  ? (_error != null ? StateView.fromError(context, _error, onRetry: _reload) : const Center(child: CircularProgressIndicator()))
-                  : messages.isEmpty
-                      ? StateView(icon: Icons.chat_bubble_outline_rounded, title: _t(context, 'لا توجد رسائل بعد. اكتب أول رسالة.', 'Noch keine Nachrichten. Schreib die erste.', 'No messages yet. Write the first one.'))
+              child: _messages == null && _error != null
+                  ? StateView.fromError(context, _error, onRetry: _reload)
+                  : _messages == null
+                      ? const Center(child: CircularProgressIndicator())
                       : ListView(
                           reverse: true,
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                           children: [
-                            for (final m in messages.reversed)
-                              Align(
-                                alignment: widget.mine(m) ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
-                                child: Container(
-                                  constraints: const BoxConstraints(maxWidth: 480),
-                                  margin: const EdgeInsets.symmetric(vertical: 5),
-                                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
-                                  decoration: BoxDecoration(
-                                    color: widget.mine(m) ? const Color(0xFFDCE8F7) : Colors.white,
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(color: const Color(0xFFD3DEEB)),
-                                  ),
-                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                                    Text(widget.mine(m) ? _t(context, 'أنت', 'Du', 'You') : _s(m['sender']), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF16406F))),
-                                    const SizedBox(height: 4),
-                                    Text(_s(m['body']), style: const TextStyle(fontSize: 15.5, height: 1.4)),
-                                    const SizedBox(height: 4),
-                                    Row(mainAxisSize: MainAxisSize.min, children: [
-                                      Text(_when(m['created_at']).split(' ').last, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 11.5, color: _muted)),
-                                      if (widget.mine(m)) ...[const SizedBox(width: 4), Icon(m['read'] == true ? Icons.done_all_rounded : Icons.done_rounded, size: 15, color: m['read'] == true ? const Color(0xFF2D7DD2) : _muted)],
-                                    ]),
-                                  ]),
-                                ),
-                              ),
+                            if (messages.isEmpty) _dateChip(_t(context, 'لا توجد رسائل بعد. اكتب أول رسالة 👋', 'Noch keine Nachrichten. Schreib die erste 👋', 'No messages yet. Say hello 👋')),
+                            ...items.reversed,
                           ],
                         ),
             ),
             SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-                child: Row(children: [
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Expanded(
-                    child: TextField(
-                      controller: _text,
-                      minLines: 1,
-                      maxLines: 4,
-                      maxLength: 2000,
-                      decoration: InputDecoration(counterText: '', hintText: _t(context, 'اكتب رسالة...', 'Nachricht schreiben...', 'Write a message...')),
-                      onSubmitted: (_) => _send(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26), boxShadow: const [BoxShadow(color: Color(0x14000000), blurRadius: 2, offset: Offset(0, 1))]),
+                      child: TextField(
+                        controller: _text,
+                        focusNode: _focus,
+                        minLines: 1,
+                        maxLines: 5,
+                        maxLength: 2000,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: _t(context, 'اكتب رسالة', 'Nachricht', 'Message'),
+                          filled: false,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(onPressed: _sending ? null : _send, icon: const Icon(Icons.send_rounded)),
+                  const SizedBox(width: 6),
+                  Material(
+                    color: _hasText ? _waGreen : const Color(0xFF8FCFC0),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _hasText ? _send : null,
+                      child: const SizedBox(width: 50, height: 50, child: Icon(Icons.send_rounded, color: Colors.white)),
+                    ),
+                  ),
                 ]),
               ),
             ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ---- the parents: whom to write to ----------------------------------------------------------------------------------------------
+class ParentChatsPage extends StatefulWidget {
+  const ParentChatsPage({super.key, required this.child});
+  final Child child;
+  @override
+  State<ParentChatsPage> createState() => _ParentChatsPageState();
+}
+
+class _ParentChatsPageState extends State<ParentChatsPage> {
+  int _round = 0;
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.child;
+    final office = _t(context, 'إدارة الروضة', 'Kitaleitung', 'Management');
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: _waHead,
+        foregroundColor: Colors.white,
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_t(context, 'الدردشة', 'Chats', 'Chats'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+          Text(c.name, style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+        ]),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820),
+          child: _load(context, '/api/platform/parent/children/${c.id}/contacts', key: ValueKey(_round), (context, data, reload) {
+            final rows = _l(data).where((r) {
+              final q = _search.trim().toLowerCase();
+              if (q.isEmpty) return true;
+              final name = _s(r['role']) == 'office' ? office : _s(r['name']);
+              return name.toLowerCase().contains(q) || _s(_m(r['last'])['body']).toLowerCase().contains(q);
+            }).toList();
+            return RefreshIndicator(
+              onRefresh: reload,
+              child: ListView(children: [
+                _chatSearch(context, (v) => setState(() => _search = v)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: Text(_t(context, 'اكتب لمعلمة طفلك أو لإدارة الروضة. الإدارة تستطيع الاطلاع على كل المحادثات.', 'Schreib einer Lehrerin oder der Kitaleitung. Die Kitaleitung kann alle Gespräche sehen.', 'Write to a teacher or to the management. The management can see every chat.'),
+                      style: const TextStyle(color: _waGrey, fontSize: 12.5)),
+                ),
+                for (final r in rows) ...[
+                  _chatRow(
+                    context,
+                    title: _s(r['role']) == 'office' ? office : _s(r['name']),
+                    tag: _s(r['role']) == 'office' ? '' : _roleWord(context, 'teacher') + (r['gone'] == true ? ' · ${_t(context, 'لم تعد في الروضة', 'nicht mehr da', 'has left')}' : ''),
+                    icon: _s(r['role']) == 'office' ? Icons.apartment_rounded : null,
+                    last: r['last'] == null ? null : _m(r['last']),
+                    lastIsOurs: _m(r['last'])['from_parent'] == true,
+                    unread: (r['unread'] as num? ?? 0).toInt(),
+                    empty: _t(context, 'اضغط لبدء المحادثة', 'Tippen, um zu schreiben', 'Tap to start a chat'),
+                    onTap: () async {
+                      final isOffice = _s(r['role']) == 'office';
+                      final title = isOffice ? office : _s(r['name']);
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage.parent(
+                            child: c,
+                            to: _s(r['with']),
+                            title: title,
+                            subtitle: '${isOffice ? '' : '${_roleWord(context, 'teacher')} · '}${c.name}',
+                            icon: isOffice ? Icons.apartment_rounded : null,
+                            notice: isOffice
+                                ? _t(context, 'محادثتك مع إدارة الروضة حول ${c.name}.', 'Dein Gespräch mit der Kitaleitung über ${c.name}.', 'Your chat with the management about ${c.name}.')
+                                : _t(context, 'محادثتك مع $title حول ${c.name}. إدارة الروضة تستطيع الاطلاع عليها.', 'Dein Gespräch mit $title über ${c.name}. Die Kitaleitung kann es sehen.',
+                                    'Your chat with $title about ${c.name}. The management can see it.'),
+                          ),
+                        ),
+                      );
+                      if (mounted) setState(() => _round++);
+                    },
+                  ),
+                  const Divider(height: 1, indent: 76),
+                ],
+              ]),
+            );
+          }),
         ),
       ),
     );
@@ -1396,7 +1807,8 @@ class _StaffPlanPageState extends State<StaffPlanPage> {
   }
 }
 
-// ---- messages -------------------------------------------------------------------------------------------------------------------
+// ---- messages: the kindergarten's chats with the parents --------------------------------------------------------------------------
+/// A teacher sees her own chats; the management (and the admin) sees every chat: its own (the management's) and the teachers'.
 class StaffMessagesPage extends StatefulWidget {
   const StaffMessagesPage({super.key});
   @override
@@ -1405,6 +1817,34 @@ class StaffMessagesPage extends StatefulWidget {
 
 class _StaffMessagesPageState extends State<StaffMessagesPage> {
   int _round = 0;
+  String _search = '';
+  String _filter = 'all'; // all / unread / office / teachers
+
+  bool get _boss {
+    final area = SessionScope.of(context).area;
+    return area == Area.management || area == Area.admin;
+  }
+
+  String _notice(String withWhom, String child) {
+    if (!_boss) {
+      return _t(context, 'محادثتك مع أهل $child. إدارة الروضة تستطيع الاطلاع عليها.', 'Dein Gespräch mit den Eltern von $child. Die Kitaleitung kann es sehen.',
+          'Your chat with the parents of $child. The management can see it.');
+    }
+    return withWhom == 'office'
+        ? _t(context, 'محادثة إدارة الروضة مع أهل $child.', 'Gespräch der Kitaleitung mit den Eltern von $child.', 'The management\'s chat with the parents of $child.')
+        : _t(context, 'محادثة معلمة مع أهل $child. ما تكتبه هنا يظهر باسمك.', 'Gespräch einer Lehrerin mit den Eltern von $child. Was du hier schreibst, erscheint mit deinem Namen.',
+            'A teacher\'s chat with the parents of $child. What you write here shows your name.');
+  }
+
+  Future<void> _open(String childId, String parentId, String to, String child, String parent, String subtitle) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage.staff(childId: childId, parentId: parentId, to: to, title: '$parent · $child', subtitle: subtitle, notice: _notice(to.isEmpty ? 'me' : to, child)),
+      ),
+    );
+    if (mounted) setState(() => _round++);
+  }
 
   Future<void> _new() async {
     final api = SessionScope.of(context).api;
@@ -1415,45 +1855,140 @@ class _StaffMessagesPageState extends State<StaffMessagesPage> {
       toast(context, _t(context, 'لا يوجد أولياء أمور لهم حساب بعد.', 'Noch keine Eltern mit Konto.', 'No parents with an account yet.'));
       return;
     }
-    final picked = await showDialog<(Map<String, dynamic>, Map<String, dynamic>)>(
+    final picked = await showModalBottomSheet<(Map<String, dynamic>, Map<String, dynamic>)>(
       context: context,
-      builder: (_) => SimpleDialog(
-        title: Text(_t(context, 'رسالة إلى ولي أمر', 'Nachricht an Eltern', 'Message to a parent')),
-        children: [
-          for (final (c, p) in pairs)
-            SimpleDialogOption(onPressed: () => Navigator.pop(context, (c, p)), child: Text('${c['name']} · ${p['username']}')),
-        ],
-      ),
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => _ParentPicker(pairs: pairs),
     );
     if (picked == null || !mounted) return;
     final (c, p) = picked;
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage.staff(childId: _s(c['id']), parentId: _s(p['id']), title: '${c['name']} · ${p['username']}')));
-    if (mounted) setState(() => _round++);
+    final to = _boss ? 'office' : '';
+    await _open(_s(c['id']), _s(p['id']), to, _s(c['name']), _s(p['username']),
+        _boss ? _t(context, 'باسم إدارة الروضة', 'als Kitaleitung', 'as the management') : _s(c['class_name']));
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        floatingActionButton: FloatingActionButton.extended(heroTag: 'msg', onPressed: _new, icon: const Icon(Icons.edit_rounded), label: Text(_t(context, 'رسالة جديدة', 'Neue Nachricht', 'New message'))),
-        body: _load(context, '/api/platform/staff/conversations', key: ValueKey(_round), (context, data, reload) {
-          final rows = _l(data);
-          if (rows.isEmpty) return _empty(context, Icons.chat_bubble_outline_rounded, _t(context, 'لا توجد محادثات بعد.', 'Noch keine Gespräche.', 'No conversations yet.'));
-          return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 90), children: [
-            for (final r in rows)
-              Card(
-                child: ListTile(
-                  leading: AvatarInitials(_s(r['child'])),
-                  title: Text('${_s(r['child'])} · ${_s(r['parent'])}', style: TextStyle(fontWeight: (r['unread'] as num? ?? 0) > 0 ? FontWeight.w800 : FontWeight.w600)),
-                  subtitle: Text(_s(_m(r['last'])['body']), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: (r['unread'] as num? ?? 0) > 0
-                      ? CircleAvatar(radius: 12, backgroundColor: const Color(0xFFE8A33D), child: Text(_s(r['unread']), style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w800)))
-                      : Text(_when(_m(r['last'])['created_at']).split(' ').first, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12, color: _muted)),
-                  onTap: () async {
-                    await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage.staff(childId: _s(r['child_id']), parentId: _s(r['parent_id']), title: '${_s(r['child'])} · ${_s(r['parent'])}')));
-                    await reload();
-                  },
+  Widget build(BuildContext context) {
+    final boss = _boss;
+    final filters = [
+      ('all', _t(context, 'الكل', 'Alle', 'All')),
+      ('unread', _t(context, 'غير مقروءة', 'Ungelesen', 'Unread')),
+      if (boss) ('office', _t(context, 'الإدارة', 'Kitaleitung', 'Management')),
+      if (boss) ('teachers', _t(context, 'المعلمات', 'Lehrerinnen', 'Teachers')),
+    ];
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'msg',
+        backgroundColor: _waGreen,
+        foregroundColor: Colors.white,
+        tooltip: _t(context, 'محادثة جديدة', 'Neuer Chat', 'New chat'),
+        onPressed: _new,
+        child: const Icon(Icons.add_comment_rounded),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820),
+          child: _load(context, '/api/platform/staff/conversations', key: ValueKey(_round), (context, data, reload) {
+            final all = _l(data);
+            final q = _search.trim().toLowerCase();
+            final rows = all.where((r) {
+              final unread = (r['unread'] as num? ?? 0) > 0;
+              final office = _s(r['with']) == 'office';
+              final ok = switch (_filter) { 'unread' => unread, 'office' => office, 'teachers' => !office, _ => true };
+              if (!ok) return false;
+              if (q.isEmpty) return true;
+              return [r['child'], r['parent'], r['staff'], _m(r['last'])['body']].any((v) => _s(v).toLowerCase().contains(q));
+            }).toList();
+            return RefreshIndicator(
+              onRefresh: reload,
+              child: ListView(padding: const EdgeInsets.only(bottom: 90), children: [
+                _chatSearch(context, (v) => setState(() => _search = v)),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                  child: Wrap(spacing: 8, runSpacing: 6, children: [
+                    for (final (key, label) in filters)
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: _filter == key,
+                        showCheckmark: false,
+                        selectedColor: const Color(0xFFD9FDD3),
+                        labelStyle: TextStyle(color: _filter == key ? const Color(0xFF008069) : _waGrey, fontWeight: FontWeight.w700),
+                        shape: const StadiumBorder(side: BorderSide(color: Color(0xFFE2E6EA))),
+                        onSelected: (_) => setState(() => _filter = key),
+                      ),
+                  ]),
                 ),
+                if (rows.isEmpty)
+                  StateView(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: all.isEmpty
+                        ? _t(context, 'لا توجد محادثات بعد. ابدأ محادثة بالزر الأخضر.', 'Noch keine Chats. Starte einen mit dem grünen Knopf.', 'No chats yet. Start one with the green button.')
+                        : _t(context, 'لا توجد نتائج.', 'Keine Treffer.', 'Nothing found.'),
+                  ),
+                for (final r in rows) ...[
+                  _chatRow(
+                    context,
+                    title: '${_s(r['parent'])} · ${_s(r['child'])}',
+                    tag: !boss
+                        ? ''
+                        : _s(r['with']) == 'office'
+                            ? _t(context, 'إدارة الروضة', 'Kitaleitung', 'Management')
+                            : '${_t(context, 'مع المعلمة', 'mit Lehrerin', 'with teacher')} ${_s(r['staff'])}',
+                    last: _m(r['last']),
+                    lastIsOurs: _m(r['last'])['from_parent'] != true,
+                    unread: (r['unread'] as num? ?? 0).toInt(),
+                    onTap: () => _open(
+                      _s(r['child_id']),
+                      _s(r['parent_id']),
+                      boss ? _s(r['with']) : '',
+                      _s(r['child']),
+                      _s(r['parent']),
+                      boss && _s(r['with']) != 'office' ? '${_t(context, 'مع المعلمة', 'mit Lehrerin', 'with teacher')} ${_s(r['staff'])}' : _roleWord(context, 'parent'),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 76),
+                ],
+              ]),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+/// Choosing the parent to write to (searchable): child and parent account.
+class _ParentPicker extends StatefulWidget {
+  const _ParentPicker({required this.pairs});
+  final List<(Map<String, dynamic>, Map<String, dynamic>)> pairs;
+  @override
+  State<_ParentPicker> createState() => _ParentPickerState();
+}
+
+class _ParentPickerState extends State<_ParentPicker> {
+  String _q = '';
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.trim().toLowerCase();
+    final shown = widget.pairs.where((pair) => q.isEmpty || _s(pair.$1['name']).toLowerCase().contains(q) || _s(pair.$2['username']).toLowerCase().contains(q)).toList();
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.75,
+      child: Column(children: [
+        Text(_t(context, 'محادثة جديدة', 'Neuer Chat', 'New chat'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        _chatSearch(context, (v) => setState(() => _q = v)),
+        Expanded(
+          child: ListView(children: [
+            for (final (c, p) in shown)
+              ListTile(
+                leading: _chatAvatar(_s(p['username']), size: 44),
+                title: Text(_s(p['username']), style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text('${_roleWord(context, 'parent')} · ${_s(c['name'])}${_s(c['class_name']).isEmpty ? '' : ' · ${_s(c['class_name'])}'}'),
+                onTap: () => Navigator.pop(context, (c, p)),
               ),
-          ]);
-        }),
-      );
+          ]),
+        ),
+      ]),
+    );
+  }
 }

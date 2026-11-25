@@ -157,6 +157,7 @@ class ManagementShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
+        ShellItem(id: 'messages', icon: Icons.chat_outlined, activeIcon: Icons.chat, label: s.code == 'ar' ? 'دردشة الأهالي' : (s.code == 'de' ? 'Chats mit Eltern' : 'Parent chats'), page: (_) => const StaffMessagesPage()),
         ShellItem(id: 'everyday', icon: Icons.wb_sunny_outlined, activeIcon: Icons.wb_sunny, label: s.code == 'ar' ? 'الحياة اليومية' : (s.code == 'de' ? 'Kita-Alltag' : 'Everyday'), page: (_) => const StaffEverydayHub()),
         ShellItem(id: 'profile', icon: Icons.person_outline, activeIcon: Icons.person, label: s.get('profile'), page: (_) => const ProfilePage()),
       ],
@@ -181,6 +182,7 @@ class AdminShell extends StatelessWidget {
         ShellItem(id: 'money', icon: Icons.account_balance_wallet_outlined, activeIcon: Icons.account_balance_wallet, label: s.get('mnAccounting'), page: (_) => const MoneyHub()),
       ],
       more: [
+        ShellItem(id: 'messages', icon: Icons.chat_outlined, activeIcon: Icons.chat, label: t('دردشة الأهالي', 'Chats mit Eltern', 'Parent chats'), page: (_) => const StaffMessagesPage()),
         ShellItem(id: 'everyday', icon: Icons.wb_sunny_outlined, activeIcon: Icons.wb_sunny, label: t('الحياة اليومية', 'Kita-Alltag', 'Everyday'), page: (_) => const StaffEverydayHub()),
         ShellItem(id: 'people', icon: Icons.badge_outlined, activeIcon: Icons.badge, label: t('الأطفال والموظفون', 'Kinderakten und Personal', 'Children records and staff'), page: (_) => const AdminPeoplePage()),
         ShellItem(id: 'notices', icon: Icons.campaign_outlined, activeIcon: Icons.campaign, label: t('الإعلانات', 'Ankündigungen', 'Notices'), page: (_) => const AdminNoticesPage()),

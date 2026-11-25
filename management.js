@@ -20,6 +20,13 @@
       emailLabel: "البريد الإلكتروني (اختياري)",
       loginAccount: "حساب بوابة الأهل",
       noLogin: "بلا حساب دخول",
+      fmLinked: "مرتبط بالحساب {0}: يرى الطفل في البوابة والتطبيق.", fmWillLink: "سيُربط بالحساب {0} عند الحفظ.",
+      fmMatch: "حساب مناسب: {0} ({1})", fmLink: "ربط", fmSameEmail: "نفس البريد", fmSamePhone: "نفس رقم الهاتف", fmSameName: "نفس الاسم",
+      fmNoAccount: "لا يوجد حساب بعد. أرسل دعوة: ينشئ وليّ الأمر حسابه ويُربط بالطفل تلقائياً.", fmInvite: "دعوة",
+      fmSaveFirst: "بعد حفظ الطفل يمكنك إرسال دعوة لإنشاء حساب.", fmInviteReady: "الدعوة جاهزة. أرسل هذه الرسالة لوليّ الأمر (واتساب أو رسالة):",
+      fmCopy: "نسخ الرسالة", fmCopied: "نُسخت الرسالة. الصقها في واتساب.",
+      fmInviteText: "مرحباً {0}،\nأنشئ حسابك في روضة زهرة المدائن لمتابعة {1} (التقارير، الحضور، الدردشة مع المعلمات):\n{2}\nرمز التسجيل: {3} (صالح 7 أيام)",
+      fmOther: "الحساب {0} مرتبط بالطفل لكنه غير مسجّل عند الأب أو الأم.", fmToFather: "للأب / وليّ الأمر", fmToMother: "للأم", fmNoAccountShort: "بلا حساب",
       saveChild: "＋ حفظ الطفل",
       childSaved: "تم حفظ الطفل وولي أمره.",
       kidsList: "الأطفال المسجَّلون",
@@ -88,6 +95,13 @@
       emailLabel: "E-mail (optional)",
       loginAccount: "Parents' portal account",
       noLogin: "No sign-in account",
+      fmLinked: "Linked with {0}: sees the child in the portal and the app.", fmWillLink: "Linked with {0} when you save.",
+      fmMatch: "Matching account: {0} ({1})", fmLink: "Link", fmSameEmail: "same e-mail", fmSamePhone: "same phone number", fmSameName: "same name",
+      fmNoAccount: "No account yet. Send an invitation: the parent creates an account and is linked to the child at once.", fmInvite: "Invite",
+      fmSaveFirst: "After saving the child you can send an invitation to create an account.", fmInviteReady: "The invitation is ready. Send this message to the parent (WhatsApp or SMS):",
+      fmCopy: "Copy the message", fmCopied: "Copied. Paste it into WhatsApp.",
+      fmInviteText: "Hello {0},\ncreate your account at Zahrat Al-Madain kindergarten to follow {1} (reports, attendance, chat with the teachers):\n{2}\nCode: {3} (valid for 7 days)",
+      fmOther: "The account {0} is linked to the child but stands at no parent.", fmToFather: "To the father / guardian", fmToMother: "To the mother", fmNoAccountShort: "no account",
       saveChild: "＋ Save child",
       childSaved: "The child and the guardian are saved.",
       kidsList: "Saved children",
@@ -182,7 +196,7 @@
         ["home", "navHome"], ["kids", "navKids"], ["employees", "navEmployees"], ["children", "navAssign"], ["groups", "navGroups"], ["requests", "navRequests"],
         ["review", "navReview"], ["notices", "navNotices"], ["everyday", "navEveryday"], ["notifications", "navNotifications"], ["profile", "navProfile"]]);
       var panes = views.panes;
-      if (window.ZMEveryday) window.ZMEveryday(api).staffPane(panes.everyday);
+      if (window.ZMEveryday) window.ZMEveryday(api).staffPane(panes.everyday, {boss: true});
       var shared = {names: {}, groups: []};
 
       // ---- home: numbers and notices
@@ -335,8 +349,40 @@
       var FIRST = function(){ return [["father", m("father")], ["guardian", m("otherGuardian")]]; };
       function kidsNote(text, kind){ kidsMsg.className = "p-alert " + (kind || "success"); kidsMsg.textContent = text; }
 
+      function fillIn(text){ var args = arguments; return text.replace(/\{(\d)\}/g, function(_, i){ return args[Number(i) + 1]; }); }
+      function accountLabel(a){ return [a.username, a.name, (a.children || []).join("، ")].filter(function(v){ return v; }).join(" · "); }
+      function digits(v){ return String(v || "").replace(/\D/g, ""); }
+      function samePhone(a, b){ var x = digits(a), y = digits(b); return x.length >= 7 && y.length >= 7 && x.slice(-9) === y.slice(-9); }
+      /* a parent account that fits what is typed (same e-mail, phone or name), not used by the other parent */
+      function matchAccount(name, phone, email, otherId){
+        var e = email.trim().toLowerCase(), n = name.trim().toLowerCase();
+        for(var i = 0; i < parentAccounts.length; i++){
+          var a = parentAccounts[i];
+          if(a.id === otherId) continue;
+          if(e && String(a.email || "").toLowerCase() === e) return [a, m("fmSameEmail")];
+          if(samePhone(phone, a.phone)) return [a, m("fmSamePhone")];
+          if(n.length > 2 && String(a.name || "").toLowerCase() === n) return [a, m("fmSameName")];
+        }
+        return null;
+      }
+      function inviteBox(box, child, relation, who){
+        request(ACCOUNTING + "/children/" + encodeURIComponent(child.id) + "/invite", {method: "POST", body: JSON.stringify({relation: relation})}).then(function(made){
+          var panel = el("div", "p-alert success");
+          panel.appendChild(el("p", "", m("fmInviteReady")));
+          var text = fillIn(m("fmInviteText"), who || "", child.name, made.link, made.code);
+          var code = el("p", "", made.code); code.dir = "ltr"; code.style.cssText = "font-size:1.6rem;font-weight:900;letter-spacing:.2em;text-align:center;margin:8px 0";
+          var area = el("textarea"); area.value = text; area.rows = 5; area.readOnly = true; area.style.width = "100%";
+          panel.appendChild(code); panel.appendChild(area);
+          panel.appendChild(api.button(m("fmCopy"), "sun", function(){
+            (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(function(){ area.select(); document.execCommand("copy"); })
+              .then(function(){ kidsNote(m("fmCopied"), "success"); });
+          }));
+          box.appendChild(panel);
+        }).catch(function(error){ note(box, api.errorMessage(error), "error"); });
+      }
+
       /* father / other guardian, or mother: stays empty when the child has only one parent */
-      function guardianBlock(title, relations, saved){
+      function guardianBlock(title, relations, saved, child, other){
         saved = saved || {};
         var relation = null;
         if(relations.length > 1){
@@ -349,15 +395,43 @@
         var email = textInput(saved.email, 254); email.type = "email"; email.dir = "ltr";
         var account = el("select");
         account.appendChild(new Option("— " + m("noLogin") + " —", ""));
-        parentAccounts.forEach(function(a){ account.appendChild(new Option(a.username, a.id)); });
+        parentAccounts.forEach(function(a){ account.appendChild(new Option(accountLabel(a), a.id)); });
         account.value = saved.account_id || "";
         var box = el("fieldset", "p-fieldset");
         box.appendChild(el("legend", "", title));
         if(relation) box.appendChild(field(m("relationLabel"), relation));
         box.appendChild(field(m("fullName"), name)); box.appendChild(field(m("phoneLabel"), phone));
         box.appendChild(field(m("emailLabel"), email)); box.appendChild(field(m("loginAccount"), account));
+        /* under the account field: linked, a matching account to link with one click, or an invitation */
+        var state = el("div"); box.appendChild(state);
+        function drawState(){
+          state.innerHTML = "";
+          if(account.value){
+            var a = parentAccounts.filter(function(p){ return p.id === account.value; })[0] || {username: ""};
+            state.appendChild(el("p", "p-alert success", fillIn(m(account.value === saved.account_id ? "fmLinked" : "fmWillLink"), a.username)));
+            return;
+          }
+          var found = matchAccount(name.value, phone.value, email.value, other ? other() : "");
+          if(found){
+            var row = el("div", "p-alert info"); row.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap";
+            row.appendChild(el("span", "", fillIn(m("fmMatch"), found[0].username, found[1])));
+            row.appendChild(api.button(m("fmLink"), "sun", function(){ account.value = found[0].id; drawState(); }));
+            state.appendChild(row);
+            return;
+          }
+          if(!child){ state.appendChild(el("p", "p-muted", m("fmSaveFirst"))); return; }
+          var invite = el("div", "p-alert"); invite.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fdf1dd;color:#8a5200";
+          invite.appendChild(el("span", "", m("fmNoAccount")));
+          invite.appendChild(api.button(m("fmInvite"), "outline", function(){ inviteBox(state, child, relation ? relation.value : relations[0][0], name.value.trim()); }));
+          state.appendChild(invite);
+        }
+        [name, phone, email].forEach(function(input){ input.addEventListener("input", drawState); });
+        account.addEventListener("change", drawState);
+        drawState();
         return {
           node: box,
+          account: function(){ return account.value; },
+          setAccount: function(id){ account.value = id; drawState(); },
           get: function(){
             if(!(name.value.trim() || phone.value.trim() || email.value.trim() || account.value)) return null;
             if(!name.value.trim()) throw new Error(m("nameFor") + title);
@@ -410,13 +484,29 @@
           head.appendChild(el("h3", "", child.name));
           head.appendChild(el("span", "p-badge" + (child.guardians.length === 2 ? " p-status-active" : ""), child.guardians.length === 2 ? m("both") : m("oneGuardian")));
           card.appendChild(head);
+          var links = el("div", "p-row");
+          child.guardians.forEach(function(g){
+            links.appendChild(el("span", "p-badge" + (g.account_id ? " p-status-active" : ""), (g.account_id ? "🔗 " : "⛓️‍💥 ") + g.name + ": " + (g.account_username || m("fmNoAccountShort"))));
+          });
+          card.appendChild(links);
           var nameInput = textInput(child.name, 120), clsInput = textInput(child.class_name, 60), birthInput = el("input");
           clsInput.setAttribute("list", "zm-groups");
           birthInput.type = "date"; birthInput.value = child.birth_date || ""; birthInput.max = new Date().toISOString().slice(0, 10);
           var firstSaved = child.guardians.filter(function(g){ return g.relation !== "mother"; })[0];
           var motherSaved = child.guardians.filter(function(g){ return g.relation === "mother"; })[0];
-          var first = guardianBlock(m("father"), FIRST(), firstSaved), mother = guardianBlock(m("mother"), [["mother", m("mother")]], motherSaved);
-          [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput), first.node, mother.node].forEach(function(node){ card.appendChild(node); });
+          var first = null, mother = null;
+          first = guardianBlock(m("father"), FIRST(), firstSaved, child, function(){ return mother ? mother.account() : ""; });
+          mother = guardianBlock(m("mother"), [["mother", m("mother")]], motherSaved, child, function(){ return first.account(); });
+          [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput)].forEach(function(node){ card.appendChild(node); });
+          /* an account that sees the child but stands at no father / mother: one click puts it there */
+          (child.other_accounts || []).forEach(function(a){
+            var box = el("div", "p-alert info");
+            box.appendChild(el("p", "", fillIn(m("fmOther"), a.username)));
+            box.appendChild(api.button(m("fmToFather"), "outline", function(){ first.setAccount(a.id); box.remove(); }));
+            box.appendChild(api.button(m("fmToMother"), "outline", function(){ mother.setAccount(a.id); box.remove(); }));
+            card.appendChild(box);
+          });
+          card.appendChild(first.node); card.appendChild(mother.node);
           var row = el("div", "p-row");
           row.appendChild(api.button(m("save"), "sun", function(){
             var body;

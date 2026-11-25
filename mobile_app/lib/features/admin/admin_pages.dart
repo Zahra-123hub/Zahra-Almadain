@@ -1930,11 +1930,24 @@ class _KidsTabState extends State<_KidsTab> {
               child: ListTile(
                 leading: AvatarInitials(_str(k['name'])),
                 title: Text(_str(k['name']), style: const TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text([
-                  if (_str(k['class_name']).isNotEmpty) _str(k['class_name']),
-                  if (_str(k['birth_date']).isNotEmpty) _str(k['birth_date']),
-                  for (final g in _l(k['guardians'])) _str(g['name']),
-                ].join(' · ')),
+                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text([
+                    if (_str(k['class_name']).isNotEmpty) _str(k['class_name']),
+                    if (_str(k['birth_date']).isNotEmpty) _str(k['birth_date']),
+                    for (final g in _l(k['guardians'])) _str(g['name']),
+                  ].join(' · ')),
+                  const SizedBox(height: 4),
+                  Wrap(spacing: 6, runSpacing: 4, children: [
+                    for (final g in _l(k['guardians']))
+                      Pill(
+                        '${_str(g['name'])}: ${_str(g['account_username']).isEmpty ? _t(context, 'بلا حساب', 'ohne Konto', 'no account') : _str(g['account_username'])}',
+                        icon: _str(g['account_id']).isEmpty ? Icons.link_off_rounded : Icons.link_rounded,
+                        foreground: _str(g['account_id']).isEmpty ? const Color(0xFF8A5200) : _good,
+                        background: _str(g['account_id']).isEmpty ? const Color(0xFFFDF1DD) : const Color(0xFFE6F4EC),
+                      ),
+                  ]),
+                ]),
+                isThreeLine: true,
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => _open(k, parents),
               ),
@@ -2007,21 +2020,152 @@ class _KidEditorState extends State<_KidEditor> {
               items: [for (final r in g.relations) DropdownMenuItem(value: r, child: Text(_relName(r)))],
               onChanged: (v) => setState(() => g.relation = v ?? g.relation),
             ),
-          TextField(controller: g.name, maxLength: 120, decoration: InputDecoration(labelText: _t(context, 'الاسم الكامل', 'Vollständiger Name', 'Full name'))),
-          TextField(controller: g.phone, maxLength: 40, textDirection: TextDirection.ltr, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: _t(context, 'الهاتف', 'Telefon', 'Phone'))),
-          TextField(controller: g.email, maxLength: 254, textDirection: TextDirection.ltr, keyboardType: TextInputType.emailAddress, decoration: InputDecoration(labelText: _t(context, 'البريد', 'E-Mail', 'Email'))),
+          TextField(controller: g.name, maxLength: 120, onChanged: (_) => setState(() {}), decoration: InputDecoration(labelText: _t(context, 'الاسم الكامل', 'Vollständiger Name', 'Full name'))),
+          TextField(controller: g.phone, maxLength: 40, onChanged: (_) => setState(() {}), textDirection: TextDirection.ltr, keyboardType: TextInputType.phone, decoration: InputDecoration(labelText: _t(context, 'الهاتف', 'Telefon', 'Phone'))),
+          TextField(controller: g.email, maxLength: 254, onChanged: (_) => setState(() {}), textDirection: TextDirection.ltr, keyboardType: TextInputType.emailAddress, decoration: InputDecoration(labelText: _t(context, 'البريد', 'E-Mail', 'Email'))),
           DropdownButtonFormField<String?>(
+            key: ValueKey('${g.relation}-${g.account}'),
             initialValue: g.account,
             isExpanded: true,
             decoration: InputDecoration(labelText: _t(context, 'حساب الدخول', 'Anmeldekonto', 'Sign-in account')),
             items: [
               DropdownMenuItem<String?>(value: null, child: Text(_t(context, '— بلا حساب —', '— ohne Konto —', '— no account —'))),
-              for (final a in widget.parents) DropdownMenuItem<String?>(value: _str(a['id']), child: Text(_str(a['username']))),
+              for (final a in widget.parents) DropdownMenuItem<String?>(value: _str(a['id']), child: Text(_accountLabel(a), overflow: TextOverflow.ellipsis)),
             ],
             onChanged: (v) => setState(() => g.account = v),
           ),
+          _linkState(g),
         ]),
       );
+
+  /// "mona · Mona Parent · Sam": the user name with what is known about the person.
+  String _accountLabel(Map<String, dynamic> a) => [
+        _str(a['username']),
+        if (_str(a['name']).isNotEmpty) _str(a['name']),
+        if (a['children'] is List && (a['children'] as List).isNotEmpty) (a['children'] as List).join('، '),
+      ].join(' · ');
+
+  /// A parent account that fits the father / mother entered here (same phone, e-mail or name) and is not used by the other one.
+  (Map<String, dynamic>, String)? _match(_GuardianFields g) {
+    final other = identical(g, _first) ? _mother.account : _first.account;
+    String digits(String v) => v.replaceAll(RegExp(r'\D'), '');
+    bool samePhone(String a, String b) {
+      final da = digits(a), db = digits(b);
+      return da.length >= 7 && db.length >= 7 && da.substring(da.length - (da.length < 9 ? da.length : 9)) == db.substring(db.length - (db.length < 9 ? db.length : 9));
+    }
+
+    for (final a in widget.parents) {
+      if (_str(a['id']) == other) continue;
+      final email = g.email.text.trim().toLowerCase();
+      if (email.isNotEmpty && _str(a['email']).toLowerCase() == email) return (a, _t(context, 'نفس البريد', 'gleiche E-Mail', 'same e-mail'));
+      if (samePhone(g.phone.text, _str(a['phone']))) return (a, _t(context, 'نفس رقم الهاتف', 'gleiche Telefonnummer', 'same phone number'));
+      final name = g.name.text.trim().toLowerCase();
+      if (name.length > 2 && _str(a['name']).toLowerCase() == name) return (a, _t(context, 'نفس الاسم', 'gleicher Name', 'same name'));
+    }
+    return null;
+  }
+
+  Widget _note(IconData icon, Color color, Color background, String text, {Widget? action}) => Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(14)),
+        child: Row(children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w600))),
+          ?action,
+        ]),
+      );
+
+  /// Under the account field: linked (the parent sees the child), a matching account to link with one tap, or an invitation.
+  Widget _linkState(_GuardianFields g) {
+    if (g.account != null) {
+      final a = widget.parents.where((p) => _str(p['id']) == g.account).firstOrNull;
+      final saved = _str(_l(widget.child?['guardians']).where((x) => _str(x['id']) == g.id).firstOrNull?['account_id']) == g.account;
+      return _note(
+        Icons.verified_rounded,
+        _good,
+        const Color(0xFFE6F4EC),
+        saved
+            ? _t(context, 'مرتبط بالحساب ${_str(a?['username'])}: يرى الطفل في التطبيق والبوابة.', 'Mit ${_str(a?['username'])} verbunden: sieht das Kind in App und Portal.', 'Linked with ${_str(a?['username'])}: sees the child in the app and the portal.')
+            : _t(context, 'سيُربط بالحساب ${_str(a?['username'])} عند الحفظ.', 'Wird beim Speichern mit ${_str(a?['username'])} verbunden.', 'Linked with ${_str(a?['username'])} when you save.'),
+      );
+    }
+    final match = _match(g);
+    if (match != null) {
+      final (a, why) = match;
+      return _note(
+        Icons.person_search_rounded,
+        const Color(0xFF16406F),
+        const Color(0xFFEAF1F8),
+        _t(context, 'حساب مناسب: ${_str(a['username'])} ($why)', 'Passendes Konto: ${_str(a['username'])} ($why)', 'Matching account: ${_str(a['username'])} ($why)'),
+        action: FilledButton(onPressed: () => setState(() => g.account = _str(a['id'])), child: Text(_t(context, 'ربط', 'Verbinden', 'Link'))),
+      );
+    }
+    final child = widget.child;
+    if (child == null) {
+      return _note(Icons.info_outline_rounded, _muted, const Color(0xFFF1F3F6),
+          _t(context, 'بعد حفظ الطفل يمكنك إرسال دعوة لإنشاء حساب.', 'Nach dem Speichern kannst du eine Einladung für ein Konto senden.', 'After saving you can send an invitation to create an account.'));
+    }
+    return _note(
+      Icons.mark_email_unread_outlined,
+      const Color(0xFF8A5200),
+      const Color(0xFFFDF1DD),
+      _t(context, 'لا يوجد حساب بعد. أرسل دعوة: ينشئ وليّ الأمر حسابه ويُربط بالطفل تلقائياً.', 'Noch kein Konto. Einladung senden: Der Elternteil legt sein Konto an und ist sofort mit dem Kind verbunden.',
+          'No account yet. Send an invitation: the parent creates an account and is linked to the child at once.'),
+      action: FilledButton.tonal(onPressed: () => _invite(g), child: Text(_t(context, 'دعوة', 'Einladen', 'Invite'))),
+    );
+  }
+
+  Future<void> _invite(_GuardianFields g) async {
+    final child = widget.child;
+    if (child == null) return;
+    final api = SessionScope.of(context).api;
+    Map<String, dynamic>? made;
+    final ok = await _run(context, () async => made = _m(await api.post('/api/admin/people/children/${child['id']}/invite', {'relation': g.relation})));
+    if (!ok || made == null || !mounted) return;
+    final code = _str(made!['code']), link = _str(made!['link']);
+    final who = g.name.text.trim();
+    final kid = _str(child['name']);
+    final message = _t(
+      context,
+      'مرحباً${who.isEmpty ? '' : ' $who'}،\nأنشئ حسابك في روضة زهرة المدائن لمتابعة $kid (التقارير، الحضور، الدردشة مع المعلمات):\n$link\nرمز التسجيل: $code (صالح 7 أيام)',
+      'Hallo${who.isEmpty ? '' : ' $who'},\nlege dein Konto bei der Kita Zahrat Al-Madain an, um $kid zu begleiten (Berichte, Anwesenheit, Chat mit den Lehrerinnen):\n$link\nCode: $code (7 Tage gültig)',
+      'Hello${who.isEmpty ? '' : ' $who'},\ncreate your account at Zahrat Al-Madain kindergarten to follow $kid (reports, attendance, chat with the teachers):\n$link\nCode: $code (valid for 7 days)',
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        icon: const Icon(Icons.mark_email_read_rounded, color: _good, size: 36),
+        title: Text(_t(context, 'الدعوة جاهزة', 'Einladung bereit', 'Invitation ready')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(_t(context, 'أرسل هذه الرسالة لوليّ الأمر (واتساب أو رسالة). عند إنشاء الحساب يُربط بالطفل وبهذه الخانة تلقائياً.',
+              'Schick diese Nachricht dem Elternteil (WhatsApp oder SMS). Beim Anlegen des Kontos wird es automatisch mit dem Kind und diesem Eintrag verbunden.',
+              'Send this message to the parent (WhatsApp or SMS). The new account is linked to the child and to this entry automatically.')),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(color: const Color(0xFFF1F3F6), borderRadius: BorderRadius.circular(12)),
+            child: SelectableText(code, textAlign: TextAlign.center, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 3)),
+          ),
+          const SizedBox(height: 8),
+          SelectableText(link, textAlign: TextAlign.center, textDirection: TextDirection.ltr, style: const TextStyle(color: _muted, fontSize: 12.5)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog), child: Text(_t(context, 'إغلاق', 'Schließen', 'Close'))),
+          FilledButton.icon(
+            icon: const Icon(Icons.copy_rounded),
+            label: Text(_t(context, 'نسخ الرسالة', 'Nachricht kopieren', 'Copy the message')),
+            onPressed: () async {
+              final copied = _t(context, 'نُسخت الرسالة. الصقها في واتساب.', 'Kopiert. In WhatsApp einfügen.', 'Copied. Paste it into WhatsApp.');
+              await Clipboard.setData(ClipboardData(text: message));
+              if (dialog.mounted) toast(dialog, copied);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _save() async {
     final guardians = [_first, _mother].where((g) => g.used).toList();
@@ -2096,6 +2240,25 @@ class _KidEditorState extends State<_KidEditor> {
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(_t(context, 'أدخل أحد الوالدين أو كليهما. يبقى الحقل فارغاً إن كان للطفل وليّ أمر واحد.', 'Einen oder beide Elternteile eintragen. Leer lassen, wenn es nur einen gibt.', 'Enter one or both parents. Leave empty if there is only one.'), style: const TextStyle(color: _muted)),
             ),
+            for (final a in _l(widget.child?['other_accounts']))
+              if (_first.account != _str(a['id']) && _mother.account != _str(a['id']))
+                Card(
+                  color: const Color(0xFFEAF1F8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(
+                          _t(context, 'الحساب ${_str(a['username'])} مرتبط بالطفل لكنه غير مسجّل عند الأب أو الأم.', 'Das Konto ${_str(a['username'])} ist mit dem Kind verbunden, steht aber bei keinem Elternteil.',
+                              'The account ${_str(a['username'])} is linked to the child but stands at no parent.'),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 8, children: [
+                        OutlinedButton(onPressed: () => setState(() => _first.account = _str(a['id'])), child: Text(_t(context, 'للأب / وليّ الأمر', 'Zum Vater', 'To the father'))),
+                        OutlinedButton(onPressed: () => setState(() => _mother.account = _str(a['id'])), child: Text(_t(context, 'للأم', 'Zur Mutter', 'To the mother'))),
+                      ]),
+                    ]),
+                  ),
+                ),
             _block(_t(context, 'الأب / وليّ الأمر', 'Vater / Bezugsperson', 'Father / guardian'), _first),
             _block(_t(context, 'الأم', 'Mutter', 'Mother'), _mother),
           ]),
