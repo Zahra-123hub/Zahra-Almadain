@@ -76,13 +76,10 @@
     ".ev-day{border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:10px;background:var(--surface)}",
     ".ev-day.today{background:#eaf1f8}.ev-day h3{margin:0 0 6px}.ev-slot{display:flex;gap:10px;align-items:flex-start;margin:6px 0}",
     ".ev-num{background:#5c8fe0;color:#fff;border-radius:9px;min-width:26px;height:26px;display:grid;place-items:center;font-weight:800}",
-    ".ev-chat{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto;padding:8px}",
-    ".ev-msg{max-width:78%;border:1px solid #d3deeb;border-radius:16px;padding:8px 12px;background:#fff}.ev-msg.mine{align-self:flex-start;background:#dce8f7}",
-    ".ev-msg:not(.mine){align-self:flex-end}.ev-msg b{font-size:.8rem;color:#16406f}.ev-msg small{display:block;opacity:.7;font-size:.75rem;direction:ltr}",
     ".ev-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.ev-chip{border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:#fff;cursor:pointer;font:inherit}",
     ".ev-chip[aria-pressed=true]{background:var(--navy);color:#fff;border-color:var(--navy)}",
     ".ev-subnav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}",
-    ".ev-wa{border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#efe7de;display:flex;flex-direction:column;height:min(74vh,760px);margin-top:10px}",
+    ".ev-wa{border-radius:16px;overflow:hidden;border:1px solid var(--line);background:#efeae2 radial-gradient(#00000009 1.2px,transparent 1.3px) 0 0/22px 22px;display:flex;flex-direction:column;height:min(74vh,760px);margin-top:10px;color:#111b21;box-shadow:0 8px 24px #0000001f}",
     ".ev-wa-head{background:#008069;color:#fff;display:flex;align-items:center;gap:10px;padding:10px 14px}.ev-wa-head b{display:block;font-size:1.05rem}.ev-wa-head small{opacity:.8}",
     ".ev-wa-body{flex:1;overflow:auto;padding:10px 14px;display:flex;flex-direction:column;gap:2px}",
     ".ev-wa-note{align-self:center;background:#ffeecd;color:#54656f;border-radius:8px;padding:6px 12px;font-size:.8rem;margin:6px 0;text-align:center;max-width:90%}",
@@ -93,14 +90,17 @@
     ".ev-wa-name{display:block;font-size:.8rem;font-weight:800;margin-bottom:2px}.ev-wa-body-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}",
     ".ev-wa-meta{display:block;text-align:end;font-size:.72rem;color:#667781;margin-top:2px}",
     ".ev-wa-tick{color:#667781;letter-spacing:-3px;font-weight:700}.ev-wa-tick.read{color:#53bdeb}",
-    ".ev-wa-input{display:flex;gap:8px;padding:8px;align-items:flex-end}",
-    ".ev-wa-input textarea{flex:1;border:0;border-radius:22px;padding:11px 16px;resize:none;font:inherit;max-height:130px;box-shadow:0 1px 2px #0001;outline:none}",
+    ".ev-wa-input{display:flex;gap:8px;padding:8px 10px;align-items:flex-end;background:#f0f2f5}",
+    ".ev-wa-input textarea{flex:1;min-height:46px;box-sizing:border-box;border:0;border-radius:22px;padding:11px 16px;resize:none;font:inherit;line-height:1.4;max-height:130px;outline:none;background:#fff;color:#111b21}",
+    ".ev-wa-input textarea::placeholder{color:#8696a0}",
     ".ev-wa-send{width:46px;height:46px;border-radius:50%;border:0;background:#00a884;color:#fff;font-size:1.15rem;cursor:pointer;flex:none}.ev-wa-send:disabled{background:#8fcfc0;cursor:default}",
-    ".ev-wa-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}",
-    ".ev-wa-row{display:flex;gap:12px;align-items:center;padding:10px 14px;border:0;border-bottom:1px solid #eef0f2;background:#fff;width:100%;text-align:start;cursor:pointer;font:inherit;color:inherit}",
+    ".ev-wa-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;color:#111b21}",
+    ".ev-wa-row{display:flex;gap:12px;align-items:center;padding:10px 14px;border:0;border-bottom:1px solid #eef0f2;background:#fff;width:100%;text-align:start;cursor:pointer;font:inherit;color:#111b21}",
     ".ev-wa-row:hover{background:#f5f6f6}.ev-wa-row.active{background:#f0f2f5}",
     ".ev-wa-av{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:1.2rem;flex:none}",
     ".ev-wa-head .ev-wa-av{width:40px;height:40px;font-size:1rem}",
+    ".ev-wa-back{background:none;border:0;color:inherit;font-size:1.4rem;line-height:1;cursor:pointer;padding:4px 6px;border-radius:50%}.ev-wa-back:hover{background:#ffffff1f}",
+    ".ev-wa-body-text{display:block;text-align:start}",
     ".ev-wa-main{flex:1;min-width:0;display:block}.ev-wa-top{display:flex;gap:8px;align-items:baseline}",
     ".ev-wa-top b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ev-wa-time{font-size:.75rem;color:#667781}.ev-wa-time.new{color:#00a884;font-weight:800}",
     ".ev-wa-tag{display:block;font-size:.78rem;color:#008069;font-weight:700}",
@@ -109,7 +109,20 @@
     ".ev-wa-search{width:100%;box-sizing:border-box;border-radius:22px;border:0;background:#f0f2f5;padding:9px 14px;margin:8px 0;font:inherit}",
     ".ev-wa-split{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:14px;align-items:start}.ev-wa-split>div:last-child .ev-wa{margin-top:0}",
     ".ev-wa-empty{border:1px dashed var(--line);border-radius:16px;padding:40px 16px;text-align:center;color:#667781;background:#f8f9fa}",
-    "@media (max-width:820px){.ev-wa-split{grid-template-columns:1fr}}"
+    "@media (max-width:820px){.ev-wa-split{grid-template-columns:1fr}}",
+    /* dark pages get WhatsApp's dark look instead of a bright box with pale text */
+    "@media (prefers-color-scheme:dark){",
+    ".ev-wa{background:#0b141a radial-gradient(#ffffff0a 1.2px,transparent 1.3px) 0 0/22px 22px;color:#e9edef;border-color:#222d34}",
+    ".ev-wa-head{background:#202c33;color:#e9edef}.ev-wa-head small{color:#8696a0;opacity:1}",
+    ".ev-wa-note{background:#182229;color:#ffd279}.ev-wa-day{background:#182229;color:#8696a0;box-shadow:none}",
+    ".ev-wa-msg{background:#202c33;color:#e9edef;box-shadow:none}.ev-wa-msg.ours{background:#005c4b}",
+    ".ev-wa-meta,.ev-wa-tick{color:#ffffff99}.ev-wa-tick.read{color:#53bdeb}",
+    ".ev-wa-input{background:#202c33}.ev-wa-input textarea{background:#2a3942;color:#e9edef}.ev-wa-send:disabled{background:#2f5f55;color:#ffffff80}",
+    ".ev-wa-list{background:#111b21;color:#e9edef;border-color:#222d34}",
+    ".ev-wa-row{background:#111b21;color:#e9edef;border-bottom-color:#222d34}.ev-wa-row:hover{background:#202c33}.ev-wa-row.active{background:#2a3942}",
+    ".ev-wa-time,.ev-wa-prev{color:#8696a0}.ev-wa-tag{color:#00a884}",
+    ".ev-wa-search{background:#202c33;color:#e9edef}.ev-wa-empty{background:#111b21;color:#8696a0;border-color:#222d34}",
+    "}"
   ].join("");
 
   window.ZMEveryday = function (api) {
@@ -196,7 +209,7 @@
       main.appendChild(top);
       if (o.tag) main.appendChild(el("span", "ev-wa-tag", o.tag));
       if (o.last && o.ours) prev.appendChild(tick(o.last));
-      prev.appendChild(el("span", "ev-wa-text", o.last ? o.last.body.replace(/\n/g, " ") : (o.empty || "")));
+      var preview = el("span", "ev-wa-text", o.last ? o.last.body.replace(/\n/g, " ") : (o.empty || "")); preview.dir = "auto"; prev.appendChild(preview);
       if (o.unread) prev.appendChild(el("span", "ev-wa-badge", String(o.unread)));
       main.appendChild(prev); b.appendChild(main);
       b.addEventListener("click", o.onClick);
@@ -205,6 +218,10 @@
     /* one conversation. o: {title, subtitle, glyph, notice, listPath, sendPath, sendBody(text), staffSide, onChange} */
     function chat(container, o) {
       var box = el("div", "ev-wa"), head = el("div", "ev-wa-head"), body = el("div", "ev-wa-body");
+      if (o.onBack) {
+        var back = el("button", "ev-wa-back", document.documentElement.dir === "rtl" ? "→" : "←");
+        back.type = "button"; back.title = x("allChats"); back.setAttribute("aria-label", x("allChats")); back.addEventListener("click", o.onBack); head.appendChild(back);
+      }
       head.appendChild(avatar(o.title, o.glyph));
       var names = el("div"); names.appendChild(el("b", "", o.title)); if (o.subtitle) names.appendChild(el("small", "", o.subtitle)); head.appendChild(names);
       var form = el("form", "ev-wa-input"), input = el("textarea"), send = el("button", "ev-wa-send", "➤");
@@ -232,7 +249,7 @@
             var n = el("span", "ev-wa-name", m.sender + (roleWord(m.sender_role) ? " · " + roleWord(m.sender_role) : ""));
             n.style.color = colorOf(m.sender); b.appendChild(n);
           }
-          b.appendChild(el("span", "ev-wa-body-text", m.body));
+          var text = el("span", "ev-wa-body-text", m.body); text.dir = "auto"; b.appendChild(text);
           var meta = el("span", "ev-wa-meta", clock(d));
           if (ours(m)) { meta.appendChild(document.createTextNode(" ")); meta.appendChild(tick(m)); }
           b.appendChild(meta);
@@ -292,14 +309,16 @@
       function openChat(r) {
         var office = r.role === "office";
         c.innerHTML = "";
-        c.appendChild(api.button("← " + x("allChats"), "outline", function () { parentChats(c, base, childName); }));
-        chat(c, {title: name(r), subtitle: (office ? "" : x("rTeacher") + " · ") + childName, glyph: office ? "🏫" : "",
+        chat(c, {onBack: function () { parentChats(c, base, childName); }, title: name(r), subtitle: (office ? "" : x("rTeacher") + " · ") + childName, glyph: office ? "🏫" : "",
           notice: office ? fill(x("noticeOffice"), childName) : fill(x("noticeTeacher"), name(r), childName),
           listPath: base + "/messages?to=" + encodeURIComponent(r.with), sendPath: base + "/messages",
           sendBody: function (text) { return {body: text, to: r.with}; }, staffSide: false});
       }
       search.addEventListener("input", drawList);
-      request(base + "/contacts").then(function (r) { rows = r; drawList(); }).catch(fail(list));
+      /* a server without the list of contacts yet: the conversation with the kindergarten, as before */
+      request(base + "/contacts")
+        .catch(function (error) { if (error.message === "Not Found") return [{with: "office", role: "office", name: "", last: null, unread: 0}]; throw error; })
+        .then(function (r) { rows = r; drawList(); }).catch(fail(list));
     }
 
     /* ======================================================================================== parents */
