@@ -66,7 +66,7 @@
     ".ev-avatar{width:64px;height:64px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:1.6rem;font-weight:800;color:#16406f;box-shadow:0 4px 14px #16406f22}",
     ".ev-hub-head h2{margin:0}.ev-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}",
     ".ev-pill{background:#eef2f6;border-radius:999px;padding:3px 10px;font-size:.85rem;font-weight:700}",
-    ".ev-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}",
+    ".ev-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:28px}",
     ".ev-tile{position:relative;border:0;border-radius:24px;color:#fff;padding:26px 12px;cursor:pointer;font:inherit;font-weight:800;font-size:1.05rem;display:flex;flex-direction:column;align-items:center;gap:10px;box-shadow:0 8px 18px #0002}",
     ".ev-tile .ev-ico{font-size:2.4rem;line-height:1}.ev-tile .ev-badge{position:absolute;top:10px;inset-inline-end:10px;background:#fff;color:#16406f;border-radius:999px;min-width:26px;padding:2px 7px;font-size:.85rem}",
     ".ev-card{border-radius:20px;color:#fff;padding:16px;margin-bottom:12px;box-shadow:0 6px 16px #0001}",
@@ -360,7 +360,6 @@
     /* Coloured tiles that open the views of a portal (the teachers' home). items: [key of the view, label, icon, colours]. */
     function viewTiles(container, items, show) {
       var grid = el("div", "ev-tiles");
-      grid.style.marginBottom = "18px";
       items.forEach(function (item) {
         var b = el("button", "ev-tile"); b.type = "button";
         b.style.background = "linear-gradient(135deg," + item[3] + ")";
