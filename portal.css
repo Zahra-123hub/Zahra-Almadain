@@ -341,3 +341,25 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-check{display:flex;align-items:center;gap:10px;min-height:42px;font-weight:700;cursor:pointer}
 .p-check input{width:20px;height:20px;accent-color:var(--navy)}
 @media (prefers-color-scheme: dark){.p-fieldset legend{color:#dce8ff}}
+/* buttons everywhere: the same height, text in the middle, and room between rows of buttons */
+.p-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:42px;line-height:1.25;text-align:center;vertical-align:middle;box-sizing:border-box}
+.p-card>.p-row,.p-card>.p-actions{margin-top:14px}
+.p-card>h2+.p-row,.p-card>h2+.p-actions,.p-card>.p-row:first-child,.p-card>.p-actions:first-child{margin-top:0}
+.p-card>.p-button{margin:0 0 12px}
+.p-card>.p-button+.p-button{margin-inline-start:8px}
+.p-row>.p-muted:first-child{margin-inline-end:4px}
+/* the account page: one line per setting */
+.p-settings{display:flex;flex-direction:column;margin-top:6px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg)}
+.p-setting{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;padding:14px 18px;min-height:64px;box-sizing:border-box}
+.p-setting+.p-setting{border-top:1px solid var(--line)}
+.p-setting-label{color:var(--muted);font-weight:700}
+.p-setting-value{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-inline-start:auto;min-width:0}
+.p-setting-tags{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.p-setting .p-button{margin:0}
+.p-seg{display:inline-flex;padding:4px;gap:2px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.p-seg button{min-width:96px;min-height:36px;padding:0 16px;border:0;border-radius:999px;background:transparent;color:var(--ink);font:inherit;font-weight:700;cursor:pointer;transition:background .15s,color .15s}
+.p-seg button:hover{background:#17408f14}
+.p-seg button[aria-pressed=true],.p-seg button[aria-pressed=true]:hover{background:var(--sun);color:#1b2a55;box-shadow:0 2px 8px #fdb91355}
+.p-seg button[lang=en]{font-family:system-ui,"Segoe UI",sans-serif}
+@media (prefers-color-scheme: dark){.p-seg button:hover{background:#ffffff14}}
+@media (max-width:560px){.p-setting{flex-direction:column;align-items:stretch}.p-setting-value,.p-setting-tags{justify-content:flex-start;margin-inline-start:0}.p-setting .p-button,.p-seg{width:100%}.p-seg button{flex:1;min-width:0}}

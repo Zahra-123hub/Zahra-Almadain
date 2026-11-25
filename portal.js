@@ -589,23 +589,29 @@
   function renderProfile(pane) {
     var card = element("section", "p-card");
     card.appendChild(element("h2", "", t("profileTitle")));
-    var facts = element("dl", "p-facts");
-    function fact(label, value) { facts.appendChild(element("dt", "", label)); facts.appendChild(element("dd", "", value)); }
-    fact(t("username"), profile.username);
-    var names = ROLE_NAMES[lang] || ROLE_NAMES.ar;
-    fact(t("roleLabel"), profile.roles.map(function (role) { return names[role] || role; }).join(lang === "ar" ? "، " : ", "));
-    card.appendChild(facts);
-    var langRow = element("div", "p-row");
-    langRow.appendChild(element("span", "p-muted", t("languageLabel")));
+    /* one line per setting: the label on one side, its value or buttons on the other */
+    var list = element("div", "p-settings");
+    function setting(label, content) {
+      var row = element("div", "p-setting");
+      row.appendChild(element("span", "p-setting-label", label));
+      var value = element("div", "p-setting-value"); value.appendChild(content); row.appendChild(value);
+      list.appendChild(row);
+    }
+    var user = element("strong", "", profile.username); user.setAttribute("dir", "auto");
+    setting(t("username"), user);
+    var names = ROLE_NAMES[lang] || ROLE_NAMES.ar, roles = element("div", "p-setting-tags");
+    profile.roles.forEach(function (role) { roles.appendChild(element("span", "p-badge", names[role] || role)); });
+    setting(t("roleLabel"), roles);
+    var seg = element("div", "p-seg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", t("languageLabel"));
     [["ar", "العربية"], ["en", "English"]].forEach(function (choice) {
-      var item = button(choice[1], lang === choice[0] ? "sun" : "outline", function () { if (lang !== choice[0]) setLanguage(choice[0]); });
-      item.lang = choice[0];
-      langRow.appendChild(item);
+      var item = element("button", "", choice[1]); item.type = "button"; item.lang = choice[0];
+      item.setAttribute("aria-pressed", String(lang === choice[0]));
+      item.addEventListener("click", function () { if (lang !== choice[0]) setLanguage(choice[0]); });
+      seg.appendChild(item);
     });
-    card.appendChild(langRow);
-    var passwordRow = element("div", "p-row");
-    passwordRow.appendChild(button(t("changePassword"), "outline", function () { toggleChangePassword(); window.scrollTo(0, 0); }));
-    card.appendChild(passwordRow);
+    setting(t("languageLabel"), seg);
+    setting(t("password"), button("🔒 " + t("changePassword"), "outline", function () { toggleChangePassword(); window.scrollTo(0, 0); }));
+    card.appendChild(list);
     pane.appendChild(card);
   }
   function renderAnnouncements(container) {
