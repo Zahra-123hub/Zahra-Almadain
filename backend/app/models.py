@@ -236,6 +236,8 @@ class GuardianInvitation(Base):
         Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
     auto_approve: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # made for the father / mother of the record: whoever signs up with it is put there ("" = not said)
+    relation: Mapped[str] = mapped_column(String(10), default="", server_default="")
     expires_at: Mapped[datetime] = mapped_column()
     redeemed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -260,6 +262,8 @@ class RegistrationRequest(Base):
         Uuid(as_uuid=True), ForeignKey("guardian_invitations.id", ondelete="SET NULL"), nullable=True
     )
     email_sent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # true: the approval made a new child for this request (false: the child was already on the list and is not touched)
+    created_child: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
     )
@@ -684,6 +688,9 @@ class ChatMessage(Base):
     parent_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
     sender_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
     sender_name: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    # the kindergarten side of the conversation: one teacher (her account), or empty for the management (the "office")
+    staff_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    sender_role: Mapped[str] = mapped_column(String(12), default="", server_default="")  # parent / teacher / manager / admin
     from_parent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     body: Mapped[str] = mapped_column(String(2000))
     read_at: Mapped[datetime | None] = mapped_column(nullable=True)  # read by the other side

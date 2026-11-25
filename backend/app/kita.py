@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -88,13 +88,19 @@ class AbsenceIn(BaseModel):
     note: str = Field(default="", max_length=300)
 
 
+OFFICE = "office"  # the conversation with the management (no single teacher)
+
+
 class MessageIn(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
+    # the kindergarten side: a teacher's account id, or "office" for the management
+    to: str = Field(default=OFFICE, max_length=40, validation_alias=AliasChoices("to", "with"))
 
 
 class StaffMessageIn(MessageIn):
     child_id: uuid.UUID
     parent_id: uuid.UUID
+    to: str = Field(default="", max_length=40, validation_alias=AliasChoices("to", "with"))  # empty: the writer's own conversation
 
 
 def build_router(get_principal: Callable) -> APIRouter:
@@ -144,9 +150,64 @@ def build_router(get_principal: Callable) -> APIRouter:
         return [{"weekday": r.weekday, "position": r.position, "title": r.title, "detail": r.detail}
                 for r in sorted(rows, key=lambda r: (r.weekday, r.position))]
 
-    def message_data(m: ChatMessage) -> dict[str, Any]:
-        return {"id": str(m.id), "body": m.body, "from_parent": m.from_parent, "sender": m.sender_name,
+    def message_data(m: ChatMessage, viewer: uuid.UUID | None = None) -> dict[str, Any]:
+        return {"id": str(m.id), "body": m.body, "from_parent": m.from_parent, "sender": m.sender_name, "sender_role": m.sender_role,
+                "mine": viewer is not None and m.sender_id == viewer, "with": str(m.staff_id) if m.staff_id else OFFICE,
                 "read": m.read_at is not None, "created_at": m.created_at.isoformat() if m.created_at else None}
+
+    # ---- chats: one conversation = one child, one parent account and one teacher (or the management) ------------------------
+    def supervisor(principal: Any) -> bool:
+        """The management (and the admin) see every conversation and may write in each."""
+        return bool(principal.role_names & {"manager", "admin"})
+
+    def writer_role(principal: Any) -> str:
+        roles = principal.role_names
+        return "admin" if "admin" in roles else "manager" if "manager" in roles else "teacher"
+
+    def teacher_accounts(session: Session) -> dict[uuid.UUID, str]:
+        """The active teachers with their names (from the staff list, else the user name)."""
+        ids = accounts_with_role(session, "teacher")
+        if not ids:
+            return {}
+        names = dict(session.execute(select(Account.id, Account.username).where(Account.id.in_(ids))).all())
+        for account_id, name in session.execute(select(Employee.account_id, Employee.name).where(Employee.account_id.in_(ids), Employee.is_active.is_(True))).all():
+            names[account_id] = name
+        return names
+
+    def side(value: str, session: Session, writing: bool = True) -> uuid.UUID | None:
+        """The kindergarten side named by a client: "office" (None) or the id of a teacher (to write: one still working here)."""
+        if not value or value == OFFICE:
+            return None
+        try:
+            account_id = uuid.UUID(value)
+        except ValueError:
+            raise HTTPException(422, "محادثة غير صالحة.")
+        if writing and account_id not in teacher_accounts(session):
+            raise HTTPException(422, "هذه المعلمة غير موجودة.")
+        return account_id
+
+    def thread_filter(child_id: uuid.UUID, parent_id: uuid.UUID, staff_id: uuid.UUID | None) -> list[Any]:
+        return [ChatMessage.child_id == child_id, ChatMessage.parent_id == parent_id,
+                ChatMessage.staff_id.is_(None) if staff_id is None else ChatMessage.staff_id == staff_id]
+
+    def mark_read(session: Session, where: list[Any], from_parent: bool) -> None:
+        session.execute(update(ChatMessage).where(*where, ChatMessage.from_parent.is_(from_parent), ChatMessage.read_at.is_(None))
+                        .values(read_at=datetime.now(timezone.utc).replace(tzinfo=None)))
+
+    def thread(session: Session, where: list[Any], viewer: uuid.UUID) -> list[dict[str, Any]]:
+        rows = session.scalars(select(ChatMessage).where(*where).order_by(ChatMessage.created_at.desc()).limit(MAX_MESSAGES)).all()
+        return [message_data(m, viewer) for m in reversed(rows)]
+
+    def staff_side_for(principal: Any, session: Session, value: str, writing: bool = True) -> tuple[uuid.UUID | None, bool]:
+        """Which conversation a kindergarten account opens or writes in, and whether it takes part in it (reads it).
+        A teacher only her own; the management every one (its own is the office)."""
+        me = principal.account.id
+        if supervisor(principal):
+            staff_id = me if value == "me" else side(value, session, writing)
+            return staff_id, staff_id is None or staff_id == me
+        if value not in ("", "me", str(me)):
+            raise HTTPException(403, "هذه المحادثة لمعلمة أخرى.")
+        return me, True
 
     def bring_for(session: Session, child: Child) -> list[BringItem]:
         return list(session.scalars(select(BringItem).where(or_(
@@ -231,27 +292,57 @@ def build_router(get_principal: Callable) -> APIRouter:
         session.commit()
         return {"day": row.day.isoformat(), "status": row.status, "note": row.note, "by_parent": True}
 
-    @router.get("/api/platform/parent/children/{child_id}/messages")
-    def parent_messages(child_id: uuid.UUID, response: Response, principal=Depends(get_principal), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    @router.get("/api/platform/parent/children/{child_id}/contacts")
+    def parent_contacts(child_id: uuid.UUID, response: Response, principal=Depends(get_principal), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+        """Whom the parents can write to about this child: every teacher and the management, with the last message and the
+        number of unread ones; the conversations with messages first, the newest on top."""
         response.headers["Cache-Control"] = "no-store"
         child = own_child(session, principal, child_id)
         me = principal.account.id
-        session.execute(update(ChatMessage).where(ChatMessage.child_id == child.id, ChatMessage.parent_id == me, ChatMessage.from_parent.is_(False),
-                                                  ChatMessage.read_at.is_(None)).values(read_at=datetime.now(timezone.utc).replace(tzinfo=None)))
-        session.commit()
         rows = session.scalars(select(ChatMessage).where(ChatMessage.child_id == child.id, ChatMessage.parent_id == me)
-                               .order_by(ChatMessage.created_at.desc()).limit(MAX_MESSAGES)).all()
-        return [message_data(m) for m in reversed(rows)]
+                               .order_by(ChatMessage.created_at.desc()).limit(2000)).all()
+        teachers = teacher_accounts(session)
+        contacts: dict[str, dict[str, Any]] = {OFFICE: {"with": OFFICE, "name": "", "role": "office", "last": None, "unread": 0}}
+        for account_id, name in sorted(teachers.items(), key=lambda item: item[1]):
+            contacts[str(account_id)] = {"with": str(account_id), "name": name, "role": "teacher", "last": None, "unread": 0}
+        for m in rows:
+            key = str(m.staff_id) if m.staff_id else OFFICE
+            item = contacts.get(key)
+            if item is None:  # a teacher who has left: her conversation stays readable
+                item = contacts[key] = {"with": key, "name": next((r.sender_name for r in rows if r.staff_id == m.staff_id and not r.from_parent), ""),
+                                        "role": "teacher", "last": None, "unread": 0, "gone": True}
+            if item["last"] is None:
+                item["last"] = message_data(m, me)
+            if not m.from_parent and m.read_at is None:
+                item["unread"] += 1
+        talked = sorted((c for c in contacts.values() if c["last"]), key=lambda c: c["last"]["created_at"] or "", reverse=True)
+        return talked + [c for c in contacts.values() if not c["last"]]
+
+    @router.get("/api/platform/parent/children/{child_id}/messages")
+    def parent_messages(child_id: uuid.UUID, response: Response, to: str = OFFICE, principal=Depends(get_principal), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+        response.headers["Cache-Control"] = "no-store"
+        child = own_child(session, principal, child_id)
+        me = principal.account.id
+        try:
+            staff_id = None if to == OFFICE else uuid.UUID(to)
+        except ValueError:
+            raise HTTPException(422, "محادثة غير صالحة.")
+        where = thread_filter(child.id, me, staff_id)
+        mark_read(session, where, from_parent=False)
+        session.commit()
+        return thread(session, where, me)
 
     @router.post("/api/platform/parent/children/{child_id}/messages", status_code=201)
     def parent_send(child_id: uuid.UUID, payload: MessageIn, principal=Depends(get_principal), session: Session = Depends(get_session)) -> dict[str, Any]:
         child = own_child(session, principal, child_id)
-        message = ChatMessage(child_id=child.id, parent_id=principal.account.id, sender_id=principal.account.id,
+        staff_id = side(payload.to, session)
+        message = ChatMessage(child_id=child.id, parent_id=principal.account.id, sender_id=principal.account.id, staff_id=staff_id, sender_role="parent",
                               sender_name=principal.account.username[:80], from_parent=True, body=payload.body.strip(), created_at=_now())
         session.add(message)
-        notify(session, staff_ids(session), "message_new", child.display_name, "messages")
+        # the teacher of this conversation; a message to the management goes to the management
+        notify(session, [staff_id] if staff_id else accounts_with_role(session, "manager", "admin"), "message_new", child.display_name, "messages")
         session.commit()
-        return message_data(message)
+        return message_data(message, principal.account.id)
 
     @router.get("/api/platform/parent/children/{child_id}/fees")
     def parent_fees(child_id: uuid.UUID, response: Response, principal=Depends(get_principal), session: Session = Depends(get_session)) -> dict[str, Any]:
@@ -421,37 +512,48 @@ def build_router(get_principal: Callable) -> APIRouter:
     # ---- messages with the parents ------------------------------------------------------------------------------------------------
     @router.get("/api/platform/staff/conversations")
     def staff_conversations(response: Response, principal=Depends(get_principal), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
-        """One line per child and parent account: the last message and how many from the parent are unread."""
+        """One line per conversation (child, parent account, teacher or management), newest first: the last message and how many
+        from the parent are unread. A teacher sees her own conversations, the management every one."""
         response.headers["Cache-Control"] = "no-store"
         staff(principal)
-        rows = session.scalars(select(ChatMessage).order_by(ChatMessage.created_at.desc()).limit(2000)).all()
-        seen: dict[tuple[uuid.UUID, uuid.UUID], dict[str, Any]] = {}
+        me = principal.account.id
+        query = select(ChatMessage)
+        if not supervisor(principal):
+            query = query.where(ChatMessage.staff_id == me)
+        rows = session.scalars(query.order_by(ChatMessage.created_at.desc()).limit(3000)).all()
+        seen: dict[tuple[uuid.UUID, uuid.UUID, uuid.UUID | None], dict[str, Any]] = {}
         for m in rows:
-            key = (m.child_id, m.parent_id)
+            key = (m.child_id, m.parent_id, m.staff_id)
             item = seen.get(key)
             if item is None:
-                item = seen[key] = {"child_id": str(m.child_id), "parent_id": str(m.parent_id), "last": message_data(m), "unread": 0}
+                item = seen[key] = {"child_id": str(m.child_id), "parent_id": str(m.parent_id), "with": str(m.staff_id) if m.staff_id else OFFICE,
+                                    "mine": m.staff_id == me or (m.staff_id is None and supervisor(principal)), "last": message_data(m, me), "unread": 0}
             if m.from_parent and m.read_at is None:
                 item["unread"] += 1
-        children = dict(session.execute(select(Child.id, Child.display_name).where(Child.id.in_([k[0] for k in seen]))).all()) if seen else {}
-        parents = dict(session.execute(select(Account.id, Account.username).where(Account.id.in_([k[1] for k in seen]))).all()) if seen else {}
+        children = dict(session.execute(select(Child.id, Child.display_name).where(Child.id.in_({k[0] for k in seen}))).all()) if seen else {}
+        parents = dict(session.execute(select(Account.id, Account.username).where(Account.id.in_({k[1] for k in seen}))).all()) if seen else {}
+        teachers = teacher_accounts(session)
         out = []
-        for (child_id, parent_id), item in seen.items():
+        for (child_id, parent_id, staff_id), item in seen.items():
             item["child"] = children.get(child_id, "")
             item["parent"] = parents.get(parent_id, "")
+            item["staff"] = teachers.get(staff_id, "") if staff_id else ""
             out.append(item)
         return out
 
     @router.get("/api/platform/staff/conversations/{child_id}/{parent_id}")
-    def staff_conversation(child_id: uuid.UUID, parent_id: uuid.UUID, response: Response, principal=Depends(get_principal), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    def staff_conversation(child_id: uuid.UUID, parent_id: uuid.UUID, response: Response, to: str = "", principal=Depends(get_principal),
+                           session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+        """One conversation. Reading it marks the parent's messages as read only for whoever takes part in it (the management
+        looking into a teacher's conversation leaves them unread for her)."""
         response.headers["Cache-Control"] = "no-store"
         staff(principal)
-        session.execute(update(ChatMessage).where(ChatMessage.child_id == child_id, ChatMessage.parent_id == parent_id, ChatMessage.from_parent.is_(True),
-                                                  ChatMessage.read_at.is_(None)).values(read_at=datetime.now(timezone.utc).replace(tzinfo=None)))
-        session.commit()
-        rows = session.scalars(select(ChatMessage).where(ChatMessage.child_id == child_id, ChatMessage.parent_id == parent_id)
-                               .order_by(ChatMessage.created_at.desc()).limit(MAX_MESSAGES)).all()
-        return [message_data(m) for m in reversed(rows)]
+        staff_id, takes_part = staff_side_for(principal, session, to, writing=False)
+        where = thread_filter(child_id, parent_id, staff_id)
+        if takes_part:
+            mark_read(session, where, from_parent=True)
+            session.commit()
+        return thread(session, where, principal.account.id)
 
     @router.post("/api/platform/staff/messages", status_code=201)
     def staff_send(payload: StaffMessageIn, principal=Depends(get_principal), session: Session = Depends(get_session)) -> dict[str, Any]:
@@ -459,11 +561,16 @@ def build_router(get_principal: Callable) -> APIRouter:
         child = any_child(session, payload.child_id)
         if payload.parent_id not in parents_of(session, child.id):
             raise HTTPException(422, "هذا الحساب ليس وليّ أمر هذا الطفل.")
-        message = ChatMessage(child_id=child.id, parent_id=payload.parent_id, sender_id=principal.account.id,
-                              sender_name=name_of(session, principal.account), from_parent=False, body=payload.body.strip(), created_at=_now())
+        staff_id, _ = staff_side_for(principal, session, payload.to)
+        message = ChatMessage(child_id=child.id, parent_id=payload.parent_id, sender_id=principal.account.id, staff_id=staff_id,
+                              sender_role=writer_role(principal), sender_name=name_of(session, principal.account), from_parent=False,
+                              body=payload.body.strip(), created_at=_now())
         session.add(message)
-        notify(session, [payload.parent_id], "message_new", child.display_name, "messages")
+        receivers = [payload.parent_id]
+        if staff_id is not None and staff_id != principal.account.id:
+            receivers.append(staff_id)  # the management wrote in a teacher's conversation: she is told too
+        notify(session, receivers, "message_new", child.display_name, "messages")
         session.commit()
-        return message_data(message)
+        return message_data(message, principal.account.id)
 
     return router

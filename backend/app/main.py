@@ -27,7 +27,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app import activity, community, control, kita, mobile, money, people, security, visits
+from app import activity, community, control, family, kita, mobile, money, people, security, visits
 from app.actors import Actor, has_grant
 from app.database import get_engine, get_session
 from app.models import (
@@ -309,6 +309,7 @@ class PasswordChangeRequest(BaseModel):
 
 class RegistrationDecision(BaseModel):
     decision: str = Field(pattern="^(approve|reject)$")
+    child_id: uuid.UUID | None = None  # the child on the list the request is about (else: the one with the same name, else a new one)
 
 
 class ChildCreateRequest(BaseModel):
@@ -1186,11 +1187,7 @@ def create_platform_teacher_account(
         if payload.role != "parent":  # staff names are saved as employees; parents are not staff
             attach_person_to_account(session, account, payload.full_name, payload.job_title)
         if linked_child is not None:
-            session.execute(
-                parent_child_links.insert().values(
-                    account_id=account.id, child_id=linked_child.id, confirmed_at=datetime.now(timezone.utc)
-                )
-            )
+            family.connect(session, account.id, linked_child.id)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -1593,6 +1590,8 @@ def redeem_guardian_invitation(
         if linked_request is not None:
             linked_request.account_id = account.id
             linked_request.registered_at = now
+        # the new account also stands at the father / mother of the child's record
+        family.attach(session, account.id, invitation.child_id, invitation.relation, linked_request)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -1769,7 +1768,7 @@ def edit_registration_request(
     item.child_birth_date = payload.child_birth_date
     item.relationship_to_child = payload.relationship_to_child.strip()
     item.notes = payload.notes.strip()
-    if item.invitation_id is not None:
+    if item.invitation_id is not None and item.created_child:  # a child that was on the list before keeps its name
         invitation = session.get(GuardianInvitation, item.invitation_id)
         child = session.get(Child, invitation.child_id) if invitation is not None else None
         if child is not None:
@@ -1801,7 +1800,7 @@ def delete_registration_request(
                 )
             )
             child = session.get(Child, child_id)
-            if child is not None and not has_links:
+            if child is not None and not has_links and item.created_child:  # only the child this request made
                 session.delete(child)
     session.delete(item)
     session.commit()
@@ -1874,9 +1873,10 @@ def decide_registration_request(
         session.commit()
         return {"request": registration_request_data(item)}
 
-    child = Child(display_name=item.child_name)
-    session.add(child)
-    session.flush()
+    # the child already on the list is used (no second "Sam"); the parent's details go into the child's record
+    child, made = family.child_for_request(session, item, payload.child_id)
+    item.created_child = made
+    family.note_guardian(session, child.id, item)
     code = new_registration_code()
     while session.scalar(
         select(GuardianInvitation.id).where(
@@ -2353,11 +2353,7 @@ def admin_link_parent(
         )
     ).first():
         raise HTTPException(409, "Parent is already linked to this child.")
-    session.execute(
-        parent_child_links.insert().values(
-            account_id=parent.id, child_id=child.id, confirmed_at=datetime.now(timezone.utc)
-        )
-    )
+    family.connect(session, parent.id, child.id)
     session.commit()
     return {"ok": True}
 
@@ -2369,11 +2365,7 @@ def admin_unlink_parent(
     _username: str = Depends(require_manage),
     session: Session = Depends(get_session),
 ) -> Response:
-    session.execute(
-        delete(parent_child_links).where(
-            parent_child_links.c.account_id == parent_id, parent_child_links.c.child_id == child_id
-        )
-    )
+    family.disconnect(session, parent_id, child_id)  # also off the father / mother of the record
     session.commit()
     return Response(status_code=204)
 

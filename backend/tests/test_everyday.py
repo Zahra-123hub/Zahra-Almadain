@@ -85,21 +85,46 @@ class ChildPageTests(EverydayBase):
         self.assertEqual(month["counts"]["present"], 1)
         self.assertEqual(self.client.get(f"{P}/{self.amal}/overview", headers=self.parent).json()["today"]["attendance"], "present")
 
-    def test_messages_between_parents_and_the_kindergarten(self):
-        sent = self.client.post(f"{P}/{self.amal}/messages", headers=self.parent, json={"body": "Amal will be picked up at 12"})
+    def test_a_parent_chats_with_one_teacher_and_the_management_sees_it(self):
+        with Session(self.engine) as s:
+            teacher = str(s.scalar(select(Account.id).where(Account.username == "teacher1")))
+        contacts = self.client.get(f"{P}/{self.amal}/contacts", headers=self.parent).json()
+        self.assertEqual([(c["with"], c["role"]) for c in contacts], [("office", "office"), (teacher, "teacher")])
+
+        sent = self.client.post(f"{P}/{self.amal}/messages", headers=self.parent, json={"body": "Amal will be picked up at 12", "to": teacher})
         self.assertEqual(sent.status_code, 201)
-        conversations = self.client.get(f"{S}/conversations", headers=self.teacher).json()
-        self.assertEqual([(c["child"], c["parent"], c["unread"]) for c in conversations], [("Amal", "parent1", 1)])
+        self.assertEqual(self.client.get(f"{P}/{self.amal}/contacts", headers=self.parent).json()[0]["with"], teacher)  # the newest conversation on top
+        rows = self.client.get(f"{S}/conversations", headers=self.teacher).json()
+        self.assertEqual([(c["child"], c["parent"], c["unread"], c["mine"]) for c in rows], [("Amal", "parent1", 1, True)])
+        # the management sees the teacher's conversation, looking into it leaves it unread for her
+        rows = self.client.get(f"{S}/conversations", headers=self.mgr).json()
+        self.assertEqual([(c["staff"], c["mine"], c["unread"]) for c in rows], [("teacher1", False, 1)])
+        self.client.get(f"{S}/conversations/{self.amal}/{self.parent_id}?to={teacher}", headers=self.mgr)
+        self.assertEqual(self.client.get(f"{S}/conversations", headers=self.teacher).json()[0]["unread"], 1)
         thread = self.client.get(f"{S}/conversations/{self.amal}/{self.parent_id}", headers=self.teacher).json()
         self.assertEqual([m["body"] for m in thread], ["Amal will be picked up at 12"])
         self.assertEqual(self.client.get(f"{S}/conversations", headers=self.teacher).json()[0]["unread"], 0)
+
         answer = self.client.post(f"{S}/messages", headers=self.teacher, json={"child_id": self.amal, "parent_id": self.parent_id, "body": "Thank you, noted."})
-        self.assertEqual(answer.status_code, 201)
-        self.assertEqual(self.client.get(f"{P}/{self.amal}/overview", headers=self.parent).json()["counts"]["messages_unread"], 1)
-        mine = self.client.get(f"{P}/{self.amal}/messages", headers=self.parent).json()
-        self.assertEqual([(m["from_parent"], m["body"]) for m in mine], [(True, "Amal will be picked up at 12"), (False, "Thank you, noted.")])
+        self.assertEqual((answer.status_code, answer.json()["mine"]), (201, True))
+        joined = self.client.post(f"{S}/messages", headers=self.mgr, json={"child_id": self.amal, "parent_id": self.parent_id, "body": "See you at 12.", "to": teacher})
+        self.assertEqual(joined.status_code, 201)
+        self.assertEqual(self.client.get(f"{P}/{self.amal}/overview", headers=self.parent).json()["counts"]["messages_unread"], 2)
+        mine = self.client.get(f"{P}/{self.amal}/messages?to={teacher}", headers=self.parent).json()
+        self.assertEqual([(m["sender_role"], m["mine"], m["body"]) for m in mine],
+                         [("parent", True, "Amal will be picked up at 12"), ("teacher", False, "Thank you, noted."), ("manager", False, "See you at 12.")])
         self.assertEqual(self.client.get(f"{P}/{self.amal}/overview", headers=self.parent).json()["counts"]["messages_unread"], 0)
+        self.assertEqual(self.client.get(f"{S}/conversations/{self.amal}/{self.parent_id}", headers=self.teacher).json()[0]["read"], True)
+
+        # a message to the management: the teacher does not see it, the management does
+        self.client.post(f"{P}/{self.amal}/messages", headers=self.parent, json={"body": "A question about the fees"})
+        self.assertEqual(len(self.client.get(f"{S}/conversations", headers=self.teacher).json()), 1)
+        office = [c for c in self.client.get(f"{S}/conversations", headers=self.mgr).json() if c["with"] == "office"]
+        self.assertEqual([(c["mine"], c["unread"], c["last"]["body"]) for c in office], [(True, 1, "A question about the fees")])
+        self.assertEqual(self.client.get(f"{S}/conversations/{self.amal}/{self.parent_id}?to=office", headers=self.teacher).status_code, 403)
+        self.assertEqual(self.client.post(f"{S}/messages", headers=self.teacher, json={"child_id": self.amal, "parent_id": self.parent_id, "body": "x", "to": "office"}).status_code, 403)
         self.assertEqual(self.client.post(f"{S}/messages", headers=self.teacher, json={"child_id": self.basel, "parent_id": self.parent_id, "body": "x"}).status_code, 422)
+        self.assertEqual(self.client.post(f"{P}/{self.amal}/messages", headers=self.parent, json={"body": "x", "to": self.parent_id}).status_code, 422)
 
     def test_the_parents_see_the_fees_of_their_child(self):
         self.set_rate("12000")

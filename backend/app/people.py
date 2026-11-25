@@ -6,8 +6,10 @@ it never changes them. Nobody is deleted: a child or a person of the staff is ta
 
 from __future__ import annotations
 
+import hashlib
+import os
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
@@ -16,10 +18,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app import activity, pdfs
+from app import activity, family, pdfs
 from app.actors import Actor
 from app.database import get_session
-from app.models import Account, Child, ChildGuardian, Employee, Role, parent_child_links
+from app.models import Account, Child, ChildGuardian, Employee, GuardianInvitation, RegistrationRequest, Role, parent_child_links
 from app.timeutil import local_today
 
 CENT = Decimal("0.01")
@@ -52,6 +54,10 @@ class GuardianIn(BaseModel):
     phone: str = Field(default="", max_length=40)
     email: str = Field(default="", max_length=254)
     account_id: uuid.UUID | None = None  # a parent account of the portal, if this person has one
+
+
+class InviteIn(BaseModel):
+    relation: str = Field(pattern="^(father|mother|guardian)$")
 
 
 class ChildIn(BaseModel):
@@ -319,9 +325,13 @@ def build_router(read_guard: Callable[..., Actor], manage_guard: Callable[..., A
             a.id: a.username
             for a in session.scalars(select(Account).where(Account.id.in_([g.account_id for g in rows if g.account_id]))).all()
         } if any(g.account_id for g in rows) else {}
+        linked = session.execute(select(Account.id, Account.username).join(parent_child_links, parent_child_links.c.account_id == Account.id)
+                                 .where(parent_child_links.c.child_id == child.id)).all()
+        on_record = {g.account_id for g in rows if g.account_id}
         return {
             "id": str(child.id), "name": child.display_name, "class_name": child.class_name,
             "birth_date": child.birth_date.isoformat() if child.birth_date else "",
+            "other_accounts": [{"id": str(a), "username": u} for a, u in linked if a not in on_record],
             "guardians": [
                 {"id": str(g.id), "relation": g.relation, "name": g.name, "phone": g.phone, "email": g.email,
                  "account_id": str(g.account_id) if g.account_id else "", "account_username": names.get(g.account_id, "")}
@@ -373,8 +383,39 @@ def build_router(read_guard: Callable[..., Actor], manage_guard: Callable[..., A
         session: Session = Depends(get_session),
     ) -> list[dict[str, Any]]:
         response.headers["Cache-Control"] = "no-store"
+        if family.heal(session):  # older links are put on the father / mother of the records
+            session.commit()
         children = session.scalars(select(Child).where(Child.is_active.is_(True)).order_by(Child.display_name)).all()
         return [child_data(session, child) for child in children]
+
+    @router.post("/children/{child_id}/invite", status_code=201)
+    def invite_guardian(
+        child_id: uuid.UUID,
+        payload: InviteIn,
+        actor: Actor = Depends(manage_guard),
+        session: Session = Depends(get_session),
+    ) -> dict[str, Any]:
+        """A one-time code (7 days) for the father / mother of this child: whoever creates an account with it is linked to the
+        child and stands at that father / mother in the record, without any further step of the management."""
+        child = session.scalar(select(Child).where(Child.id == child_id, Child.is_active.is_(True)))
+        if child is None:
+            raise HTTPException(404, "الطفل غير موجود.")
+        row = session.scalar(select(ChildGuardian).where(ChildGuardian.child_id == child.id, ChildGuardian.relation == payload.relation))
+        if row is not None and row.account_id is not None:
+            raise HTTPException(409, "وليّ الأمر هذا مرتبط بحساب بالفعل.")
+        while True:
+            code = family.new_code()
+            digest = hashlib.sha256(code.replace("-", "").encode()).hexdigest()
+            if session.scalar(select(GuardianInvitation.id).where(GuardianInvitation.token_hash == digest)) is None:
+                break
+        invitation = GuardianInvitation(child_id=child.id, token_hash=digest, created_by_id=actor.account_id, auto_approve=True,
+                                        relation=payload.relation, expires_at=datetime.now(timezone.utc) + timedelta(days=7))
+        session.add(invitation)
+        log(session, actor, "child.invite", child.id, payload.relation)
+        session.commit()
+        base = os.getenv("PORTAL_BASE_URL", "https://zahratalmadain.com").rstrip("/")
+        return {"code": code, "link": f"{base}/login/?code={code}", "expires_at": invitation.expires_at.isoformat(),
+                "child": child.display_name, "name": row.name if row is not None else ""}
 
     @router.get("/parent-accounts")
     def list_parent_accounts(
@@ -387,7 +428,25 @@ def build_router(read_guard: Callable[..., Actor], manage_guard: Callable[..., A
         accounts = session.scalars(
             select(Account).join(Account.roles).where(Role.name == "parent", Account.is_active.is_(True)).order_by(Account.username)
         ).all()
-        return [{"id": str(a.id), "username": a.username} for a in accounts]
+        ids = [a.id for a in accounts]
+        requests = {r.account_id: r for r in session.scalars(select(RegistrationRequest).where(RegistrationRequest.account_id.in_(ids))).all()} if ids else {}
+        on_records = {}
+        for g in session.scalars(select(ChildGuardian).where(ChildGuardian.account_id.in_(ids))).all() if ids else []:
+            on_records.setdefault(g.account_id, g)
+        kids: dict[uuid.UUID, list[str]] = {}
+        for account_id, name in session.execute(select(parent_child_links.c.account_id, Child.display_name)
+                                                .join(Child, Child.id == parent_child_links.c.child_id)
+                                                .where(parent_child_links.c.account_id.in_(ids), Child.is_active.is_(True))).all() if ids else []:
+            kids.setdefault(account_id, []).append(name)
+        out = []
+        for a in accounts:
+            req, rec = requests.get(a.id), on_records.get(a.id)
+            out.append({"id": str(a.id), "username": a.username,
+                        "name": rec.name if rec else (req.guardian_name if req else ""),
+                        "phone": (rec.phone if rec and rec.phone else (req.phone if req else "")),
+                        "email": (rec.email if rec and rec.email else (req.email if req else "")),
+                        "children": kids.get(a.id, [])})
+        return out
 
     @router.post("/children", status_code=201)
     def create_child(
