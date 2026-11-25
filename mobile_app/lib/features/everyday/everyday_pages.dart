@@ -1207,7 +1207,20 @@ class _ParentChatsPageState extends State<ParentChatsPage> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 820),
-          child: _load(context, '/api/platform/parent/children/${c.id}/contacts', key: ValueKey(_round), (context, data, reload) {
+          child: Loader<dynamic>(
+            key: ValueKey(_round),
+            load: () async {
+              try {
+                return Cached<dynamic>(await SessionScope.of(context).api.get('/api/platform/parent/children/${c.id}/contacts'));
+              } on ApiException catch (e) {
+                // a server that does not know the list yet: the one conversation with the kindergarten, as before
+                if (e.status != 404) rethrow;
+                return Cached<dynamic>([
+                  {'with': 'office', 'role': 'office', 'name': '', 'last': null, 'unread': 0},
+                ]);
+              }
+            },
+            builder: (context, data, reload) {
             final rows = _l(data).where((r) {
               final q = _search.trim().toLowerCase();
               if (q.isEmpty) return true;
@@ -1259,7 +1272,8 @@ class _ParentChatsPageState extends State<ParentChatsPage> {
                 ],
               ]),
             );
-          }),
+            },
+          ),
         ),
       ),
     );
