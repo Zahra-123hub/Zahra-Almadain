@@ -1072,9 +1072,25 @@ class _ChildrenAssignState extends State<_ChildrenAssign> {
         context: context,
         builder: (_) => SimpleDialog(
           title: Text(title),
-          children: [for (final o in options) SimpleDialogOption(onPressed: () => Navigator.pop(context, _str(o['id'])), child: Text(_str(o['username'])))],
+          children: [
+            for (final o in options)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, _str(o['id'])),
+                child: Text([
+                  _str(o['username']),
+                  for (final k in ['full_name', 'guardian_name', 'child_name'])
+                    if (_str(o[k]).isNotEmpty) _str(o[k]),
+                ].join(' · ')),
+              ),
+          ],
         ),
       );
+
+  String _relationWord(BuildContext context, String r) => switch (r) {
+        'father' => _t(context, 'الأب', 'Vater', 'Father'),
+        'mother' => _t(context, 'الأم', 'Mutter', 'Mother'),
+        _ => _t(context, 'وليّ الأمر', 'Bezugsperson', 'Guardian'),
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -1103,16 +1119,47 @@ class _ChildrenAssignState extends State<_ChildrenAssign> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(_t(context, 'ولي الأمر', 'Eltern', 'Parents'), style: const TextStyle(color: _muted, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
+                    // every linked parent with the name and relation from the child's record; parents of the record without an account below
+                    for (final p in linkedParents)
+                      () {
+                        final g = _l(c['guardians']).where((g) => _str(g['account_id']) == _str(p['id'])).firstOrNull;
+                        final name = _str(p['name']).isNotEmpty ? _str(p['name']) : _str(g?['name']);
+                        final relation = _str(p['relation']).isNotEmpty ? _str(p['relation']) : _str(g?['relation']);
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                          decoration: BoxDecoration(color: const Color(0xFFE6F4EC), borderRadius: BorderRadius.circular(14)),
+                          child: Row(children: [
+                            AvatarInitials(name.isEmpty ? _str(p['username']) : name, size: 38),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Text(name.isEmpty ? _str(p['username']) : name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                Text(
+                                  [if (relation.isNotEmpty) _relationWord(context, relation), '${_t(context, 'الحساب', 'Konto', 'Account')}: ${_str(p['username'])}', _t(context, 'مرتبط ✓', 'verbunden ✓', 'linked ✓')].join(' · '),
+                                  style: const TextStyle(color: _good, fontSize: 12.5, fontWeight: FontWeight.w600),
+                                ),
+                              ]),
+                            ),
+                            IconButton(
+                              tooltip: _t(context, 'إلغاء الربط', 'Verbindung lösen', 'Unlink'),
+                              icon: const Icon(Icons.link_off_rounded, color: _bad),
+                              onPressed: () async {
+                                if (!await confirmDelete(context) || !context.mounted) return;
+                                if (await _run(context, () => api.delete('/api/admin/platform/children/${c['id']}/parents/${p['id']}'))) await _reload();
+                              },
+                            ),
+                          ]),
+                        );
+                      }(),
+                    for (final g in _l(c['guardians']).where((g) => g['has_account'] != true))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Pill('${_relationWord(context, _str(g['relation']))}: ${_str(g['name'])} · ${_t(context, 'بلا حساب بعد', 'noch ohne Konto', 'no account yet')}',
+                            icon: Icons.link_off_rounded, foreground: const Color(0xFF8A5200), background: const Color(0xFFFDF1DD)),
+                      ),
                     Wrap(spacing: 6, runSpacing: 6, children: [
-                      if (linkedParents.isEmpty) Pill(_t(context, 'لم يكتمل تسجيل ولي الأمر بعد', 'Noch keine Eltern verknüpft', 'No parent linked yet')),
-                      for (final p in linkedParents)
-                        InputChip(
-                          label: Text(_str(p['username'])),
-                          onDeleted: () async {
-                            if (!await confirmDelete(context) || !context.mounted) return;
-                            if (await _run(context, () => api.delete('/api/admin/platform/children/${c['id']}/parents/${p['id']}'))) await _reload();
-                          },
-                        ),
+                      if (linkedParents.isEmpty && _l(c['guardians']).isEmpty) Pill(_t(context, 'لم يكتمل تسجيل ولي الأمر بعد', 'Noch keine Eltern verknüpft', 'No parent linked yet')),
                       if (freeParents.isNotEmpty)
                         ActionChip(
                           avatar: const Icon(Icons.add, size: 18),

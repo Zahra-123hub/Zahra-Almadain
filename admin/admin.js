@@ -1317,8 +1317,14 @@ function tabChildren(){
         });
         var parentCell = h("dd", {});
         var linkedParents = child.parent_accounts || [];
+        var RELATION = {father:"الأب", mother:"الأم", guardian:"وليّ الأمر"};
+        var records = child.guardians || [];
+        /* every linked parent with the name and relation from the child's record */
         if(linkedParents.length) linkedParents.forEach(function(parent){
-          parentCell.appendChild(h("span", {class:"a-tag"}, [parent.username, h("button", {type:"button", title:"إلغاء الربط", "aria-label":"إلغاء الربط", text:"✕", onclick:async function(){
+          var g = records.filter(function(r){ return r.account_id && r.account_id === parent.id; })[0] || {};
+          var name = parent.name || g.name || "", relation = parent.relation || g.relation || "";
+          var label = (relation ? (RELATION[relation] || relation) + ": " : "") + (name || parent.username) + (name ? " · " + parent.username : "") + " ✓";
+          parentCell.appendChild(h("span", {class:"a-tag sun", dir:"auto"}, [label, h("button", {type:"button", title:"إلغاء الربط", "aria-label":"إلغاء الربط", text:"✕", onclick:async function(){
             if(!window.confirm("إلغاء ربط ولي الأمر بهذا الطفل؟")) return;
             try{
               await request("/api/admin/platform/children/" + encodeURIComponent(child.id) + "/parents/" + encodeURIComponent(parent.id), {method:"DELETE"});
@@ -1326,7 +1332,11 @@ function tabChildren(){
             }catch(error){ setMsg(msg, errText(error), "err"); }
           }})]));
         });
-        else parentCell.appendChild(h("span", {class:"a-tag", text:"لم يكتمل تسجيل ولي الأمر بعد"}));
+        /* parents of the record that have no account yet */
+        records.filter(function(r){ return !r.has_account; }).forEach(function(r){
+          parentCell.appendChild(h("span", {class:"a-tag", dir:"auto", text:(RELATION[r.relation] || r.relation) + ": " + r.name + " · بلا حساب بعد"}));
+        });
+        if(!linkedParents.length && !records.length) parentCell.appendChild(h("span", {class:"a-tag", text:"لم يكتمل تسجيل ولي الأمر بعد"}));
         var assignedIds = child.teachers.map(function(t){ return t.id; });
         var options = teachers.filter(function(t){ return assignedIds.indexOf(t.id) === -1; });
         var card = h("article", {class:"a-child"}, [
@@ -1337,7 +1347,7 @@ function tabChildren(){
         var parentOptions = parentAccounts.filter(function(p){ return linkedIds.indexOf(p.id) === -1; });
         if(parentOptions.length){
           var parentSelect = h("select", {"aria-label":"اختر ولي أمر"});
-          parentOptions.forEach(function(p){ parentSelect.appendChild(new Option(p.username, p.id)); });
+          parentOptions.forEach(function(p){ parentSelect.appendChild(new Option([p.username, p.full_name, p.guardian_name, p.child_name].filter(function(v){ return v; }).join(" · "), p.id)); });
           card.appendChild(h("div", {class:"a-assign"}, [parentSelect, h("button", {type:"button", class:"a-btn sun", text:"ربط ولي أمر", onclick:async function(){
             if(!parentSelect.value) return;
             try{

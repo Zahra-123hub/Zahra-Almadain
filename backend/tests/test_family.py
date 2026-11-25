@@ -82,6 +82,9 @@ class FamilyTests(ControlsBase):
         father = record["guardians"][0]
         self.client.patch(f"{PEOPLE}/children/{child['id']}", headers=self.mgr, json={"name": "Omar", "class_name": "KG1", "guardians": [{**{k: father[k] for k in ("id", "relation", "name", "phone", "email")}, "account_id": str(parent)}]})
         self.assertEqual(self.record("Omar")["guardians"][0]["account_id"], str(parent))
+        # the admin's list of children shows the linked parent with the name and relation of the record
+        listed = next(c for c in self.client.get("/api/admin/platform/children", headers=self.admin).json() if c["display_name"] == "Omar")
+        self.assertEqual(listed["parent_accounts"], [{"id": str(parent), "username": "parent1", "name": "Father of Omar", "relation": "father"}])
         self.assertEqual(self.client.delete(f"/api/admin/platform/children/{child['id']}/parents/{parent}", headers=self.admin).status_code, 204)
         self.assertEqual(self.record("Omar")["guardians"][0]["account_id"], "")
         with Session(self.engine) as s:

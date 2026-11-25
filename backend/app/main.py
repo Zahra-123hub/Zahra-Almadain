@@ -2262,7 +2262,8 @@ def admin_list_children(
                 "display_name": child.display_name,
                 "class_name": child.class_name,
                 "guardians": [
-                    {"relation": g.relation, "name": g.name, "has_account": g.account_id is not None}
+                    {"relation": g.relation, "name": g.name, "has_account": g.account_id is not None,
+                     "account_id": str(g.account_id) if g.account_id else ""}
                     for g in guardians.get(child.id, [])
                 ],
                 "teachers": [
@@ -2271,7 +2272,13 @@ def admin_list_children(
                     if row[0] == child.id
                 ],
                 "parents": [row[1] for row in parent_rows if row[0] == child.id],
-                "parent_accounts": [{"id": str(row[2]), "username": row[1]} for row in parent_rows if row[0] == child.id],
+                # each linked account with the father / mother of the record it stands at (name and relation)
+                "parent_accounts": [
+                    {"id": str(row[2]), "username": row[1],
+                     **next(({"name": g.name, "relation": g.relation} for g in guardians.get(child.id, []) if g.account_id == row[2]),
+                            {"name": "", "relation": ""})}
+                    for row in parent_rows if row[0] == child.id
+                ],
             }
         )
     return result
