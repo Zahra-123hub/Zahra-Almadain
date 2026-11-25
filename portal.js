@@ -700,6 +700,22 @@
       URL.revokeObjectURL(url);
     }).catch(function (error) { window.alert(errorMessage(error)); });
   }
+  /* One attachment as a tile: a coloured icon with the kind of file, the name without the ending, the kind and the size below. */
+  function fileTile(file, onOpen) {
+    var name = file.filename || "", dot = name.lastIndexOf(".");
+    var ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "", base = dot > 0 ? name.slice(0, dot) : name;
+    var kind = ext === "pdf" ? "pdf" : /^(png|jpe?g|gif|webp|heic|bmp|svg)$/.test(ext) ? "img" : /^(mp4|mov|webm|m4v|avi|mkv)$/.test(ext) ? "vid"
+      : /^(mp3|m4a|wav|ogg|aac)$/.test(ext) ? "aud" : /^(docx?|odt|rtf|txt)$/.test(ext) ? "doc" : /^(xlsx?|csv|ods)$/.test(ext) ? "xls" : /^(pptx?|odp)$/.test(ext) ? "ppt" : "other";
+    var tile = element("button", "p-ftile p-ftile-" + kind); tile.type = "button"; tile.title = name;
+    tile.appendChild(element("span", "p-ftile-icon", (ext || "file").slice(0, 4).toUpperCase()));
+    var text = element("span", "p-ftile-text");
+    var title = element("span", "p-ftile-name", base); title.setAttribute("dir", "auto"); text.appendChild(title);
+    var meta = element("span", "p-ftile-meta", (ext ? ext.toUpperCase() + " · " : "") + fileSizeLabel(file.size || 0)); meta.setAttribute("dir", "ltr"); text.appendChild(meta);
+    tile.appendChild(text);
+    tile.appendChild(element("span", "p-ftile-get", "⬇"));
+    tile.addEventListener("click", onOpen);
+    return tile;
+  }
   /* A post card: scope badge, title, text, attachments. fileUrl(post, file) gives the download path; onDelete adds a delete button. */
   function postCard(post, fileUrl, onDelete) {
     var card = element("article", "p-post p-post-" + (post.scope === "child" ? "private" : "general"));
@@ -715,15 +731,11 @@
     meta.appendChild(info);
     card.appendChild(meta);
     var postTitle = element("h3", "", post.title); postTitle.setAttribute("dir", "auto"); card.appendChild(postTitle);
-    if (post.body) { var postBody = element("p", "p-post-body", post.body); postBody.setAttribute("dir", "auto"); card.appendChild(postBody); }
+    /* the text only when it says more than the title */
+    if (post.body && post.body.trim() !== (post.title || "").trim()) { var postBody = element("p", "p-post-body", post.body); postBody.setAttribute("dir", "auto"); card.appendChild(postBody); }
     if (post.files && post.files.length) {
       var files = element("div", "p-post-files");
-      post.files.forEach(function (file) {
-        var chip = element("button", "p-file-chip", file.filename + " · " + fileSizeLabel(file.size));
-        chip.type = "button";
-        chip.addEventListener("click", function () { downloadByPath(fileUrl(post, file), file.filename); });
-        files.appendChild(chip);
-      });
+      post.files.forEach(function (file) { files.appendChild(fileTile(file, function () { downloadByPath(fileUrl(post, file), file.filename); })); });
       card.appendChild(files);
     }
     if (onDelete) card.appendChild(button(t("deleteFile"), "outline p-post-delete", function () {

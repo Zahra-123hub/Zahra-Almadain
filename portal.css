@@ -235,7 +235,20 @@ body { background: radial-gradient(900px 420px at 85% -10%, #fdb9131f, transpare
 .p-scope-general{background:#e1edfb;color:#17408f}
 .p-scope-private{background:#fdb91333;color:#8a6200}
 @media (prefers-color-scheme: dark){.p-scope-general{background:#1d3a72;color:#dce8ff}.p-scope-private{background:#fdb9132b;color:#ffd777}}
-.p-post-files{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.p-post-files{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:14px}
+.p-ftile{display:flex;align-items:center;gap:12px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;text-align:start;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+.p-ftile:hover{border-color:var(--sun);box-shadow:0 6px 16px #0b17301f;transform:translateY(-1px)}
+.p-ftile:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.p-ftile-icon{flex:none;width:44px;height:52px;border-radius:8px 14px 8px 8px;display:grid;place-items:center;color:#fff;font-size:.72rem;font-weight:800;letter-spacing:.3px;background:#7b8aa8;box-shadow:inset 0 -3px 0 #0002}
+.p-ftile-pdf .p-ftile-icon{background:#e0403d}.p-ftile-img .p-ftile-icon{background:#3e9a5b}.p-ftile-vid .p-ftile-icon{background:#8e52b0}
+.p-ftile-aud .p-ftile-icon{background:#e5952b}.p-ftile-doc .p-ftile-icon{background:#2f6fd6}.p-ftile-xls .p-ftile-icon{background:#1f8a4c}.p-ftile-ppt .p-ftile-icon{background:#d2622b}
+.p-ftile-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.p-ftile-name{font-weight:700;font-size:.95rem;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.p-ftile-meta{font-size:.78rem;color:var(--muted);text-align:start}
+.p-ftile-get{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--bg);color:var(--navy);font-size:1rem;transition:background .15s,color .15s}
+.p-ftile:hover .p-ftile-get{background:var(--sun);color:#1b2a55}
+@media (prefers-color-scheme: dark){.p-ftile:hover{box-shadow:0 6px 16px #0006}.p-ftile-get{color:#dce8ff}}
+@media (max-width:560px){.p-post-files{grid-template-columns:1fr}}
 .p-file-chip{border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);padding:6px 14px;font-size:.88rem;font-weight:700;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:border-color .15s,background .15s}
 .p-file-chip:hover{border-color:var(--sun);background:#fdb91312}
 .p-post-delete{margin-top:12px;padding:6px 14px;font-size:.85rem;color:var(--red)}
