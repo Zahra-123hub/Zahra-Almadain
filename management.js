@@ -28,6 +28,7 @@
       fmInviteText: "مرحباً {0}،\nأنشئ حسابك في روضة زهرة المدائن لمتابعة {1} (التقارير، الحضور، الدردشة مع المعلمات):\n{2}\nرمز التسجيل: {3} (صالح 7 أيام)",
       fmOther: "الحساب {0} مرتبط بالطفل لكنه غير مسجّل عند الأب أو الأم.", fmToFather: "للأب / وليّ الأمر", fmToMother: "للأم", fmNoAccountShort: "بلا حساب",
       saveChild: "＋ حفظ الطفل",
+      kfOpen: "＋ إضافة طفل جديد", kfChild: "👧 بيانات الطفل", kfParents: "👪 الوالدان", kfEdit: "✏️ تعديل", kfClose: "إغلاق", kfCancel: "إلغاء", kfNoGroup: "بلا مجموعة", kfBorn: "مواليد",
       childSaved: "تم حفظ الطفل وولي أمره.",
       kidsList: "الأطفال المسجَّلون",
       noKids: "لا يوجد أطفال محفوظون بعد.",
@@ -103,6 +104,7 @@
       fmInviteText: "Hello {0},\ncreate your account at Zahrat Al-Madain kindergarten to follow {1} (reports, attendance, chat with the teachers):\n{2}\nCode: {3} (valid for 7 days)",
       fmOther: "The account {0} is linked to the child but stands at no parent.", fmToFather: "To the father / guardian", fmToMother: "To the mother", fmNoAccountShort: "no account",
       saveChild: "＋ Save child",
+      kfOpen: "＋ Add a new child", kfChild: "👧 Child", kfParents: "👪 Parents", kfEdit: "✏️ Edit", kfClose: "Close", kfCancel: "Cancel", kfNoGroup: "No group", kfBorn: "born",
       childSaved: "The child and the guardian are saved.",
       kidsList: "Saved children",
       noKids: "No children are saved yet.",
@@ -333,6 +335,10 @@
       kidsCard.appendChild(el("h2", "", m("kidsTitle")));
       kidsCard.appendChild(el("p", "p-muted", m("kidsHelp")));
       var kidForm = el("form", "p-kid-form");
+      /* the form opens with a button, so the page starts short */
+      var kidOpen = api.button(m("kfOpen"), "sun", function(){ kidForm.hidden = false; kidOpen.hidden = true; if(newName) newName.focus(); });
+      kidForm.hidden = true;
+      kidsCard.appendChild(kidOpen);
       kidsCard.appendChild(kidForm);
       var kidsMsg = el("p", "p-alert");
       kidsMsg.setAttribute("role", "status");
@@ -397,11 +403,15 @@
         account.appendChild(new Option("— " + m("noLogin") + " —", ""));
         parentAccounts.forEach(function(a){ account.appendChild(new Option(accountLabel(a), a.id)); });
         account.value = saved.account_id || "";
-        var box = el("fieldset", "p-fieldset");
+        var box = el("fieldset", "p-fieldset p-guardian");
         box.appendChild(el("legend", "", title));
-        if(relation) box.appendChild(field(m("relationLabel"), relation));
-        box.appendChild(field(m("fullName"), name)); box.appendChild(field(m("phoneLabel"), phone));
-        box.appendChild(field(m("emailLabel"), email)); box.appendChild(field(m("loginAccount"), account));
+        /* two fields per line: relation and name, phone and e-mail; the account over the whole width */
+        var grid = el("div", "p-form-grid two");
+        if(relation) grid.appendChild(field(m("relationLabel"), relation));
+        var nameField = field(m("fullName"), name); if(!relation) nameField.className += " p-span"; grid.appendChild(nameField);
+        grid.appendChild(field(m("phoneLabel"), phone)); grid.appendChild(field(m("emailLabel"), email));
+        var accountField = field(m("loginAccount"), account); accountField.className += " p-span"; grid.appendChild(accountField);
+        box.appendChild(grid);
         /* under the account field: linked, a matching account to link with one click, or an invitation */
         var state = el("div"); box.appendChild(state);
         function drawState(){
@@ -446,6 +456,26 @@
         if(!guardians.length) throw new Error(m("needGuardian"));
         return {name: name.trim(), class_name: cls.trim(), birth_date: birth || null, guardians: guardians};
       }
+      /* the form of a child in parts: the child in one line, the parents side by side, the buttons at the end */
+      function kidLayout(target, nameInput, clsInput, birthInput, blocks, extra){
+        var childPart = el("div", "p-form-part");
+        childPart.appendChild(el("h3", "", m("kfChild")));
+        var grid = el("div", "p-form-grid");
+        [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput)].forEach(function(node){ grid.appendChild(node); });
+        childPart.appendChild(grid);
+        target.appendChild(childPart);
+        var parentPart = el("div", "p-form-part");
+        parentPart.appendChild(el("h3", "", m("kfParents")));
+        parentPart.appendChild(el("p", "p-muted p-form-hint", m("oneOrBoth")));
+        if(extra) extra(parentPart);
+        var pair = el("div", "p-guardians");
+        blocks.forEach(function(b){ pair.appendChild(b.node); });
+        parentPart.appendChild(pair);
+        target.appendChild(parentPart);
+        var foot = el("div", "p-form-foot");
+        target.appendChild(foot);
+        return foot;
+      }
       var newName, newClass, newBirth, newFirst, newMother;
       function drawKidForm(){
         newName = textInput("", 120); newName.required = true; newName.autocomplete = "off";
@@ -454,11 +484,10 @@
         newFirst = guardianBlock(m("father"), FIRST(), null);
         newMother = guardianBlock(m("mother"), [["mother", m("mother")]], null);
         kidForm.innerHTML = "";
-        [field(m("childName"), newName), field(m("className"), newClass), field(m("birthDate"), newBirth)].forEach(function(node){ kidForm.appendChild(node); });
-        kidForm.appendChild(el("p", "p-muted", m("oneOrBoth")));
-        kidForm.appendChild(newFirst.node); kidForm.appendChild(newMother.node);
+        var foot = kidLayout(kidForm, newName, newClass, newBirth, [newFirst, newMother]);
+        foot.appendChild(api.button(m("kfCancel"), "outline", function(){ drawKidForm(); kidForm.hidden = true; kidOpen.hidden = false; }));
         var save = el("button", "p-button sun", m("saveChild")); save.type = "submit";
-        kidForm.appendChild(save);
+        foot.appendChild(save);
       }
       kidForm.addEventListener("submit", function(event){
         event.preventDefault();
@@ -466,7 +495,7 @@
         try{ body = kidPayload(newName.value, newClass.value, newBirth.value, [newFirst, newMother]); }catch(error){ kidsNote(error.message, "error"); return; }
         request(ACCOUNTING + "/children", {method: "POST", body: JSON.stringify(body)}).then(function(){
           kidsNote(m("childSaved"), "success");
-          return reloadKids().then(function(){ drawKidForm(); reloadChildren(); loadStats(); });
+          return reloadKids().then(function(){ drawKidForm(); kidForm.hidden = true; kidOpen.hidden = false; reloadChildren(); loadStats(); });
         }).catch(function(error){ kidsNote(api.errorMessage(error), "error"); });
       });
       function drawKids(){
@@ -484,11 +513,23 @@
           head.appendChild(el("h3", "", child.name));
           head.appendChild(el("span", "p-badge" + (child.guardians.length === 2 ? " p-status-active" : ""), child.guardians.length === 2 ? m("both") : m("oneGuardian")));
           card.appendChild(head);
-          var links = el("div", "p-row");
+          var facts = [child.class_name || m("kfNoGroup")];
+          if(child.birth_date) facts.push(m("kfBorn") + " " + child.birth_date);
+          card.appendChild(el("p", "p-muted p-child-facts", facts.join(" · ")));
+          var links = el("div", "p-child-links");
           child.guardians.forEach(function(g){
             links.appendChild(el("span", "p-badge" + (g.account_id ? " p-status-active" : ""), (g.account_id ? "🔗 " : "⛓️‍💥 ") + g.name + ": " + (g.account_username || m("fmNoAccountShort"))));
           });
           card.appendChild(links);
+          /* the form of the child only opens with "edit" */
+          var edit = el("div", "p-kid-edit"); edit.hidden = true;
+          var toggle = api.button(m("kfEdit"), "outline", function(){
+            edit.hidden = !edit.hidden;
+            card.classList.toggle("open", !edit.hidden);
+            toggle.textContent = edit.hidden ? m("kfEdit") : m("kfClose");
+          });
+          var bar = el("div", "p-child-bar"); bar.appendChild(toggle); card.appendChild(bar);
+          card.appendChild(edit);
           var nameInput = textInput(child.name, 120), clsInput = textInput(child.class_name, 60), birthInput = el("input");
           clsInput.setAttribute("list", "zm-groups");
           birthInput.type = "date"; birthInput.value = child.birth_date || ""; birthInput.max = new Date().toISOString().slice(0, 10);
@@ -497,17 +538,16 @@
           var first = null, mother = null;
           first = guardianBlock(m("father"), FIRST(), firstSaved, child, function(){ return mother ? mother.account() : ""; });
           mother = guardianBlock(m("mother"), [["mother", m("mother")]], motherSaved, child, function(){ return first.account(); });
-          [field(m("childName"), nameInput), field(m("className"), clsInput), field(m("birthDate"), birthInput)].forEach(function(node){ card.appendChild(node); });
-          /* an account that sees the child but stands at no father / mother: one click puts it there */
-          (child.other_accounts || []).forEach(function(a){
-            var box = el("div", "p-alert info");
-            box.appendChild(el("p", "", fillIn(m("fmOther"), a.username)));
-            box.appendChild(api.button(m("fmToFather"), "outline", function(){ first.setAccount(a.id); box.remove(); }));
-            box.appendChild(api.button(m("fmToMother"), "outline", function(){ mother.setAccount(a.id); box.remove(); }));
-            card.appendChild(box);
+          var row = kidLayout(edit, nameInput, clsInput, birthInput, [first, mother], function(part){
+            /* an account that sees the child but stands at no father / mother: one click puts it there */
+            (child.other_accounts || []).forEach(function(a){
+              var box = el("div", "p-alert info");
+              box.appendChild(el("p", "", fillIn(m("fmOther"), a.username)));
+              box.appendChild(api.button(m("fmToFather"), "outline", function(){ first.setAccount(a.id); box.remove(); }));
+              box.appendChild(api.button(m("fmToMother"), "outline", function(){ mother.setAccount(a.id); box.remove(); }));
+              part.appendChild(box);
+            });
           });
-          card.appendChild(first.node); card.appendChild(mother.node);
-          var row = el("div", "p-row");
           row.appendChild(api.button(m("save"), "sun", function(){
             var body;
             try{ body = kidPayload(nameInput.value, clsInput.value, birthInput.value, [first, mother]); }catch(error){ note(card, error.message, "error"); return; }
@@ -518,7 +558,6 @@
           row.appendChild(sureButton(m("removeFromList"), function(){
             return request(ACCOUNTING + "/children/" + encodeURIComponent(child.id), {method: "DELETE"}).then(function(){ kidsNote(m("childRemoved"), "success"); return reloadKids(); }).then(function(){ reloadChildren(); loadStats(); });
           }, function(error){ note(card, api.errorMessage(error), "error"); }));
-          card.appendChild(row);
           kidsBox.appendChild(card);
         });
       }
